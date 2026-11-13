@@ -1,7 +1,12 @@
-import type { MessageView } from "./chat.js";
+import type { MessageView, ReactionView } from "./chat.js";
 
 /** Avisos mandados pelo WebSocket. O cliente busca o resto pelo REST. */
-export type RealtimeEvent = { type: "ready" } | { type: "message"; message: MessageView };
+export type RealtimeEvent =
+  | { type: "ready" }
+  | { type: "message"; message: MessageView }
+  | { type: "reaction"; conversationId: string; messageId: string; reactions: ReactionView[] }
+  /** Conversa nova (grupo) em que a pessoa entrou. */
+  | { type: "conversation"; conversationId: string };
 
 /** Códigos de fechamento: o cliente não tenta reconectar com sessão inválida. */
 export const WS_CLOSE = { noAuth: 4000, badSession: 4001 } as const;

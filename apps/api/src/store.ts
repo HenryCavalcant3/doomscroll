@@ -1,5 +1,5 @@
 import type { Pool, PoolClient } from "pg";
-import { COMMENT_DELTA, LIKE_DELTA, SCORE_MAX, SCORE_MIN, viewDelta, type ViewInput } from "./affinity.js";
+import { COMMENT_DELTA, LIKE_DELTA, SCORE_MAX, SCORE_MIN, SHARE_DELTA, viewDelta, type ViewInput } from "./affinity.js";
 import { pickFeed, type Candidate, type Rng } from "./recommend.js";
 import { fromPgVector, TASTE_VIDEOS, tasteVector, toPgVector } from "./taste.js";
 
@@ -107,6 +107,8 @@ export interface Store {
   setLike(userId: string, videoId: string, liked: boolean): Promise<{ liked: boolean; likeCount: number } | null>;
   /** Grava a visualização e ajusta a afinidade; false quando o vídeo não existe ou não está aprovado. */
   recordView(userId: string, videoId: string, view: ViewInput): Promise<boolean>;
+  /** Primeiro compartilhamento do vídeo no chat: sobe a afinidade com os tópicos dele. */
+  recordShare(userId: string, videoId: string): Promise<void>;
   /** viewerId decide o campo liked dos vídeos curtidos. */
   profile(nickname: string, viewerId: string): Promise<Profile | null>;
   /** Vídeos aprovados em que alguma persona ainda não comentou (usado na subida). */
@@ -420,6 +422,9 @@ export class PgStore implements Store {
          SELECT video_id, ${LIKE_DELTA}, created_at FROM likes WHERE user_id = $1
          UNION ALL
          SELECT video_id, ${COMMENT_DELTA}, min(created_at) FROM comments WHERE user_id = $1 GROUP BY video_id
+         UNION ALL
+         SELECT video_id, ${SHARE_DELTA}, min(created_at) FROM messages
+          WHERE sender_id = $1 AND video_id IS NOT NULL GROUP BY video_id
        ), rated AS (
          SELECT video_id, sum(score) AS score, max(at) AS at FROM signals GROUP BY video_id HAVING sum(score) > 0
        )
@@ -516,6 +521,10 @@ export class PgStore implements Store {
     if (changed.rowCount) await this.pool.query(BUMP_AFFINITY, [userId, videoId, liked ? LIKE_DELTA : -LIKE_DELTA]);
     const count = await this.pool.query<{ n: number }>("SELECT count(*)::int AS n FROM likes WHERE video_id = $1", [videoId]);
     return { liked, likeCount: count.rows[0]!.n };
+  }
+
+  async recordShare(userId: string, videoId: string) {
+    if (isUuid(videoId)) await this.pool.query(BUMP_AFFINITY, [userId, videoId, SHARE_DELTA]);
   }
 
   async profile(nickname: string, viewerId: string) {

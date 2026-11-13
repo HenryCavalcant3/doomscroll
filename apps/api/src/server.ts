@@ -25,6 +25,7 @@ console.log(`[api] personas: ${personas.map((p) => p.apelido).join(", ") || "nen
 await mkdir(config.mediaDir, { recursive: true });
 const store = new PgStore(pool);
 const chat = new PgChatStore(pool);
+await chat.ensureBunker();
 const swept = await sweepMedia(config.mediaDir, (ids) => store.statusOf(ids));
 if (swept.length) console.log(`[api] arquivos de ${swept.length} vídeo(s) rejeitado(s) ou com falha apagados`);
 

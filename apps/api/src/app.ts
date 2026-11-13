@@ -1,7 +1,7 @@
 import fastifyStatic from "@fastify/static";
 import fastifyWebsocket from "@fastify/websocket";
 import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
-import { MESSAGES_PAGE, type ChatStore } from "./chat.js";
+import { GROUP_MAX_MEMBERS, MESSAGES_PAGE, REACTIONS, type ChatStore, type MessageContent } from "./chat.js";
 import { bearerToken, hashToken, LoginLimiter, newToken, NEW_PIN, NICKNAME, normalizeNickname } from "./auth.js";
 import type { Config } from "./config.js";
 import { parseVideoLink } from "./links.js";
@@ -216,6 +216,7 @@ export function buildApp({
         if (!newUser) return reply.code(409).send({ error: "Esse apelido acabou de ser criado. Tente entrar de novo." });
         user = newUser;
         created = true;
+        await chat.joinBunker(newUser.id);
       }
       const token = newToken();
       await store.createSession(user.id, hashToken(token));
@@ -441,28 +442,111 @@ export function buildApp({
       },
     );
 
-    priv.post<{ Params: { id: string }; Body: { text: string } }>(
+    // Mensagem de texto ({ text }) ou vídeo compartilhado do feed ({ videoId }).
+    priv.post<{ Params: { id: string }; Body: { text?: string; videoId?: string } }>(
       "/conversations/:id/messages",
       {
         schema: {
           params: idParams,
           body: {
             type: "object",
-            required: ["text"],
             additionalProperties: false,
-            properties: { text: { type: "string", minLength: 1, maxLength: MESSAGE_TEXT_MAX } },
+            properties: {
+              text: { type: "string", minLength: 1, maxLength: MESSAGE_TEXT_MAX },
+              videoId: { type: "string", maxLength: 36 },
+            },
           },
         },
       },
       async (req, reply) => {
-        // Mantém as quebras de linha, mas não mensagens só de espaços.
-        const text = req.body.text.replace(/[ \t]+$/gm, "").trim();
-        if (!text) return reply.code(400).send({ error: "Escreva alguma coisa." });
-        const sent = await chat.sendMessage(req.user.id, req.params.id, text);
-        if (!sent) return reply.code(404).send({ error: "Conversa não encontrada." });
+        const { text: rawText, videoId } = req.body;
+        if ((rawText === undefined) === (videoId === undefined)) {
+          return reply.code(400).send({ error: "Mande um texto ou um vídeo." });
+        }
+        let content: MessageContent;
+        if (videoId !== undefined) content = { videoId };
+        else {
+          // Mantém as quebras de linha, mas não mensagens só de espaços.
+          const text = rawText!.replace(/[ \t]+$/gm, "").trim();
+          if (!text) return reply.code(400).send({ error: "Escreva alguma coisa." });
+          content = { text };
+        }
+        const sent = await chat.sendMessage(req.user.id, req.params.id, content);
+        if (sent === "not_member") return reply.code(404).send({ error: "Conversa não encontrada." });
+        if (sent === "video_not_found") return reply.code(404).send({ error: "Vídeo não encontrado." });
+        // Compartilhar conta para a recomendação (só a primeira vez de cada vídeo).
+        if (sent.firstShare && videoId) await store.recordShare(req.user.id, videoId);
         // Avisa todos os membros, inclusive quem mandou (outras abas e aparelhos).
         hub.send(sent.memberIds, { type: "message", message: sent.message });
         return reply.code(201).send(sent.message);
+      },
+    );
+
+    // Reação: PUT põe ou troca, DELETE tira. Uma por pessoa em cada mensagem.
+    const reactionParams = {
+      type: "object",
+      required: ["id", "messageId"],
+      properties: { id: { type: "string" }, messageId: { type: "string" } },
+    } as const;
+    for (const method of ["PUT", "DELETE"] as const) {
+      priv.route<{ Params: { id: string; messageId: string }; Body: { emoji: string } }>({
+        method,
+        url: "/conversations/:id/messages/:messageId/reaction",
+        schema: {
+          params: reactionParams,
+          ...(method === "PUT" && {
+            body: {
+              type: "object",
+              required: ["emoji"],
+              additionalProperties: false,
+              properties: { emoji: { type: "string", enum: [...REACTIONS] } },
+            },
+          }),
+        },
+        handler: async (req, reply) => {
+          const { id, messageId } = req.params;
+          const result = await chat.setReaction(req.user.id, id, messageId, method === "PUT" ? req.body.emoji : null);
+          if (!result) return reply.code(404).send({ error: "Mensagem não encontrada." });
+          hub.send(result.memberIds, { type: "reaction", conversationId: id, messageId, reactions: result.reactions });
+          return { reactions: result.reactions };
+        },
+      });
+    }
+
+    priv.post<{ Body: { name: string; nicknames: string[] } }>(
+      "/groups",
+      {
+        schema: {
+          body: {
+            type: "object",
+            required: ["name", "nicknames"],
+            additionalProperties: false,
+            properties: {
+              name: { type: "string", minLength: 1, maxLength: 40 },
+              nicknames: {
+                type: "array",
+                minItems: 1,
+                maxItems: GROUP_MAX_MEMBERS - 1,
+                items: { type: "string", minLength: 1, maxLength: 40 },
+              },
+            },
+          },
+        },
+      },
+      async (req, reply) => {
+        const name = req.body.name.replace(/\s+/g, " ").trim();
+        if (!name) return reply.code(400).send({ error: "Dê um nome ao grupo." });
+        const nicknames = [...new Set(req.body.nicknames.map(normalizeNickname))].filter((n) => n !== req.user.nickname);
+        if (nicknames.length === 0) return reply.code(400).send({ error: "Chame pelo menos uma pessoa." });
+        const result = await chat.createGroup(req.user.id, name, nicknames);
+        if (result === "persona") return reply.code(409).send({ error: "As personas ainda não entram em grupos." });
+        if ("unknown" in result) {
+          return reply.code(404).send({ error: `Ninguém no bunker com: ${result.unknown.map((n) => `@${n}`).join(", ")}.` });
+        }
+        // O grupo aparece na hora na caixa de entrada de quem foi chamado.
+        const memberIds = await chat.memberIds(result.id);
+        hub.send(memberIds, { type: "conversation", conversationId: result.id });
+        return reply.code(201).send(result);
       },
     );
 

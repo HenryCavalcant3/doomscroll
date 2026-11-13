@@ -7,6 +7,8 @@ export const SCORE_MAX = 10;
 export const LIKE_DELTA = 2;
 /** Só o primeiro comentário da pessoa no vídeo conta. */
 export const COMMENT_DELTA = 1;
+/** Só o primeiro compartilhamento do vídeo no chat conta. */
+export const SHARE_DELTA = 1;
 
 const COMPLETED_PCT = 0.9;
 const REPLAY_DELTA = 0.5;
