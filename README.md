@@ -16,7 +16,7 @@ Um computador roda tudo (backend, frontend, banco e IA) e compartilha uma rede l
 
 É um projeto open source, meio meme, meio laboratório de rede social com IA local. A especificação completa está em [SPEC.md](SPEC.md).
 
-> **Estado atual:** passo 5 do SPEC (fase 1 da recomendação). Cada pessoa entra com apelido e PIN, cadastra vídeos por link (o worker baixa, converte, transcreve e a IA sugere tópicos), o dono aprova no painel e todo mundo assiste no feed vertical, curte e comenta. O Tio Valdir comenta cada vídeo aprovado, e o perfil mostra os vídeos curtidos. O feed aprende o gosto de cada pessoa pelos tópicos. Chat e as outras personas ainda não existem.
+> **Estado atual:** passo 5 do SPEC. Cada pessoa entra com apelido e PIN, cadastra vídeos por link (o worker baixa, converte, transcreve e a IA sugere tópicos), o dono aprova no painel e todo mundo assiste no feed vertical, curte e comenta. O Tio Valdir comenta cada vídeo aprovado, e o perfil mostra os vídeos curtidos. O feed aprende o gosto de cada pessoa pelos tópicos e pelo conteúdo dos vídeos. Chat e as outras personas ainda não existem.
 
 ## Como rodar
 
@@ -64,7 +64,7 @@ docker compose logs api | grep PIN
 
 Ao aprovar, o vídeo entra no feed (aba **Feed**, a tela inicial) e o Tio Valdir escreve um comentário, que aparece em **comentar**. Em CPU o comentário leva alguns segundos para ficar pronto. No feed, qualquer pessoa curte e comenta; tocar no apelido de alguém abre o perfil, com os vídeos que essa pessoa curtiu.
 
-O feed escolhe os vídeos pelos tópicos de que cada pessoa gosta: sobe com vídeo assistido até o fim, replay, curtida e comentário, e desce com pulo rápido. Cerca de 20% das escolhas são aleatórias, para aparecer coisa nova. Um vídeo visto some do feed por 3 dias; se tudo já foi visto, voltam primeiro os curtidos.
+O feed escolhe os vídeos pelos tópicos de que cada pessoa gosta: sobe com vídeo assistido até o fim, replay, curtida e comentário, e desce com pulo rápido. Além dos tópicos, o feed compara o texto de cada vídeo (título, descrição e transcrição, pelos embeddings) com os vídeos de que a pessoa gostou, então aparece mais coisa parecida mesmo com tópico diferente. Cerca de 20% das escolhas são aleatórias, para aparecer coisa nova. Um vídeo visto some do feed por 3 dias; se tudo já foi visto, voltam primeiro os curtidos.
 
 Na primeira transcrição, o worker baixa o modelo do Whisper (`WHISPER_MODEL`, cerca de 150 MB no `base`). Os vídeos ficam no volume `media` e nunca vão para o repositório.
 
