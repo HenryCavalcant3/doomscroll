@@ -9,7 +9,7 @@ x-database-url: &database-url postgres://${POSTGRES_USER:-doomscroll}:${POSTGRES
 
 services:
   db:
-    image: pgvector/pgvector:pg17
+    image: pgvector/pgvector:0.8.7-pg17
     environment: *db-env
     volumes:
       - db-data:/var/lib/postgresql/data
@@ -22,7 +22,7 @@ services:
     restart: unless-stopped
 
   ollama:
-    image: ollama/ollama:latest
+    image: ollama/ollama:0.40.16
     entrypoint: ["/bin/sh", "/entrypoint.sh"]
     environment:
       LLM_MODEL: ${LLM_MODEL:-qwen2.5:3b}
