@@ -51,6 +51,9 @@ services:
       LLM_MODEL: ${LLM_MODEL:-qwen2.5:3b}
       EMBED_MODEL: ${EMBED_MODEL:-nomic-embed-text}
       OWNER_PIN: ${OWNER_PIN:-}
+      MEDIA_DIR: /data/media
+    volumes:
+      - media:/data/media
     ports:
       - "${API_PORT:-3000}:3000"
     depends_on:
@@ -71,6 +74,7 @@ services:
       dockerfile: apps/worker/Dockerfile
       args:
         YT_DLP_VERSION: ${YT_DLP_VERSION:-latest}
+        WHISPER_CPP_VERSION: ${WHISPER_CPP_VERSION:-v1.9.5}
     environment:
       DATABASE_URL: *database-url
       OLLAMA_URL: http://ollama:11434
@@ -78,8 +82,16 @@ services:
       EMBED_MODEL: ${EMBED_MODEL:-nomic-embed-text}
       WHISPER_MODEL: ${WHISPER_MODEL:-base}
       PERSONA_RATE: ${PERSONA_RATE:-30}
+      MEDIA_DIR: /data/media
+      WHISPER_DIR: /data/whisper
+    volumes:
+      - media:/data/media
+      - whisper-models:/data/whisper
     depends_on:
       db:
+        condition: service_healthy
+      # A api aplica as migrações antes de ficar saudável.
+      api:
         condition: service_healthy
     restart: unless-stopped
 
@@ -96,3 +108,5 @@ services:
 volumes:
   db-data:
   ollama-models:
+  media:
+  whisper-models:

@@ -16,7 +16,7 @@ Um computador roda tudo (backend, frontend, banco e IA) e compartilha uma rede l
 
 É um projeto open source, meio meme, meio laboratório de rede social com IA local. A especificação completa está em [SPEC.md](SPEC.md).
 
-> **Estado atual:** passo 1 do SPEC. A infraestrutura sobe com o Docker Compose e há um endpoint de teste que conversa com o modelo. Feed, ingestão e personas ainda não existem.
+> **Estado atual:** passo 2 do SPEC. Já dá para cadastrar vídeos por link: o worker baixa, converte, transcreve e a IA sugere tópicos; o dono aprova no painel. Feed, login e personas ainda não existem.
 
 ## Como rodar
 
@@ -44,6 +44,20 @@ curl -X POST http://localhost:3000/ai/teste -H "Content-Type: application/json" 
 
 A primeira resposta pode levar até um minuto em CPU, porque o modelo precisa ser carregado na memória.
 
+### Cadastrar vídeos e aprovar
+
+1. Em <http://localhost:8080>, aba **Adicionar**, cole um link do YouTube Shorts ou do TikTok.
+2. Acompanhe o processamento (download, conversão, transcrição e tópicos sugeridos pela IA) e confirme os tópicos.
+3. Em **Perfil → Painel do dono**, entre com o PIN do dono e aprove ou rejeite o vídeo.
+
+O PIN do dono é o `OWNER_PIN` do `.env`. Se ele não estiver definido, a api gera um PIN na primeira subida e mostra uma única vez no log:
+
+```bash
+docker compose logs api | grep PIN
+```
+
+Na primeira transcrição, o worker baixa o modelo do Whisper (`WHISPER_MODEL`, cerca de 150 MB no `base`). Os vídeos ficam no volume `media` e nunca vão para o repositório.
+
 ### Configuração
 
 Tudo funciona sem `.env`. Para mudar os padrões, copie [.env.example](.env.example) para `.env` e edite. As variáveis principais são:
@@ -52,8 +66,8 @@ Tudo funciona sem `.env`. Para mudar os padrões, copie [.env.example](.env.exam
 |---|---|---|
 | `LLM_MODEL` | `qwen2.5:3b` | Modelo de texto |
 | `EMBED_MODEL` | `nomic-embed-text` | Modelo de embeddings |
-| `WHISPER_MODEL` | `base` | Transcrição (a partir do passo 2) |
-| `OWNER_PIN` | — | PIN inicial do dono do bunker |
+| `WHISPER_MODEL` | `base` | Modelo do Whisper usado na transcrição |
+| `OWNER_PIN` | gerado na 1ª subida | PIN inicial do dono do bunker |
 | `PERSONA_RATE` | `30` | Limite de ações de persona por hora |
 
 ### GPU (NVIDIA)
