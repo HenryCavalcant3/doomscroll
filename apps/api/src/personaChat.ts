@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Pool } from "pg";
 import type { JobQueue } from "./app.js";
 import type { ChatStore, MessageView } from "./chat.js";
-import type { ChatMessage } from "./ollama.js";
+import { isRepeatAbort, type ChatMessage } from "./ollama.js";
 import { QUEUES } from "./queues.js";
 import type { Hub } from "./realtime.js";
 import { avatarUrl } from "./store.js";
@@ -57,7 +57,7 @@ export function pickExamples(examples: string[], n = EXAMPLES_PER_PROMPT, random
 export function messageLine(m: MessageView): string {
   if (m.video) {
     const about = [m.video.title, m.video.description].filter(Boolean).join(" — ");
-    return `[mandou um vídeo: ${about || "sem título"}]`;
+    return about ? `[mandou um vídeo: ${about}]` : "[mandou um vídeo sem título nem descrição: você não sabe o que tem nele]";
   }
   return m.text ?? "";
 }
@@ -73,23 +73,24 @@ export function buildChatMessages(
   retry = false,
 ): ChatMessage[] {
   const system = `Você é ${persona.name}, numa rede social brasileira de vídeos curtos, conversando por mensagem direta com @${contact}.
-Quem você é: ${persona.bio}
+Quem você é (só você, não @${contact}): ${persona.bio}
 Seu jeito de escrever: ${persona.tone}
-O que você lembra de @${contact}: ${memory || "vocês estão começando a conversar agora."}
+O que você sabe de @${contact}: ${memory || "nada ainda, vocês estão começando a conversar agora."}
 
 Mensagens que você mandou em OUTRAS conversas (só mostram o jeito de escrever):
 ${examples.map((e) => `- ${e}`).join("\n")}
 
 Regras:
-- Responda à última mensagem como numa conversa de celular: de uma a três frases curtas, em português do Brasil.
+- Responda à última mensagem como numa conversa de celular: de uma a três frases curtas.
+- Escreva sempre em português do Brasil, mesmo que @${contact} escreva em outra língua.
 - Nunca repita o que @${contact} escreveu. Se for uma pergunta, responda com a sua opinião.
 - Você é uma pessoa da rede, não um assistente: não ofereça ajuda nem diga "estou aqui se precisar".
 - Copie o jeito das frases acima, nunca o assunto.
-- Não invente fatos sobre você nem sobre @${contact}. Se não souber, pergunte.
+- Não invente fatos sobre você nem sobre @${contact}, nem o que aparece num vídeo além do título e da descrição. Se não souber, pergunte.
 - Não fale de fim do mundo, apocalipse nem bunker, a não ser que @${contact} puxe o assunto.
 - Escreva só a sua mensagem, sem o seu nome na frente e sem aspas.${
     retry
-      ? "\n\nAviso só para você (não fale dele na resposta): sua resposta anterior foi descartada porque repetia a mensagem ou copiava uma frase. Escreva outra, com suas palavras."
+      ? "\n\nAviso só para você (não fale dele na resposta): sua resposta anterior foi descartada (repetia a mensagem, copiava uma frase, repetia palavras sem parar ou não estava em português). Escreva outra, com suas palavras."
       : ""
   }`;
   return [
@@ -145,20 +146,57 @@ function copies(words: string[], example: string, talk: Set<string>): boolean {
   return false;
 }
 
-/** true quando a resposta não serve: vazia, repete a última mensagem do contato ou copia um exemplo. */
-export function badReply(text: string, examples: string[], history: MessageView[]): boolean {
+/**
+ * Por que a resposta não serve. As graves (vazia, eco, gagueira) nunca são mandadas; as leves
+ * (cópia de exemplo, inglês) são mandadas se nenhuma tentativa sair melhor: é pior a persona ficar muda.
+ */
+export type ReplyProblem = "vazia" | "eco" | "gagueira" | "cópia" | "inglês";
+const SOFT: ReadonlySet<ReplyProblem> = new Set(["cópia", "inglês"]);
+
+export function replyProblem(text: string, examples: string[], history: MessageView[]): ReplyProblem | null {
   const words = normalize(text);
-  if (words.length === 0) return true;
+  if (words.length === 0) return "vazia";
   const last = history.at(-1);
   if (last) {
     const said = normalize(messageLine(last)).join(" ");
-    if (said && said === words.join(" ")) return true;
+    if (said && said === words.join(" ")) return "eco";
   }
+  if (stutters(words)) return "gagueira";
   const talk = talkWords(history);
-  return examples.some((ex) => copies(words, ex, talk));
+  if (examples.some((ex) => copies(words, ex, talk))) return "cópia";
+  if (english(words)) return "inglês";
+  return null;
 }
 
-/** Tentativas de gerar uma resposta que passe em `badReply`. */
+export const badReply = (text: string, examples: string[], history: MessageView[]) => replyProblem(text, examples, history) !== null;
+
+/**
+ * Gagueira do modelo: a mesma palavra 3 vezes seguidas ("sou sou sou"), o mesmo par 3 vezes
+ * seguidas ("sou eu sou eu sou eu") ou muitas palavras e quase nenhuma diferente.
+ */
+function stutters(words: string[]): boolean {
+  if (words.length >= 8 && new Set(words).size / words.length < 0.4) return true;
+  for (let i = 0; i + 2 < words.length; i++) {
+    if (words[i] === words[i + 1] && words[i] === words[i + 2]) return true;
+  }
+  for (let i = 0; i + 5 < words.length; i++) {
+    const pair = `${words[i]} ${words[i + 1]}`;
+    if (pair === `${words[i + 2]} ${words[i + 3]}` && pair === `${words[i + 4]} ${words[i + 5]}`) return true;
+  }
+  return false;
+}
+
+const ENGLISH = new Set(["the", "you", "your", "yes", "hello", "how", "can", "help", "what", "speak", "english", "today", "there", "i", "it", "is", "are", "with", "and", "of", "to"]);
+/** Resposta em inglês: pelo menos 3 palavras comuns do inglês e um terço do texto. */
+const english = (words: string[]) => {
+  const en = words.filter((w) => ENGLISH.has(w)).length;
+  return en >= 3 && en / words.length >= 1 / 3;
+};
+
+/** Marca, em `rejected`, a tentativa que o Ollama cortou por repetição sem fim. */
+export const LOOPED = "(repetiu sem parar)";
+
+/** Tentativas de gerar uma resposta que passe em `replyProblem`. */
 export const REPLY_ATTEMPTS = 3;
 
 /** Gera a resposta em streaming; `onText` recebe o texto acumulado. */
@@ -168,8 +206,9 @@ export type ChatGenerator = (messages: ChatMessage[], stop: string[], onText: (f
 export const CHAT_OPTIONS = { temperature: 0.8, num_predict: 150, num_ctx: 4096 };
 
 /**
- * Gera a resposta da persona até ela passar em `badReply` (no máximo REPLY_ATTEMPTS vezes).
- * `text` fica "" quando nenhuma tentativa serviu; `rejected` guarda as recusadas, em ordem.
+ * Gera a resposta da persona até ela passar em `replyProblem` (no máximo REPLY_ATTEMPTS vezes).
+ * Se nenhuma servir, manda a última com problema leve; `text` fica "" quando só houve problema grave.
+ * `rejected` guarda as recusadas, em ordem.
  * Usado pelo PersonaReplier e pela bancada de avaliação do chat.
  */
 export async function generateReply(
@@ -182,17 +221,28 @@ export async function generateReply(
   signal: AbortSignal,
 ): Promise<{ text: string; rejected: string[] }> {
   const rejected: string[] = [];
+  let fallback = "";
   const talk = talkWords(history);
   for (let attempt = 0; attempt < REPLY_ATTEMPTS; attempt++) {
     // Exemplos sorteados de novo a cada tentativa, sem os que já foram copiados (o modelo insiste neles).
     const fresh = persona.examples.filter((ex) => !rejected.some((r) => copies(normalize(r), ex, talk)));
     const prompt = buildChatMessages(persona, contact, memory, history, pickExamples(fresh), rejected.length > 0);
-    const raw = await generate(prompt, stopWords(contact), (full) => onDraft(cleanReply(full, persona)), signal);
+    let raw: string;
+    try {
+      raw = await generate(prompt, stopWords(contact), (full) => onDraft(cleanReply(full, persona)), signal);
+    } catch (err) {
+      // Repetição sem fim conta como tentativa recusada; outros erros (Ollama fora) sobem.
+      if (!isRepeatAbort(err)) throw err;
+      rejected.push(LOOPED);
+      continue;
+    }
     const text = cleanReply(raw, persona);
-    if (!badReply(text, persona.examples, history)) return { text, rejected };
+    const problem = replyProblem(text, persona.examples, history);
+    if (!problem) return { text, rejected };
+    if (SOFT.has(problem)) fallback = text;
     rejected.push(text.slice(0, 200));
   }
-  return { text: "", rejected };
+  return { text: fallback, rejected };
 }
 
 export interface ReplierDeps {

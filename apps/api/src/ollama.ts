@@ -1,3 +1,6 @@
+/** O Ollama cortou a geração porque o modelo entrou em repetição sem fim (ex.: "😂😂😂..."). */
+export const isRepeatAbort = (err: unknown) => err instanceof OllamaError && /repeat limit/i.test(err.message);
+
 export class OllamaError extends Error {
   constructor(
     message: string,
