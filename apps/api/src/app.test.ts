@@ -313,7 +313,7 @@ class MemoryChatStore implements ChatStore {
   async ensureBunker() {
     const c = this.conversations.find((x) => x.bunker) ?? this.create("group", BUNKER_NAME, null, [], true);
     for (const { user } of this.users().values()) {
-      if (!user.isAi && !this.member(user.id, c.id)) this.members.push({ conversationId: c.id, userId: user.id, lastRead: -Infinity });
+      if (!this.member(user.id, c.id)) this.members.push({ conversationId: c.id, userId: user.id, lastRead: -Infinity });
     }
   }
   async joinBunker(userId: string) {
@@ -921,7 +921,7 @@ describe("chat", () => {
     expect((await create({ name: "   ", nicknames: ["bia"] })).statusCode).toBe(400);
   });
 
-  it("põe todo mundo no Grupo do Bunker, inclusive quem entra depois, menos as personas", async () => {
+  it("põe todo mundo no Grupo do Bunker, inclusive as personas e quem entra depois", async () => {
     await auth("ana", "1111");
     await chat.ensureBunker();
     await chat.ensureBunker();
@@ -932,7 +932,7 @@ describe("chat", () => {
     const [bunker] = await inbox(bia);
     // Quem entra depois não vê o histórico como não lido.
     expect(bunker).toMatchObject({ type: "group", name: BUNKER_NAME, bunker: true, unread: 0 });
-    expect(bunker.members.map((m: AuthorView) => m.nickname)).toEqual(["dono", "ana"]);
+    expect(bunker.members.map((m: AuthorView) => m.nickname)).toEqual(["dono", "tio_valdir", "ana"]);
     expect(chat.conversations.filter((c) => c.bunker)).toHaveLength(1);
   });
 

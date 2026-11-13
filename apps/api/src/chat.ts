@@ -62,7 +62,7 @@ export interface ChatStore {
   openDirect(userId: string, nickname: string): Promise<OpenDirectResult>;
   /** Cria um grupo com quem pediu e os apelidos dados. */
   createGroup(userId: string, name: string, nicknames: string[]): Promise<CreateGroupResult>;
-  /** Cria o Grupo do Bunker se faltar e põe nele todas as pessoas (sem personas). Usado na subida. */
+  /** Cria o Grupo do Bunker se faltar e põe nele todas as pessoas e personas. Usado na subida, depois de sincronizar as personas. */
   ensureBunker(): Promise<void>;
   /** Põe uma pessoa nova no Grupo do Bunker. */
   joinBunker(userId: string): Promise<void>;
@@ -251,7 +251,7 @@ export class PgChatStore implements ChatStore {
     );
     await this.pool.query(
       `INSERT INTO conversation_members (conversation_id, user_id)
-       SELECT c.id, u.id FROM conversations c CROSS JOIN users u WHERE c.bunker AND NOT u.is_ai
+       SELECT c.id, u.id FROM conversations c CROSS JOIN users u WHERE c.bunker
        ON CONFLICT DO NOTHING`,
     );
   }

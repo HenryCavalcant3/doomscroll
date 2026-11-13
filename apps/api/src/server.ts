@@ -34,7 +34,7 @@ boss.on("error", (err) => console.error("[api] erro no pg-boss:", err));
 await boss.start();
 await ensureQueues(boss);
 
-// Vídeos aprovados antes da persona existir (ou cujo comentário falhou) ganham comentário agora.
+// Vídeos aprovados cujo comentário falhou (nenhuma persona comentou) ganham comentário agora.
 const missing = await store.videosMissingPersonaComments();
 for (const videoId of missing) await boss.send(QUEUES.personaComment, { videoId });
 if (missing.length) console.log(`[api] comentários de persona enfileirados para ${missing.length} vídeo(s)`);

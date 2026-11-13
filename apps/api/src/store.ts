@@ -111,7 +111,10 @@ export interface Store {
   recordShare(userId: string, videoId: string): Promise<void>;
   /** viewerId decide o campo liked dos vídeos curtidos. */
   profile(nickname: string, viewerId: string): Promise<Profile | null>;
-  /** Vídeos aprovados em que alguma persona ainda não comentou (usado na subida). */
+  /**
+   * Vídeos aprovados sem nenhum comentário de persona, porque o comentário falhou (usado na subida).
+   * Persona nova não ganha o acervo antigo inteiro para comentar de uma vez.
+   */
   videosMissingPersonaComments(): Promise<string[]>;
 }
 
@@ -561,8 +564,7 @@ export class PgStore implements Store {
     const res = await this.pool.query<{ id: string }>(
       `SELECT v.id FROM videos v
         WHERE v.status = 'aprovado'
-          AND EXISTS (SELECT 1 FROM personas p
-                       WHERE NOT EXISTS (SELECT 1 FROM comments c WHERE c.video_id = v.id AND c.user_id = p.user_id))`,
+          AND NOT EXISTS (SELECT 1 FROM comments c JOIN personas p ON p.user_id = c.user_id WHERE c.video_id = v.id)`,
     );
     return res.rows.map((r) => r.id);
   }
