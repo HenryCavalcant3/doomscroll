@@ -16,7 +16,7 @@ Um computador roda tudo (backend, frontend, banco e IA) e compartilha uma rede l
 
 É um projeto open source, meio meme, meio laboratório de rede social com IA local. A especificação completa está em [SPEC.md](SPEC.md).
 
-> **Estado atual:** passo 2 do SPEC. Já dá para cadastrar vídeos por link: o worker baixa, converte, transcreve e a IA sugere tópicos; o dono aprova no painel. Feed, login e personas ainda não existem.
+> **Estado atual:** passo 3 do SPEC. Já dá para cadastrar vídeos por link (o worker baixa, converte, transcreve e a IA sugere tópicos), aprovar no painel do dono e assistir no feed vertical, onde o Tio Valdir comenta cada vídeo aprovado. Login, curtidas, recomendação, chat e as outras personas ainda não existem.
 
 ## Como rodar
 
@@ -55,6 +55,8 @@ O PIN do dono é o `OWNER_PIN` do `.env`. Se ele não estiver definido, a api ge
 ```bash
 docker compose logs api | grep PIN
 ```
+
+Ao aprovar, o vídeo entra no feed (aba **Feed**, a tela inicial) e o Tio Valdir escreve um comentário, que aparece em **comentar**. Em CPU o comentário leva alguns segundos para ficar pronto.
 
 Na primeira transcrição, o worker baixa o modelo do Whisper (`WHISPER_MODEL`, cerca de 150 MB no `base`). Os vídeos ficam no volume `media` e nunca vão para o repositório.
 
@@ -105,11 +107,29 @@ Estrutura:
 
 ```
 apps/api      Fastify (HTTP + WebSocket)
-apps/worker   fila pg-boss, com yt-dlp e ffmpeg
+apps/worker   fila pg-boss, com yt-dlp, ffmpeg, whisper.cpp e IA
 apps/web      React + Vite
 docker/       scripts de inicialização do banco e do Ollama
-personas/     avatares e configuração das personas
+personas/     JSON e avatar SVG de cada persona
 ```
+
+### Contribuir com uma persona
+
+Cada persona é um par de arquivos em `personas/`: o avatar (`apelido-com-hifen.svg`) e um JSON com o mesmo nome, como [personas/tio-valdir.json](personas/tio-valdir.json). Campos:
+
+| Campo | O que é |
+|---|---|
+| `apelido` | Nome de usuário, de 3 a 30 letras minúsculas, números ou `_` (o arquivo usa `-` no lugar de `_`) |
+| `nome` | Nome de exibição |
+| `avatar` | Arquivo `.svg` da pasta `personas/` |
+| `bio` | Quem a persona é, em uma ou duas frases |
+| `tom` | Jeito de escrever |
+| `exemplos` | De 3 a 10 frases no estilo dela (o modelo imita essas frases) |
+| `atividade` | De 0 a 1, quanto ela interage |
+| `afinidade` | Tópico → número de 0 a 1 |
+| `relacoes` | Opcional: apelido de outra persona → como ela vê essa persona |
+
+A api valida tudo na subida e o `pnpm test` também, então uma persona inválida falha no CI.
 
 Os commits seguem [Conventional Commits](https://www.conventionalcommits.org/pt-br/), em português.
 
