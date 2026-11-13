@@ -10,6 +10,7 @@ import { ensureOwner } from "./owner.js";
 import { loadPersonas, syncPersonas } from "./personas.js";
 import { ensureQueues, QUEUES } from "./queues.js";
 import { PgStore } from "./store.js";
+import { PgChatStore } from "./chat.js";
 
 const config = readConfig();
 const pool = new pg.Pool({ connectionString: config.databaseUrl });
@@ -23,6 +24,7 @@ await syncPersonas(pool, personas, (msg) => console.log(`[api] ${msg}`));
 console.log(`[api] personas: ${personas.map((p) => p.apelido).join(", ") || "nenhuma"}`);
 await mkdir(config.mediaDir, { recursive: true });
 const store = new PgStore(pool);
+const chat = new PgChatStore(pool);
 const swept = await sweepMedia(config.mediaDir, (ids) => store.statusOf(ids));
 if (swept.length) console.log(`[api] arquivos de ${swept.length} vídeo(s) rejeitado(s) ou com falha apagados`);
 
@@ -39,6 +41,7 @@ if (missing.length) console.log(`[api] comentários de persona enfileirados para
 const app = buildApp({
   config,
   store,
+  chat,
   queue: boss,
   logger: true,
   serveMedia: true,

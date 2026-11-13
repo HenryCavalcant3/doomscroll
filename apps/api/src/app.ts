@@ -1,11 +1,14 @@
 import fastifyStatic from "@fastify/static";
+import fastifyWebsocket from "@fastify/websocket";
 import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
+import { MESSAGES_PAGE, type ChatStore } from "./chat.js";
 import { bearerToken, hashToken, LoginLimiter, newToken, NEW_PIN, NICKNAME, normalizeNickname } from "./auth.js";
 import type { Config } from "./config.js";
 import { parseVideoLink } from "./links.js";
 import { generate, OllamaError } from "./ollama.js";
 import { hashPin, verifyPin } from "./pin.js";
 import { QUEUES } from "./queues.js";
+import { Hub, WS_CLOSE } from "./realtime.js";
 import type { Store, UserView, VideoStatus } from "./store.js";
 
 declare module "fastify" {
@@ -22,6 +25,9 @@ export interface JobQueue {
 export interface AppDeps {
   config: Config;
   store: Store;
+  chat: ChatStore;
+  /** Conexões WebSocket abertas (trocado nos testes para observar os avisos). */
+  hub?: Hub;
   queue: JobQueue;
   fetchImpl?: typeof fetch;
   logger?: boolean;
@@ -31,6 +37,10 @@ export interface AppDeps {
   removeMedia?: (id: string) => Promise<void>;
   /** Relógio dos limites de tentativa de PIN (trocado nos testes). */
   now?: () => number;
+  /** Intervalo do ping que mantém o WebSocket vivo atrás do nginx. */
+  pingMs?: number;
+  /** Tempo para o cliente mandar o token depois de conectar. */
+  wsAuthMs?: number;
 }
 
 const LOGIN_WINDOW_MS = 15 * 60_000;
@@ -46,6 +56,8 @@ export function slugify(name: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
+const MESSAGE_TEXT_MAX = 1000;
+
 const idParams = {
   type: "object",
   required: ["id"],
@@ -55,12 +67,16 @@ const idParams = {
 export function buildApp({
   config,
   store,
+  chat,
+  hub = new Hub(),
   queue,
   fetchImpl,
   logger = false,
   serveMedia = false,
   removeMedia = async () => {},
   now = Date.now,
+  pingMs = 30_000,
+  wsAuthMs = 10_000,
 }: AppDeps) {
   const app = Fastify({ logger });
   // Limite por apelido, não por IP: atrás do Docker todos os celulares chegam com o mesmo IP do gateway.
@@ -80,6 +96,46 @@ export function buildApp({
   }
 
   app.get("/health", async () => ({ status: "ok" }));
+
+  // Avisos em tempo real (chat). Fora das rotas protegidas: o navegador não manda cabeçalho no
+  // WebSocket, e o token não vai na URL para não cair no log. A primeira mensagem traz o token.
+  app.register(fastifyWebsocket, { options: { maxPayload: 4096 } });
+  app.register(async (ws) => {
+    ws.get("/ws", { websocket: true }, (socket) => {
+      let remove: (() => void) | null = null;
+      let alive = true;
+      const authTimer = setTimeout(() => socket.close(WS_CLOSE.noAuth, "sem token"), wsAuthMs);
+      // O ping mantém a conexão aberta no nginx e derruba celulares que sumiram da rede.
+      const ping = setInterval(() => {
+        if (!alive) return socket.terminate();
+        alive = false;
+        socket.ping();
+      }, pingMs);
+      socket.on("pong", () => {
+        alive = true;
+      });
+      socket.on("close", () => {
+        clearTimeout(authTimer);
+        clearInterval(ping);
+        remove?.();
+      });
+      socket.once("message", async (raw) => {
+        let token: string | null = null;
+        try {
+          const msg = JSON.parse(String(raw)) as { type?: unknown; token?: unknown };
+          if (msg.type === "auth" && typeof msg.token === "string") token = bearerToken(`Bearer ${msg.token}`);
+        } catch {
+          // mensagem inválida: cai no fechamento abaixo
+        }
+        const user = token ? await store.sessionUser(hashToken(token)) : null;
+        clearTimeout(authTimer);
+        if (!user) return socket.close(WS_CLOSE.badSession, "sessão inválida");
+        if (socket.readyState !== socket.OPEN) return;
+        remove = hub.add(user.id, socket);
+        socket.send(JSON.stringify({ type: "ready" }));
+      });
+    });
+  });
 
   app.post<{ Body: { prompt: string } }>(
     "/ai/teste",
@@ -327,6 +383,106 @@ export function buildApp({
             return reply.code(400).send({ error: "Algum tópico não existe." });
         }
       },
+    );
+
+    // Chat (SPEC 5.3). Quem não é membro recebe 404, para não dar para descobrir conversas pelo id.
+    priv.get("/conversations", async (req) => chat.listConversations(req.user.id));
+
+    priv.post<{ Body: { nickname: string } }>(
+      "/conversations",
+      {
+        schema: {
+          body: {
+            type: "object",
+            required: ["nickname"],
+            additionalProperties: false,
+            properties: { nickname: { type: "string", minLength: 1, maxLength: 40 } },
+          },
+        },
+      },
+      async (req, reply) => {
+        const result = await chat.openDirect(req.user.id, normalizeNickname(req.body.nickname));
+        switch (result) {
+          case "not_found":
+            return reply.code(404).send({ error: "Ninguém com esse apelido no bunker." });
+          case "self":
+            return reply.code(400).send({ error: "Você não pode conversar com você mesmo." });
+          case "persona":
+            return reply.code(409).send({ error: "As personas ainda não respondem mensagens." });
+          default:
+            return result;
+        }
+      },
+    );
+
+    priv.get<{ Params: { id: string } }>("/conversations/:id", { schema: { params: idParams } }, async (req, reply) => {
+      const conversation = await chat.getConversation(req.user.id, req.params.id);
+      return conversation ?? reply.code(404).send({ error: "Conversa não encontrada." });
+    });
+
+    priv.get<{ Params: { id: string }; Querystring: { before?: string; limit?: number } }>(
+      "/conversations/:id/messages",
+      {
+        schema: {
+          params: idParams,
+          querystring: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              before: { type: "string", maxLength: 36 },
+              limit: { type: "integer", minimum: 1, maximum: MESSAGES_PAGE },
+            },
+          },
+        },
+      },
+      async (req, reply) => {
+        const messages = await chat.listMessages(req.user.id, req.params.id, req.query.before ?? null, req.query.limit ?? MESSAGES_PAGE);
+        return messages ?? reply.code(404).send({ error: "Conversa não encontrada." });
+      },
+    );
+
+    priv.post<{ Params: { id: string }; Body: { text: string } }>(
+      "/conversations/:id/messages",
+      {
+        schema: {
+          params: idParams,
+          body: {
+            type: "object",
+            required: ["text"],
+            additionalProperties: false,
+            properties: { text: { type: "string", minLength: 1, maxLength: MESSAGE_TEXT_MAX } },
+          },
+        },
+      },
+      async (req, reply) => {
+        // Mantém as quebras de linha, mas não mensagens só de espaços.
+        const text = req.body.text.replace(/[ \t]+$/gm, "").trim();
+        if (!text) return reply.code(400).send({ error: "Escreva alguma coisa." });
+        const sent = await chat.sendMessage(req.user.id, req.params.id, text);
+        if (!sent) return reply.code(404).send({ error: "Conversa não encontrada." });
+        // Avisa todos os membros, inclusive quem mandou (outras abas e aparelhos).
+        hub.send(sent.memberIds, { type: "message", message: sent.message });
+        return reply.code(201).send(sent.message);
+      },
+    );
+
+    priv.post<{ Params: { id: string }; Body: { messageId: string } }>(
+      "/conversations/:id/read",
+      {
+        schema: {
+          params: idParams,
+          body: {
+            type: "object",
+            required: ["messageId"],
+            additionalProperties: false,
+            properties: { messageId: { type: "string", maxLength: 36 } },
+          },
+        },
+      },
+      async (req, reply) =>
+        (await chat.markRead(req.user.id, req.params.id, req.body.messageId))
+          ? reply.code(204).send()
+          : reply.code(404).send({ error: "Conversa não encontrada." }),
     );
 
     // Perfil (tela 6): de usuário ou de persona, com os vídeos curtidos.

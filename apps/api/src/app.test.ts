@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { buildApp, slugify, type JobQueue } from "./app.js";
 import { readConfig } from "./config.js";
+import { directKey, type ChatStore, type ConversationView, type MessageView, type OpenDirectResult } from "./chat.js";
+import { Hub, WS_CLOSE } from "./realtime.js";
 import { clampScore, COMMENT_DELTA, LIKE_DELTA, viewDelta, type ViewInput } from "./affinity.js";
 import { hashPin } from "./pin.js";
 import { pickFeed } from "./recommend.js";
 import { cosine, tasteVector } from "./taste.js";
-import type { CommentView, ConfirmResult, FeedVideo, Store, Topic, UserView, VideoStatus, VideoView } from "./store.js";
+import type { AuthorView, CommentView, ConfirmResult, FeedVideo, Store, Topic, UserView, VideoStatus, VideoView } from "./store.js";
 
 const config = { ...readConfig({}), ollamaUrl: "http://ollama:11434", llmModel: "modelo-teste" };
 
@@ -210,13 +212,115 @@ class MemoryStore implements Store {
   }
 }
 
+const uuid = (n: number) => `00000000-0000-4000-9000-${String(n).padStart(12, "0")}`;
+
+/** Chat em memória com o mesmo comportamento esperado do PgChatStore. */
+class MemoryChatStore implements ChatStore {
+  conversations: { id: string; type: "direct" | "group"; name: string | null; key: string | null; lastAt: number | null }[] = [];
+  members: { conversationId: string; userId: string; lastRead: number }[] = [];
+  messages: (MessageView & { senderId: string; at: number })[] = [];
+  private seq = 0;
+  private tick = 0;
+
+  constructor(private readonly users: () => MemoryStore["users"]) {}
+
+  private user(id: string) {
+    return [...this.users().values()].find((u) => u.user.id === id)!.user;
+  }
+  private author(id: string): AuthorView {
+    const u = this.user(id);
+    return { nickname: u.nickname, avatarUrl: u.avatarUrl, isAi: u.isAi };
+  }
+  private member(userId: string, conversationId: string) {
+    return this.members.find((m) => m.userId === userId && m.conversationId === conversationId);
+  }
+  private view(userId: string, id: string): ConversationView {
+    const c = this.conversations.find((x) => x.id === id)!;
+    const msgs = this.messages.filter((m) => m.conversationId === id);
+    const last = msgs.at(-1);
+    const me = this.member(userId, id)!;
+    return {
+      id,
+      type: c.type,
+      name: c.name,
+      members: this.members.filter((m) => m.conversationId === id && m.userId !== userId).map((m) => this.author(m.userId)),
+      lastMessage: last ? strip(last) : null,
+      unread: msgs.filter((m) => m.senderId !== userId && m.at > me.lastRead).length,
+    };
+  }
+
+  async openDirect(userId: string, nickname: string): Promise<OpenDirectResult> {
+    const other = this.users().get(nickname)?.user;
+    if (!other) return "not_found";
+    if (other.id === userId) return "self";
+    if (other.isAi) return "persona";
+    const key = directKey(userId, other.id);
+    let c = this.conversations.find((x) => x.key === key);
+    if (!c) {
+      c = { id: uuid(++this.seq), type: "direct", name: null, key, lastAt: null };
+      this.conversations.push(c);
+      for (const id of [userId, other.id]) this.members.push({ conversationId: c.id, userId: id, lastRead: -Infinity });
+    }
+    return this.view(userId, c.id);
+  }
+  async listConversations(userId: string) {
+    return this.conversations
+      .filter((c) => c.lastAt !== null && this.member(userId, c.id))
+      .sort((a, b) => b.lastAt! - a.lastAt!)
+      .map((c) => this.view(userId, c.id));
+  }
+  async getConversation(userId: string, id: string) {
+    return this.member(userId, id) ? this.view(userId, id) : null;
+  }
+  async listMessages(userId: string, id: string, before: string | null, limit: number) {
+    if (!this.member(userId, id)) return null;
+    let msgs = this.messages.filter((m) => m.conversationId === id);
+    if (before !== null) {
+      const at = msgs.find((m) => m.id === before)?.at;
+      msgs = at === undefined ? [] : msgs.filter((m) => m.at < at);
+    }
+    return msgs.slice(-limit).map(strip);
+  }
+  async sendMessage(userId: string, id: string, text: string) {
+    const me = this.member(userId, id);
+    if (!me) return null;
+    const at = ++this.tick;
+    const msg = {
+      id: uuid(++this.seq), conversationId: id, type: "text" as const, text, videoId: null,
+      createdAt: new Date(at).toISOString(), sender: this.author(userId), senderId: userId, at,
+    };
+    this.messages.push(msg);
+    this.conversations.find((c) => c.id === id)!.lastAt = at;
+    me.lastRead = Math.max(me.lastRead, at);
+    return { message: strip(msg), memberIds: this.members.filter((m) => m.conversationId === id).map((m) => m.userId) };
+  }
+  async markRead(userId: string, id: string, messageId: string) {
+    const me = this.member(userId, id);
+    const msg = this.messages.find((m) => m.id === messageId && m.conversationId === id);
+    if (!me || !msg) return false;
+    me.lastRead = Math.max(me.lastRead, msg.at);
+    return true;
+  }
+}
+
+function strip(m: MessageView & { senderId?: string; at?: number }): MessageView {
+  const out = { ...m };
+  delete out.senderId;
+  delete out.at;
+  return out;
+}
+
 let store: MemoryStore;
+let chat: MemoryChatStore;
+let hub: Hub;
 let queue: JobQueue & { send: ReturnType<typeof vi.fn> };
 let removeMedia: ReturnType<typeof vi.fn<(id: string) => Promise<void>>>;
 let clock: number;
 
 beforeEach(async () => {
   store = new MemoryStore();
+  chat = new MemoryChatStore(() => store.users);
+  hub = new Hub();
   store.users.set("dono", {
     user: { id: "u-dono", nickname: "dono", avatarUrl: null, role: "owner", isAi: false },
     pinHash: await hashPin("1234"),
@@ -231,7 +335,8 @@ beforeEach(async () => {
   store.now = () => clock;
 });
 
-const app = (fetchImpl?: typeof fetch) => buildApp({ config, store, queue, fetchImpl, removeMedia, now: () => clock });
+const app = (fetchImpl?: typeof fetch) =>
+  buildApp({ config, store, chat, hub, queue, fetchImpl, removeMedia, now: () => clock, wsAuthMs: 200 });
 
 const enter = (nickname: string, pin: string, a = app()) =>
   a.inject({ method: "POST", url: "/auth/entrar", payload: { nickname, pin } });
@@ -616,6 +721,136 @@ describe("perfil", () => {
     const res = await app().inject({ method: "GET", url: "/users/Morador", headers });
     expect(res.json()).toMatchObject({ nickname: "morador", isAi: false, liked: [{ id, liked: true }] });
     expect((await app().inject({ method: "GET", url: "/users/ninguem", headers })).statusCode).toBe(404);
+  });
+});
+
+describe("chat", () => {
+  /** Duas pessoas com uma conversa direta aberta. */
+  async function pair() {
+    const ana = await auth("ana", "1111");
+    const bia = await auth("bia", "2222");
+    const open = await app().inject({ method: "POST", url: "/conversations", headers: ana, payload: { nickname: "@Bia" } });
+    expect(open.statusCode).toBe(200);
+    return { ana, bia, id: open.json().id as string };
+  }
+  const send = (headers: { authorization: string }, id: string, text: string) =>
+    app().inject({ method: "POST", url: `/conversations/${id}/messages`, headers, payload: { text } });
+  const inbox = async (headers: { authorization: string }) => (await app().inject({ method: "GET", url: "/conversations", headers })).json();
+
+  it("abre a mesma conversa direta pelos dois lados e recusa apelido inválido", async () => {
+    const { bia, id } = await pair();
+    const back = await app().inject({ method: "POST", url: "/conversations", headers: bia, payload: { nickname: "ana" } });
+    expect(back.json()).toMatchObject({ id, type: "direct", members: [{ nickname: "ana" }], lastMessage: null, unread: 0 });
+
+    const open = (nickname: string) => app().inject({ method: "POST", url: "/conversations", headers: bia, payload: { nickname } });
+    expect((await open("ninguem")).statusCode).toBe(404);
+    expect((await open("bia")).statusCode).toBe(400);
+    expect((await open("tio_valdir")).statusCode).toBe(409);
+  });
+
+  it("só mostra na caixa de entrada conversas com mensagem e conta as não lidas", async () => {
+    const { ana, bia, id } = await pair();
+    expect(await inbox(bia)).toEqual([]);
+
+    const sent = await send(ana, id, "  oi, bia!  \n tudo bem?  ");
+    expect(sent.statusCode).toBe(201);
+    expect(sent.json()).toMatchObject({ conversationId: id, type: "text", text: "oi, bia!\n tudo bem?", sender: { nickname: "ana" } });
+    await send(ana, id, "sumiu?");
+
+    expect(await inbox(ana)).toMatchObject([{ id, unread: 0, lastMessage: { text: "sumiu?" } }]);
+    expect(await inbox(bia)).toMatchObject([{ id, unread: 2, members: [{ nickname: "ana" }] }]);
+
+    // Lido até a primeira: a segunda continua não lida.
+    const read = (messageId: string) =>
+      app().inject({ method: "POST", url: `/conversations/${id}/read`, headers: bia, payload: { messageId } });
+    expect((await read(sent.json().id)).statusCode).toBe(204);
+    expect((await inbox(bia))[0].unread).toBe(1);
+    expect((await read(uuid(999))).statusCode).toBe(404);
+
+    // Responder marca como lido até a própria mensagem.
+    await send(bia, id, "oi!");
+    expect((await inbox(bia))[0].unread).toBe(0);
+    expect((await inbox(ana))[0].unread).toBe(1);
+  });
+
+  it("pagina as mensagens em ordem cronológica", async () => {
+    const { ana, id } = await pair();
+    const ids: string[] = [];
+    for (let i = 1; i <= 5; i++) ids.push((await send(ana, id, `msg ${i}`)).json().id);
+    const page = (q: string) => app().inject({ method: "GET", url: `/conversations/${id}/messages${q}`, headers: ana });
+    expect((await page("?limit=2")).json().map((m: MessageView) => m.text)).toEqual(["msg 4", "msg 5"]);
+    expect((await page(`?limit=2&before=${ids[3]}`)).json().map((m: MessageView) => m.text)).toEqual(["msg 2", "msg 3"]);
+    expect((await page("?limit=999")).statusCode).toBe(400);
+  });
+
+  it("esconde a conversa de quem não é membro e recusa mensagem vazia", async () => {
+    const { ana, id } = await pair();
+    const eve = await auth("eve", "3333");
+    expect((await app().inject({ method: "GET", url: `/conversations/${id}`, headers: eve })).statusCode).toBe(404);
+    expect((await app().inject({ method: "GET", url: `/conversations/${id}/messages`, headers: eve })).statusCode).toBe(404);
+    expect((await send(eve, id, "oi")).statusCode).toBe(404);
+    expect((await send(ana, id, " \n ")).statusCode).toBe(400);
+    expect((await send(ana, id, "x".repeat(1001))).statusCode).toBe(400);
+    expect((await app().inject({ method: "GET", url: "/conversations" })).statusCode).toBe(401);
+  });
+
+  describe("tempo real", () => {
+    async function connect(a: ReturnType<typeof app>, token: string | null) {
+      await a.ready();
+      const ws = await a.injectWS("/ws");
+      const events: unknown[] = [];
+      ws.on("message", (data) => events.push(JSON.parse(String(data))));
+      const closed = new Promise<number>((resolve) => ws.on("close", (code) => resolve(code)));
+      if (token !== null) ws.send(JSON.stringify({ type: "auth", token }));
+      return { ws, events, closed };
+    }
+    const tokenOf = (headers: { authorization: string }) => headers.authorization.slice("Bearer ".length);
+    const until = async (cond: () => boolean) => {
+      for (let i = 0; i < 100 && !cond(); i++) await new Promise((r) => setTimeout(r, 5));
+      expect(cond()).toBe(true);
+    };
+
+    it("avisa os membros da conversa quando chega mensagem", async () => {
+      const { ana, bia, id } = await pair();
+      const eve = await auth("eve", "3333");
+      const a = app();
+      const toBia = await connect(a, tokenOf(bia));
+      const toEve = await connect(a, tokenOf(eve));
+      await until(() => toBia.events.length === 1 && toEve.events.length === 1);
+      expect(toBia.events[0]).toEqual({ type: "ready" });
+
+      const sent = (await send(ana, id, "chegou?")).json();
+      await until(() => toBia.events.length === 2);
+      expect(toBia.events[1]).toEqual({ type: "message", message: sent });
+      expect(toEve.events).toHaveLength(1);
+
+      toBia.ws.terminate();
+      toEve.ws.terminate();
+      await a.close();
+    });
+
+    it("fecha a conexão com token inválido ou sem token", async () => {
+      const a = app();
+      const bad = await connect(a, "x".repeat(43));
+      expect(await bad.closed).toBe(WS_CLOSE.badSession);
+      const silent = await connect(a, null);
+      expect(await silent.closed).toBe(WS_CLOSE.noAuth);
+      expect(hub.count("u-dono")).toBe(0);
+      await a.close();
+    });
+
+    it("o hub manda só para conexões abertas e esquece as removidas", () => {
+      const h = new Hub();
+      const got: string[] = [];
+      const open = { readyState: 1, send: (d: string) => got.push(`a:${d}`) };
+      const closing = { readyState: 2, send: (d: string) => got.push(`b:${d}`) };
+      const removeOpen = h.add("u1", open);
+      h.add("u1", closing);
+      h.send(["u1", "u1", "u2"], { type: "ready" });
+      expect(got).toEqual(['a:{"type":"ready"}']);
+      removeOpen();
+      expect(h.count("u1")).toBe(1);
+    });
   });
 });
 
