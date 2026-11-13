@@ -36,7 +36,8 @@ services:
       interval: 10s
       timeout: 3s
       retries: 3
-      start_period: 30m
+      # Download inicial dos modelos pode demorar em conexões lentas.
+      start_period: 3h
     restart: unless-stopped
 
   api:
