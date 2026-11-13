@@ -9,6 +9,13 @@ export interface ViewPayload {
 /** O vídeo do feed tem `loop`, então `ended` nunca dispara: a volta ao início marca o replay. */
 const LOOP_FROM = 0.8;
 const LOOP_TO = 0.2;
+/** Iguais aos da api (affinity.ts): abaixo disso, sem replay, é pulo rápido. */
+const SKIP_MS = 2000;
+const SKIP_PCT = 0.15;
+const COMPLETED_PCT = 0.9;
+/** Limites do schema da api. */
+const MAX_WATCHED_MS = 3_600_000;
+const MAX_REPLAYS = 100;
 
 /**
  * Mede uma passagem de um vídeo pelo feed: tempo tocando (só com a aba visível), quanto da
@@ -56,11 +63,21 @@ export class ViewTracker {
     this.lastPct = pct;
   }
 
-  /** Encerra a medição; null quando não há o que mandar (nunca começou ou já foi mandada). */
-  finish(): ViewPayload | null {
+  /**
+   * Encerra a medição; null quando não há o que mandar (nunca começou ou já foi mandada).
+   * Com canSkip false (a pessoa saiu do feed ou escondeu a aba, não rolou para o próximo), uma
+   * visualização curta não vira pulo rápido: é descartada.
+   */
+  finish({ canSkip }: { canSkip: boolean }): ViewPayload | null {
     if (this.done) return null;
     this.pause();
     this.done = true;
-    return { watchedMs: Math.round(this.watchedMs), watchPct: this.maxPct, replays: this.replays };
+    const view = {
+      watchedMs: Math.min(MAX_WATCHED_MS, Math.round(this.watchedMs)),
+      watchPct: this.maxPct,
+      replays: Math.min(MAX_REPLAYS, this.replays),
+    };
+    const short = view.replays === 0 && view.watchPct < COMPLETED_PCT && (view.watchedMs < SKIP_MS || view.watchPct < SKIP_PCT);
+    return short && !canSkip ? null : view;
   }
 }

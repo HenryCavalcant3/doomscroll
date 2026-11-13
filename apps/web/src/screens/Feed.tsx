@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import { api, apiUrl, type Comment, type FeedVideo } from "../api";
 import { Avatar } from "../components/Avatar";
 import { appendPage, initialFeed, needsMore, patchVideo, type FeedState } from "../feedQueue";
@@ -129,6 +129,12 @@ function FeedItem({ index, video, active, mounted, muted, onUnmute, onComments, 
   const [paused, setPaused] = useState(false);
   const [progress, setProgress] = useState(0);
   const [tracker] = useState(() => new ViewTracker());
+  // Atualizado antes da limpeza do efeito abaixo: false lá quer dizer que a pessoa rolou para outro
+  // vídeo; true, que a tela do feed fechou com este vídeo ativo.
+  const activeNow = useRef(active);
+  useLayoutEffect(() => {
+    activeNow.current = active;
+  }, [active]);
 
   // Sinais para a recomendação: uma medição por vez que o vídeo fica ativo, mandada quando ele
   // deixa de ser o ativo, quando a tela do feed fecha ou quando a aba é escondida.
@@ -136,15 +142,16 @@ function FeedItem({ index, video, active, mounted, muted, onUnmute, onComments, 
     if (!active) return;
     tracker.start();
     if (ref.current && !ref.current.paused && !document.hidden) tracker.play();
-    const send = () => {
-      const view = tracker.finish();
+    // Só rolar para o próximo vídeo conta como pulo rápido.
+    const send = (canSkip: boolean) => {
+      const view = tracker.finish({ canSkip });
       if (view) api.view(video.id, view).catch(() => {});
     };
-    const onVisibility = () => document.hidden && send();
+    const onVisibility = () => document.hidden && send(false);
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
       document.removeEventListener("visibilitychange", onVisibility);
-      send();
+      send(!activeNow.current);
     };
   }, [active, tracker, video.id]);
 
