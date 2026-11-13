@@ -31,4 +31,16 @@ for model in ${LLM_MODEL:-} ${EMBED_MODEL:-}; do
 done
 
 [ "$ok" = 1 ] && touch "$READY" && echo "[ollama] modelos prontos."
+
+# Aquece o LLM: na primeira vez depois de subir, carregar o modelo e fazer a primeira geração na GPU
+# leva perto de um minuto, e sem isso quem manda a primeira mensagem para uma persona espera esse tempo.
+# Só carregar não basta: a primeira geração também é lenta, então manda um prompt do tamanho do chat.
+if [ "$ok" = 1 ] && [ -n "${LLM_MODEL:-}" ]; then
+  (
+    prompt="Responda só com a palavra ok."
+    i=0
+    while [ $i -lt 40 ]; do prompt="Uma rede social de vídeos curtos, com personas que comentam e conversam. $prompt"; i=$((i + 1)); done
+    ollama run "$LLM_MODEL" "$prompt" </dev/null >/dev/null 2>&1 && echo "[ollama] $LLM_MODEL aquecido."
+  ) &
+fi
 wait "$pid"
