@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Message } from "./api";
-import { applyReactions, conversationTitle, groupReactions, mergeMessages, shortTime } from "./chat";
+import { applyReactions, conversationTitle, groupReactions, mergeMessages, nextPersonaReply, shortTime } from "./chat";
 
 const msg = (id: string, createdAt: string, text = id): Message => ({
   id,
@@ -62,5 +62,25 @@ describe("reações", () => {
       { emoji: "😂", count: 2, mine: false, who: ["bia", "eve"] },
       { emoji: "🔥", count: 1, mine: true, who: ["ana"] },
     ]);
+  });
+});
+
+describe("resposta da persona em andamento", () => {
+  const c = "c1";
+  const msg = (nickname: string, conversationId = c) =>
+    ({ id: "m", conversationId, type: "text", text: "oi", video: null, reactions: [], createdAt: "", sender: { nickname, avatarUrl: null, isAi: true } }) as Message;
+
+  it("digitando, texto parcial e a mensagem gravada que fecha", () => {
+    let s = nextPersonaReply(null, { type: "typing", conversationId: c, nickname: "rato" }, c);
+    expect(s).toEqual({ nickname: "rato", text: null, failed: false });
+    s = nextPersonaReply(s, { type: "draft", conversationId: c, nickname: "rato", replyId: "r", text: "já vi" }, c);
+    expect(s).toEqual({ nickname: "rato", text: "já vi", failed: false });
+    expect(nextPersonaReply(s, { type: "message", message: msg("ana") }, c)).toBe(s);
+    expect(nextPersonaReply(s, { type: "message", message: msg("rato") }, c)).toBeNull();
+  });
+
+  it("ignora outras conversas e marca a falha", () => {
+    expect(nextPersonaReply(null, { type: "typing", conversationId: "outra", nickname: "rato" }, c)).toBeNull();
+    expect(nextPersonaReply(null, { type: "reply_failed", conversationId: c, nickname: "rato" }, c)).toEqual({ nickname: "rato", text: null, failed: true });
   });
 });

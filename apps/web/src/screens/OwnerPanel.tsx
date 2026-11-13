@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { api, apiUrl, type Topic, type User, type Video } from "../api";
+import { api, apiUrl, type PersonaPanel, type Topic, type User, type Video } from "../api";
+import { Avatar } from "../components/Avatar";
+import { profileHref } from "../router";
 
-type Tab = "fila" | "topicos";
+type Tab = "fila" | "topicos" | "personas";
 
-/** Tela 7 do SPEC (sem wireframe; segue o padrão dos outros). Personas entram no passo 8. */
+/** Tela 7 do SPEC (sem wireframe; segue o padrão dos outros): fila de aprovação, tópicos e personas. */
 export function OwnerPanel({ me }: { me: User }) {
   const [tab, setTab] = useState<Tab>("fila");
 
@@ -26,8 +28,11 @@ export function OwnerPanel({ me }: { me: User }) {
         <button role="tab" aria-selected={tab === "topicos"} onClick={() => setTab("topicos")}>
           Tópicos
         </button>
+        <button role="tab" aria-selected={tab === "personas"} onClick={() => setTab("personas")}>
+          Personas
+        </button>
       </div>
-      {tab === "fila" ? <Queue /> : <Topics />}
+      {tab === "fila" ? <Queue /> : tab === "topicos" ? <Topics /> : <Personas />}
     </main>
   );
 }
@@ -149,6 +154,44 @@ function Topics() {
         </button>
       </form>
       {error && <p className="error" role="alert">{error}</p>}
+    </>
+  );
+}
+
+function Personas() {
+  const { error, call } = useOwnerCall();
+  const [panel, setPanel] = useState<PersonaPanel | null>(null);
+
+  useEffect(() => {
+    call(() => api.owner.personas()).then((p) => p && setPanel(p));
+  }, [call]);
+
+  if (!panel) return error ? <p className="error">{error}</p> : <p className="hint">Carregando…</p>;
+
+  return (
+    <>
+      <p className="hint">
+        Na última hora: {panel.lastHour} de {panel.rate} ações (comentários e mensagens). Acima do limite, os comentários
+        esperam; as respostas no chat continuam, porque alguém está esperando. O limite é o PERSONA_RATE do .env.
+      </p>
+      <ul className="persona-list">
+        {panel.personas.map((p) => (
+          <li key={p.nickname}>
+            <a className="persona-row" href={profileHref(p.nickname)}>
+              <Avatar who={{ nickname: p.nickname, avatarUrl: p.avatarUrl }} size={40} />
+              <span className="persona-text">
+                <span className="persona-name">{p.name}</span>
+                <span className="hint">
+                  @{p.nickname} · atividade {Math.round(p.activity * 100)}%
+                </span>
+              </span>
+              <span className="persona-count" aria-label={`${p.lastHour} ações na última hora`}>
+                {p.lastHour}
+              </span>
+            </a>
+          </li>
+        ))}
+      </ul>
     </>
   );
 }

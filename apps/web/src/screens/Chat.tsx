@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import { api, apiUrl, ApiError, REACTIONS, type Conversation, type Message, type SharedVideo, type User } from "../api";
-import { applyReactions, conversationTitle, groupReactions, mergeMessages, shortTime, useRealtimeEvents } from "../chat";
+import { applyReactions, conversationTitle, groupReactions, mergeMessages, nextPersonaReply, shortTime, useRealtimeEvents, type PersonaReply } from "../chat";
 import { ConversationAvatar } from "../components/ConversationAvatar";
 import { Player } from "../components/Player";
 import { profileHref } from "../router";
@@ -36,6 +36,8 @@ export function ChatScreen({ id, me, onRead }: Props) {
   /** Mensagem com a escolha de reação aberta. */
   const [pickerFor, setPickerFor] = useState<string | null>(null);
   const closePlayer = useCallback(() => setPlaying(null), []);
+  /** Persona escrevendo a resposta (ou que não conseguiu responder). */
+  const [personaReply, setPersonaReply] = useState<PersonaReply>(null);
 
   // A escolha de reação abre embaixo da mensagem: na última, ficaria fora da tela.
   useEffect(() => {
@@ -69,6 +71,7 @@ export function ChatScreen({ id, me, onRead }: Props) {
   }, [refresh]);
 
   useRealtimeEvents((e) => {
+    setPersonaReply((cur) => nextPersonaReply(cur, e, id));
     if (e.type === "ready") refresh(false);
     else if (e.type === "message" && e.message.conversationId === id) {
       setMessages((cur) => mergeMessages(cur, [e.message]));
@@ -104,7 +107,7 @@ export function ChatScreen({ id, me, onRead }: Props) {
     } else if (stick.current) {
       el.scrollTop = el.scrollHeight;
     }
-  }, [messages]);
+  }, [messages, personaReply]);
 
   const onScroll = () => {
     const el = log.current;
@@ -135,6 +138,7 @@ export function ChatScreen({ id, me, onRead }: Props) {
     if (!body || sending) return;
     setSending(true);
     setSendError(null);
+    setPersonaReply((cur) => (cur?.failed ? null : cur));
     api.sendMessage(id, body).then(
       (m) => {
         stick.current = true;
@@ -283,6 +287,14 @@ export function ChatScreen({ id, me, onRead }: Props) {
             </div>
           );
         })}
+        {personaReply && !personaReply.failed && (
+          <div className="msg">
+            <div className={`bubble${personaReply.text ? "" : " typing"}`} aria-live="polite">
+              {personaReply.text ?? <span aria-label={`@${personaReply.nickname} está digitando`}>digitando…</span>}
+            </div>
+          </div>
+        )}
+        {personaReply?.failed && <p className="hint chat-failed">@{personaReply.nickname} não conseguiu responder agora. Tente mandar de novo.</p>}
       </div>
 
       {playing && <Player video={playing} onClose={closePlayer} />}

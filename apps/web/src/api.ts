@@ -128,6 +128,13 @@ export class ApiError extends Error {
 }
 
 /** A api fica atrás do mesmo endereço do web, em /api (nginx em produção, proxy do Vite em dev). */
+export interface PersonaPanel {
+  /** Limite de ações de persona por hora (PERSONA_RATE). */
+  rate: number;
+  lastHour: number;
+  personas: { nickname: string; name: string; avatarUrl: string | null; activity: number; lastHour: number }[];
+}
+
 export const apiUrl = (path: string) => `/api${path}`;
 
 const TOKEN_KEY = "doomscroll.sessao";
@@ -218,5 +225,6 @@ export const api = {
     approve: (id: string) => request<Video>(`/owner/videos/${id}/approve`, { method: "POST" }),
     reject: (id: string) => request<Video>(`/owner/videos/${id}/reject`, { method: "POST" }),
     createTopic: (name: string) => request<Topic>("/owner/topics", { method: "POST", body: { name } }),
+    personas: () => request<PersonaPanel>("/owner/personas"),
   },
 };

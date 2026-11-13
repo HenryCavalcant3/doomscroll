@@ -40,6 +40,26 @@ export function shortTime(iso: string, now = new Date()): string {
   return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
 }
 
+/** Resposta de persona em andamento na conversa: digitando (text null), texto parcial ou falha. */
+export type PersonaReply = { nickname: string; text: string | null; failed: boolean } | null;
+
+/** Atualiza a resposta em andamento com um aviso em tempo real da conversa `conversationId`. */
+export function nextPersonaReply(cur: PersonaReply, e: RealtimeEvent, conversationId: string): PersonaReply {
+  switch (e.type) {
+    case "typing":
+      return e.conversationId === conversationId ? { nickname: e.nickname, text: null, failed: false } : cur;
+    case "draft":
+      return e.conversationId === conversationId ? { nickname: e.nickname, text: e.text, failed: false } : cur;
+    case "reply_failed":
+      return e.conversationId === conversationId ? { nickname: e.nickname, text: null, failed: true } : cur;
+    case "message":
+      // A mensagem gravada da persona substitui o texto parcial.
+      return e.message.conversationId === conversationId && cur && e.message.sender.nickname === cur.nickname ? null : cur;
+    default:
+      return cur;
+  }
+}
+
 export const RealtimeContext = createContext<Realtime | null>(null);
 
 /** Recebe os avisos em tempo real enquanto o componente está na tela. */

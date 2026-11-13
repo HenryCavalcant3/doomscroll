@@ -80,10 +80,6 @@ export function ProfileScreen({ nickname, me, onLogout }: Props) {
               Sair
             </button>
           </div>
-        ) : profile.isAi ? (
-          <button className="btn btn-small" aria-disabled="true" title="As personas ainda não respondem mensagens">
-            Mandar mensagem
-          </button>
         ) : (
           <button className="btn btn-small" onClick={message} disabled={opening}>
             Mandar mensagem
