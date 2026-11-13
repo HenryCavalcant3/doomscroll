@@ -53,6 +53,15 @@ export function buildApp({
 
   if (serveMedia) {
     app.register(fastifyStatic, { root: config.mediaDir, prefix: "/media/", index: false, list: false });
+    // Só os SVG da pasta personas (os JSON não são servidos).
+    app.register(fastifyStatic, {
+      root: config.personasDir,
+      prefix: "/avatars/",
+      index: false,
+      list: false,
+      decorateReply: false,
+      allowedPath: (path) => /^\/[a-z0-9-]+\.svg$/.test(path),
+    });
   }
 
   app.get("/health", async () => ({ status: "ok" }));
@@ -120,7 +129,30 @@ export function buildApp({
     },
   );
 
-  app.get<{ Params: { id: string } }>("/videos/:id", { schema: { params: idParams } }, async (req, reply) => {
+  // Feed (SPEC 5.2). POST porque o cliente manda a lista do que já viu nesta sessão.
+  app.post<{ Body: { exclude?: string[]; limit?: number } }>(
+    "/feed",
+    {
+      schema: {
+        body: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            exclude: { type: "array", maxItems: 1000, items: { type: "string", maxLength: 36 } },
+            limit: { type: "integer", minimum: 1, maximum: 20 },
+          },
+        },
+      },
+    },
+    async (req) => store.feed(req.body.exclude ?? [], req.body.limit ?? 5),
+  );
+
+  app.get<{ Params: { id: string } }>("/videos/:id/comments", { schema: { params: idParams } }, async (req, reply) => {
+    const comments = await store.listComments(req.params.id);
+    return comments ?? reply.code(404).send({ error: "Vídeo não encontrado." });
+  });
+
+  app.get<{ Params: { id: string } }>("/videos/:id",{ schema: { params: idParams } }, async (req, reply) => {
     const video = await store.getVideo(req.params.id);
     return video ?? reply.code(404).send({ error: "Vídeo não encontrado." });
   });
@@ -188,6 +220,7 @@ export function buildApp({
           return reply.code(409).send({ error: "Só vídeos pendentes podem ser aprovados." });
         }
         await queue.send(QUEUES.embed, { videoId: req.params.id });
+        await queue.send(QUEUES.personaComment, { videoId: req.params.id });
         return store.getVideo(req.params.id);
       },
     );

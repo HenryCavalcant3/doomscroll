@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { buildApp, slugify, type JobQueue } from "./app.js";
 import { readConfig } from "./config.js";
 import { hashPin } from "./pin.js";
-import type { ConfirmResult, Store, Topic, VideoStatus, VideoView } from "./store.js";
+import type { CommentView, ConfirmResult, Store, Topic, VideoStatus, VideoView } from "./store.js";
 
 const config = { ...readConfig({}), ollamaUrl: "http://ollama:11434", llmModel: "modelo-teste" };
 
@@ -84,6 +84,24 @@ class MemoryStore implements Store {
   }
   async statusOf(ids: string[]) {
     return new Map(ids.filter((id) => this.videos.has(id)).map((id) => [id, this.videos.get(id)!.status as string]));
+  }
+  comments = new Map<string, CommentView[]>();
+  async feed(exclude: string[], limit: number) {
+    const all = [...this.videos.values()].filter((v) => v.status === "aprovado" && v.videoUrl);
+    let videos = all.filter((v) => !exclude.includes(v.id));
+    const restarted = videos.length === 0 && exclude.length > 0;
+    if (restarted) videos = all;
+    return {
+      videos: videos.slice(0, limit).map((v) => ({ ...v, commentCount: this.comments.get(v.id)?.length ?? 0 })),
+      restarted,
+    };
+  }
+  async listComments(videoId: string) {
+    if (this.videos.get(videoId)?.status !== "aprovado") return null;
+    return this.comments.get(videoId) ?? [];
+  }
+  async videosMissingPersonaComments() {
+    return [];
   }
 }
 
@@ -208,7 +226,7 @@ describe("painel do dono", () => {
     expect((await app().inject({ method: "POST", url: "/owner/login", headers })).statusCode).toBe(204);
   });
 
-  it("aprova um vídeo pendente e enfileira o embedding", async () => {
+  it("aprova um vídeo pendente e enfileira o embedding e o comentário da persona", async () => {
     const id = await store.createVideo("https://youtu.be/z", "youtube");
     store.videos.get(id)!.status = "pendente";
 
@@ -219,6 +237,7 @@ describe("painel do dono", () => {
     expect(res.statusCode).toBe(200);
     expect(res.json().status).toBe("aprovado");
     expect(queue.send).toHaveBeenCalledWith("video.embed", { videoId: id });
+    expect(queue.send).toHaveBeenCalledWith("persona.comment", { videoId: id });
 
     const again = await app().inject({ method: "POST", url: `/owner/videos/${id}/approve`, headers });
     expect(again.statusCode).toBe(409);
@@ -247,6 +266,52 @@ describe("painel do dono", () => {
     expect(res.json().slug).toBe("ciencia-maluca");
     const dup = await app().inject({ method: "POST", url: "/owner/topics", headers, payload: { name: "ciencia maluca" } });
     expect(dup.statusCode).toBe(409);
+  });
+});
+
+describe("feed", () => {
+  async function approved(n: number) {
+    const ids: string[] = [];
+    for (let i = 0; i < n; i++) {
+      const id = await store.createVideo(`https://youtu.be/feed${i}`, "youtube");
+      Object.assign(store.videos.get(id)!, { status: "aprovado", videoUrl: `/media/${id}/video.mp4` });
+      ids.push(id);
+    }
+    return ids;
+  }
+
+  it("entrega só vídeos aprovados com arquivo, sem repetir os já vistos", async () => {
+    const [a, b, c] = await approved(3);
+    await store.createVideo("https://youtu.be/pendente", "youtube");
+    store.videos.get(c!)!.videoUrl = null;
+
+    const res = await app().inject({ method: "POST", url: "/feed", payload: { exclude: [a, "lixo"] } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ videos: [expect.objectContaining({ id: b, commentCount: 0 })], restarted: false });
+  });
+
+  it("recomeça do acervo inteiro quando tudo já foi visto", async () => {
+    const ids = await approved(2);
+    const res = await app().inject({ method: "POST", url: "/feed", payload: { exclude: ids } });
+    expect(res.json().restarted).toBe(true);
+    expect(res.json().videos).toHaveLength(2);
+  });
+
+  it("devolve feed vazio quando não há vídeos aprovados", async () => {
+    const res = await app().inject({ method: "POST", url: "/feed", payload: {} });
+    expect(res.json()).toEqual({ videos: [], restarted: false });
+  });
+
+  it("lista os comentários de um vídeo aprovado", async () => {
+    const [id] = await approved(1);
+    store.comments.set(id!, [
+      { id: "c1", text: "Bom dia, sobreviventes!", createdAt: new Date(0).toISOString(), author: { nickname: "tio_valdir", avatarUrl: "/avatars/tio-valdir.svg", isAi: true } },
+    ]);
+    const res = await app().inject({ method: "GET", url: `/videos/${id}/comments` });
+    expect(res.json()).toEqual([expect.objectContaining({ text: "Bom dia, sobreviventes!" })]);
+
+    const pending = await store.createVideo("https://youtu.be/p", "youtube");
+    expect((await app().inject({ method: "GET", url: `/videos/${pending}/comments` })).statusCode).toBe(404);
   });
 });
 

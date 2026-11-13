@@ -31,6 +31,23 @@ export interface VideoView {
   createdAt: string;
 }
 
+export interface FeedVideo extends VideoView {
+  commentCount: number;
+}
+
+export interface FeedPage {
+  videos: FeedVideo[];
+  /** true quando todos os vídeos já tinham sido vistos e o feed recomeçou do acervo inteiro. */
+  restarted: boolean;
+}
+
+export interface CommentView {
+  id: string;
+  text: string;
+  createdAt: string;
+  author: { nickname: string; avatarUrl: string | null; isAi: boolean };
+}
+
 export type ConfirmResult = "ok" | "not_found" | "invalid_state" | "invalid_topics";
 
 /** Acesso ao banco usado pelas rotas. As rotas dependem desta interface, o que facilita os testes. */
@@ -46,7 +63,16 @@ export interface Store {
   reject(id: string, ownerId: string): Promise<boolean>;
   getOwner(): Promise<{ id: string; pinHash: string } | null>;
   statusOf(ids: string[]): Promise<Map<string, string>>;
+  /** Vídeos aprovados e com arquivo, em ordem aleatória, fora os já vistos. A recomendação vem no passo 5. */
+  feed(exclude: string[], limit: number): Promise<FeedPage>;
+  /** null quando o vídeo não existe ou não está aprovado. */
+  listComments(videoId: string): Promise<CommentView[] | null>;
+  /** Vídeos aprovados em que alguma persona ainda não comentou (usado na subida). */
+  videosMissingPersonaComments(): Promise<string[]>;
 }
+
+/** Avatares de usuários e personas são servidos pela api em /avatars. */
+export const avatarUrl = (file: string | null) => (file ? `/avatars/${file}` : null);
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const isUuid = (s: string) => UUID.test(s);
@@ -214,5 +240,56 @@ export class PgStore implements Store {
       [ids],
     );
     return new Map(res.rows.map((r) => [r.id, r.status]));
+  }
+
+  async feed(exclude: string[], limit: number): Promise<FeedPage> {
+    const query = (ids: string[]) =>
+      this.pool.query<VideoRow & { comment_count: number }>(
+        `SELECT * FROM (${VIDEO_SELECT}) v,
+                LATERAL (SELECT count(*)::int AS comment_count FROM comments c WHERE c.video_id = v.id) c
+          WHERE v.status = 'aprovado' AND v.file_path IS NOT NULL AND NOT (v.id = ANY($1::uuid[]))
+          ORDER BY random() LIMIT $2`,
+        [ids, limit],
+      );
+    const ids = exclude.filter(isUuid);
+    let res = await query(ids);
+    const restarted = res.rowCount === 0 && ids.length > 0;
+    if (restarted) res = await query([]);
+    return { videos: res.rows.map((r) => ({ ...toView(r), commentCount: r.comment_count })), restarted };
+  }
+
+  async listComments(videoId: string) {
+    if (!isUuid(videoId)) return null;
+    const video = await this.pool.query("SELECT 1 FROM videos WHERE id = $1 AND status = 'aprovado'", [videoId]);
+    if (!video.rowCount) return null;
+    const res = await this.pool.query<{
+      id: string;
+      text: string;
+      created_at: Date;
+      nickname: string;
+      avatar: string | null;
+      is_ai: boolean;
+    }>(
+      `SELECT c.id, c.text, c.created_at, u.nickname, u.avatar, u.is_ai
+         FROM comments c JOIN users u ON u.id = c.user_id
+        WHERE c.video_id = $1 ORDER BY c.created_at`,
+      [videoId],
+    );
+    return res.rows.map((r) => ({
+      id: r.id,
+      text: r.text,
+      createdAt: r.created_at.toISOString(),
+      author: { nickname: r.nickname, avatarUrl: avatarUrl(r.avatar), isAi: r.is_ai },
+    }));
+  }
+
+  async videosMissingPersonaComments() {
+    const res = await this.pool.query<{ id: string }>(
+      `SELECT v.id FROM videos v
+        WHERE v.status = 'aprovado'
+          AND EXISTS (SELECT 1 FROM personas p
+                       WHERE NOT EXISTS (SELECT 1 FROM comments c WHERE c.video_id = v.id AND c.user_id = p.user_id))`,
+    );
+    return res.rows.map((r) => r.id);
   }
 }
