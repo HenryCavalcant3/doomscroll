@@ -8,9 +8,15 @@ export const QUEUES = {
   suggest: "video.suggest",
   embed: "video.embed",
   personaComment: "persona.comment",
+  /** Atualiza o resumo que a persona guarda de um contato (persona_memory). */
+  personaMemory: "persona.memory",
 } as const;
 
 export type QueueName = (typeof QUEUES)[keyof typeof QUEUES];
+
+/** Filas do pipeline de vídeo (jobs { videoId }). */
+export const VIDEO_QUEUES = [QUEUES.download, QUEUES.convert, QUEUES.transcribe, QUEUES.suggest, QUEUES.embed, QUEUES.personaComment] as const;
+export type VideoQueue = (typeof VIDEO_QUEUES)[number];
 
 export const QUEUE_OPTIONS = {
   retryLimit: 2,

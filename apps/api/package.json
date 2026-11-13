@@ -7,7 +7,8 @@
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "avaliar": "tsx src/avaliar-chat.ts"
   },
   "dependencies": {
     "@fastify/static": "^10.1.10",

@@ -15,6 +15,8 @@ import {
   type SharedVideo,
 } from "./chat.js";
 import { Hub, WS_CLOSE } from "./realtime.js";
+import { MEMORY_EVERY, PersonaReplier, type ChatGenerator, type PersonaChatStore } from "./personaChat.js";
+import { QUEUES } from "./queues.js";
 import { clampScore, COMMENT_DELTA, LIKE_DELTA, SHARE_DELTA, viewDelta, type ViewInput } from "./affinity.js";
 import { hashPin } from "./pin.js";
 import { pickFeed } from "./recommend.js";
@@ -298,7 +300,6 @@ class MemoryChatStore implements ChatStore {
     const other = this.users().get(nickname)?.user;
     if (!other) return "not_found";
     if (other.id === userId) return "self";
-    if (other.isAi) return "persona";
     const key = directKey(userId, other.id);
     const c = this.conversations.find((x) => x.key === key) ?? this.create("direct", null, key, [userId, other.id]);
     return this.view(userId, c.id);
@@ -814,7 +815,7 @@ describe("chat", () => {
     const open = (nickname: string) => app().inject({ method: "POST", url: "/conversations", headers: bia, payload: { nickname } });
     expect((await open("ninguem")).statusCode).toBe(404);
     expect((await open("bia")).statusCode).toBe(400);
-    expect((await open("tio_valdir")).statusCode).toBe(409);
+    expect((await open("tio_valdir")).statusCode).toBe(200);
   });
 
   it("só mostra na caixa de entrada conversas com mensagem e conta as não lidas", async () => {
@@ -1009,5 +1010,142 @@ describe("chat", () => {
 describe("slugify", () => {
   it("normaliza acentos e espaços", () => {
     expect(slugify("  Política & Notícias ")).toBe("politica-noticias");
+  });
+});
+
+/** Personas do chat em memória: a conversa é direta, o outro membro é persona e quem manda é gente. */
+class MemoryPersonaChatStore implements PersonaChatStore {
+  counts = new Map<string, number>();
+  summaries = new Map<string, string>();
+  constructor(private readonly chatStore: MemoryChatStore, private readonly users: () => MemoryStore["users"]) {}
+  async directPersona(conversationId: string, senderId: string) {
+    const c = this.chatStore.conversations.find((x) => x.id === conversationId);
+    if (c?.type !== "direct") return null;
+    const all = [...this.users().values()].map((u) => u.user);
+    if (all.find((u) => u.id === senderId)?.isAi !== false) return null;
+    const otherId = this.chatStore.members.find((m) => m.conversationId === conversationId && m.userId !== senderId)?.userId;
+    const other = all.find((u) => u.id === otherId);
+    if (!other?.isAi) return null;
+    return { id: other.id, nickname: other.nickname, name: "Tio Valdir", bio: "Tio do bunker.", tone: "Animado.", examples: ["Bom dia!", "KKKK", "Que coisa linda"] };
+  }
+  async memory(personaId: string, contactId: string) {
+    return this.summaries.get(`${personaId}:${contactId}`) ?? "";
+  }
+  async countMessage(personaId: string, contactId: string, every: number) {
+    const key = `${personaId}:${contactId}`;
+    const n = (this.counts.get(key) ?? 0) + 1;
+    this.counts.set(key, n >= every ? 0 : n);
+    return n >= every;
+  }
+  async overview() {
+    return [{ nickname: "tio_valdir", name: "Tio Valdir", avatarUrl: "/avatars/tio-valdir.svg", activity: 0.9, lastHour: 2 }];
+  }
+}
+
+describe("chat com personas", () => {
+  let personaStore: MemoryPersonaChatStore;
+  let replier: PersonaReplier;
+  let generate: ReturnType<typeof vi.fn<ChatGenerator>>;
+  let events: { to: string; event: { type: string; [k: string]: unknown } }[];
+
+  const personaApp = () => buildApp({ config, store, chat, hub, queue, replier, personas: personaStore, wsAuthMs: 200 });
+  const listen = (userId: string) =>
+    hub.add(userId, { readyState: 1, send: (d: string) => events.push({ to: userId, event: JSON.parse(d) }) });
+
+  beforeEach(() => {
+    personaStore = new MemoryPersonaChatStore(chat, () => store.users);
+    events = [];
+    generate = vi.fn<ChatGenerator>(async (_messages, _stop, onText) => {
+      onText("Tio Valdir: Bom dia");
+      onText("Tio Valdir: Bom dia, meu querido!");
+      return "Tio Valdir: Bom dia, meu querido!";
+    });
+    replier = new PersonaReplier({ chat, personas: personaStore, hub, queue, generate, debounceMs: 10, draftMs: 0 });
+  });
+
+  async function openWithTio() {
+    const ana = await auth("ana", "1111");
+    const a = personaApp();
+    const res = await a.inject({ method: "POST", url: "/conversations", headers: ana, payload: { nickname: "tio_valdir" } });
+    expect(res.statusCode).toBe(200);
+    const say = (text: string) => a.inject({ method: "POST", url: `/conversations/${res.json().id}/messages`, headers: ana, payload: { text } });
+    return { ana, a, id: res.json().id as string, say };
+  }
+
+  it("a persona responde a conversa direta, com o texto chegando aos poucos", async () => {
+    const { a, ana, id, say } = await openWithTio();
+    listen(store.users.get("ana")!.user.id);
+    expect((await say("oi tio, tudo bem?")).statusCode).toBe(201);
+    await replier.idle();
+
+    const messages = (await a.inject({ method: "GET", url: `/conversations/${id}/messages`, headers: ana })).json();
+    expect(messages.map((m: { text: string; sender: AuthorView }) => [m.sender.nickname, m.text])).toEqual([
+      ["ana", "oi tio, tudo bem?"],
+      ["tio_valdir", "Bom dia, meu querido!"],
+    ]);
+    const types = events.map((e) => e.event.type);
+    expect(types).toEqual(["message", "typing", "draft", "draft", "message"]);
+    expect(events[2]!.event).toMatchObject({ type: "draft", conversationId: id, nickname: "tio_valdir", text: "Bom dia" });
+
+    const [prompt, stop] = generate.mock.calls[0]!;
+    expect(prompt[0]!.content).toContain("Você é Tio Valdir");
+    expect(prompt[0]!.content).toContain("@ana");
+    expect(prompt.at(-1)).toEqual({ role: "user", content: "oi tio, tudo bem?" });
+    expect(stop).toContain("ana:");
+  });
+
+  it("junta mensagens mandadas em sequência numa resposta só", async () => {
+    const { say } = await openWithTio();
+    await say("tio");
+    await say("viu o jogo ontem?");
+    await replier.idle();
+    expect(generate).toHaveBeenCalledTimes(1);
+    expect(generate.mock.calls[0]![0].slice(-2).map((m) => m.content)).toEqual(["tio", "viu o jogo ontem?"]);
+  });
+
+  it("não responde em grupo, mesmo com a persona no Grupo do Bunker", async () => {
+    const ana = await auth("ana", "1111");
+    await chat.ensureBunker();
+    const bunkerId = chat.conversations.find((c) => c.bunker)!.id;
+    const res = await personaApp().inject({ method: "POST", url: `/conversations/${bunkerId}/messages`, headers: ana, payload: { text: "bom dia" } });
+    expect(res.statusCode).toBe(201);
+    await replier.idle();
+    expect(generate).not.toHaveBeenCalled();
+  });
+
+  it("gera de novo quando a resposta só repete a mensagem", async () => {
+    generate.mockResolvedValueOnce("oi tio, tudo bem?");
+    const { a, ana, id, say } = await openWithTio();
+    await say("oi tio, tudo bem?");
+    await replier.idle();
+    expect(generate).toHaveBeenCalledTimes(2);
+    const messages = (await a.inject({ method: "GET", url: `/conversations/${id}/messages`, headers: ana })).json();
+    expect(messages.at(-1).text).toBe("Bom dia, meu querido!");
+  });
+
+  it("avisa quando a persona não consegue responder", async () => {
+    generate.mockRejectedValueOnce(new Error("ollama fora"));
+    const { a, ana, id, say } = await openWithTio();
+    listen(store.users.get("ana")!.user.id);
+    await say("oi");
+    await replier.idle();
+    expect(events.at(-1)!.event).toEqual({ type: "reply_failed", conversationId: id, nickname: "tio_valdir" });
+    expect((await a.inject({ method: "GET", url: `/conversations/${id}/messages`, headers: ana })).json()).toHaveLength(1);
+  });
+
+  it("pede o resumo da memória a cada N mensagens trocadas", async () => {
+    const { say } = await openWithTio();
+    for (let i = 0; i < MEMORY_EVERY / 2; i++) {
+      await say(`mensagem ${i}`);
+      await replier.idle();
+    }
+    const memoryJobs = queue.send.mock.calls.filter(([name]) => name === QUEUES.personaMemory);
+    expect(memoryJobs).toEqual([[QUEUES.personaMemory, { personaId: "u-tio", contactId: store.users.get("ana")!.user.id }]]);
+  });
+
+  it("o dono vê as ações das personas na última hora", async () => {
+    const res = await personaApp().inject({ method: "GET", url: "/owner/personas", headers: await auth() });
+    expect(res.json()).toMatchObject({ rate: 30, lastHour: 2, personas: [{ nickname: "tio_valdir", lastHour: 2 }] });
+    expect((await personaApp().inject({ method: "GET", url: "/owner/personas", headers: await auth("ana", "1111") })).statusCode).toBe(403);
   });
 });

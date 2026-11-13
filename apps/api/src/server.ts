@@ -11,6 +11,9 @@ import { loadPersonas, syncPersonas } from "./personas.js";
 import { ensureQueues, QUEUES } from "./queues.js";
 import { PgStore } from "./store.js";
 import { PgChatStore } from "./chat.js";
+import { chatStream } from "./ollama.js";
+import { CHAT_OPTIONS, PersonaReplier, PgPersonaChatStore } from "./personaChat.js";
+import { Hub } from "./realtime.js";
 
 const config = readConfig();
 const pool = new pg.Pool({ connectionString: config.databaseUrl });
@@ -39,10 +42,36 @@ const missing = await store.videosMissingPersonaComments();
 for (const videoId of missing) await boss.send(QUEUES.personaComment, { videoId });
 if (missing.length) console.log(`[api] comentários de persona enfileirados para ${missing.length} vídeo(s)`);
 
+const hub = new Hub();
+const personaStore = new PgPersonaChatStore(pool);
+const replier = new PersonaReplier({
+  chat,
+  personas: personaStore,
+  hub,
+  queue: boss,
+  // O stop impede o modelo de escrever a fala do outro lado.
+  generate: (messages, stop, onText, signal) =>
+    chatStream(
+      {
+        baseUrl: config.ollamaUrl,
+        model: config.llmModel,
+        messages,
+        options: { ...CHAT_OPTIONS, stop },
+        timeoutMs: config.llmTimeoutMs,
+        signal,
+      },
+      onText,
+    ),
+  log: (msg) => console.log(`[api] ${msg}`),
+});
+
 const app = buildApp({
   config,
   store,
   chat,
+  hub,
+  replier,
+  personas: personaStore,
   queue: boss,
   logger: true,
   serveMedia: true,

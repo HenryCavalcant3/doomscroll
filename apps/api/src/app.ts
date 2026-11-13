@@ -5,6 +5,7 @@ import { GROUP_MAX_MEMBERS, MESSAGES_PAGE, REACTIONS, type ChatStore, type Messa
 import { bearerToken, hashToken, LoginLimiter, newToken, NEW_PIN, NICKNAME, normalizeNickname } from "./auth.js";
 import type { Config } from "./config.js";
 import { parseVideoLink } from "./links.js";
+import type { PersonaChatStore, PersonaReplier } from "./personaChat.js";
 import { generate, OllamaError } from "./ollama.js";
 import { hashPin, verifyPin } from "./pin.js";
 import { QUEUES } from "./queues.js";
@@ -41,6 +42,9 @@ export interface AppDeps {
   pingMs?: number;
   /** Tempo para o cliente mandar o token depois de conectar. */
   wsAuthMs?: number;
+  /** Respostas das personas no chat (sem ele, as personas não respondem). */
+  replier?: PersonaReplier;
+  personas?: PersonaChatStore;
 }
 
 const LOGIN_WINDOW_MS = 15 * 60_000;
@@ -77,8 +81,11 @@ export function buildApp({
   now = Date.now,
   pingMs = 30_000,
   wsAuthMs = 10_000,
+  replier,
+  personas,
 }: AppDeps) {
   const app = Fastify({ logger });
+  app.addHook("onClose", async () => replier?.close());
   // Limite por apelido, não por IP: atrás do Docker todos os celulares chegam com o mesmo IP do gateway.
   const failures = new LoginLimiter(5, LOGIN_WINDOW_MS, now);
 
@@ -408,8 +415,6 @@ export function buildApp({
             return reply.code(404).send({ error: "Ninguém com esse apelido no bunker." });
           case "self":
             return reply.code(400).send({ error: "Você não pode conversar com você mesmo." });
-          case "persona":
-            return reply.code(409).send({ error: "As personas ainda não respondem mensagens." });
           default:
             return result;
         }
@@ -478,6 +483,8 @@ export function buildApp({
         if (sent.firstShare && videoId) await store.recordShare(req.user.id, videoId);
         // Avisa todos os membros, inclusive quem mandou (outras abas e aparelhos).
         hub.send(sent.memberIds, { type: "message", message: sent.message });
+        // Conversa direta com persona: ela responde em seguida, sem segurar esta resposta.
+        replier?.onMessage(sent.message, req.user.id);
         return reply.code(201).send(sent.message);
       },
     );
@@ -620,6 +627,12 @@ export function buildApp({
           return store.getVideo(req.params.id);
         },
       );
+
+      // Personas: ações na última hora e o limite PERSONA_RATE.
+      owner.get("/owner/personas", async () => {
+        const list = personas ? await personas.overview() : [];
+        return { rate: config.personaRate, lastHour: list.reduce((s, p) => s + p.lastHour, 0), personas: list };
+      });
 
       owner.post<{ Body: { name: string } }>(
         "/owner/topics",

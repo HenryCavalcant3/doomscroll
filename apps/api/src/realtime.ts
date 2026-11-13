@@ -6,7 +6,13 @@ export type RealtimeEvent =
   | { type: "message"; message: MessageView }
   | { type: "reaction"; conversationId: string; messageId: string; reactions: ReactionView[] }
   /** Conversa nova (grupo) em que a pessoa entrou. */
-  | { type: "conversation"; conversationId: string };
+  | { type: "conversation"; conversationId: string }
+  /** A persona começou a escrever. */
+  | { type: "typing"; conversationId: string; nickname: string }
+  /** Texto parcial da resposta da persona (sempre o texto inteiro até agora). */
+  | { type: "draft"; conversationId: string; nickname: string; replyId: string; text: string }
+  /** A persona não conseguiu responder (Ollama fora, por exemplo). */
+  | { type: "reply_failed"; conversationId: string; nickname: string };
 
 /** Códigos de fechamento: o cliente não tenta reconectar com sessão inválida. */
 export const WS_CLOSE = { noAuth: 4000, badSession: 4001 } as const;

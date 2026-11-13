@@ -50,7 +50,7 @@ export interface ConversationView {
 
 export type MessageContent = { text: string } | { videoId: string };
 
-export type OpenDirectResult = ConversationView | "not_found" | "self" | "persona";
+export type OpenDirectResult = ConversationView | "not_found" | "self";
 export type CreateGroupResult = ConversationView | { unknown: string[] } | "persona";
 export type SendResult =
   | { message: MessageView; memberIds: string[]; firstShare: boolean }
@@ -197,15 +197,13 @@ export class PgChatStore implements ChatStore {
   }
 
   async openDirect(userId: string, nickname: string): Promise<OpenDirectResult> {
-    const other = await this.pool.query<{ id: string; is_ai: boolean }>(
-      "SELECT id, is_ai FROM users WHERE nickname = $1",
+    const other = await this.pool.query<{ id: string }>(
+      "SELECT id FROM users WHERE nickname = $1",
       [nickname],
     );
     const row = other.rows[0];
     if (!row) return "not_found";
     if (row.id === userId) return "self";
-    // As personas só entram no chat no passo 8.
-    if (row.is_ai) return "persona";
     const key = directKey(userId, row.id);
     const id = await this.tx(async (c) => {
       // ON CONFLICT: duas pessoas abrindo a mesma conversa ao mesmo tempo ficam com uma só.
