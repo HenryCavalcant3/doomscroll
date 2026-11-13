@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { buildApp, slugify, type JobQueue } from "./app.js";
 import { readConfig } from "./config.js";
+import { clampScore, COMMENT_DELTA, LIKE_DELTA, viewDelta, type ViewInput } from "./affinity.js";
 import { hashPin } from "./pin.js";
+import { pickFeed } from "./recommend.js";
 import type { CommentView, ConfirmResult, FeedVideo, Store, Topic, UserView, VideoStatus, VideoView } from "./store.js";
 
 const config = { ...readConfig({}), ollamaUrl: "http://ollama:11434", llmModel: "modelo-teste" };
@@ -22,7 +24,20 @@ class MemoryStore implements Store {
   sessions = new Map<string, string>();
   comments = new Map<string, CommentView[]>();
   likes = new Map<string, Set<string>>();
+  views: { userId: string; videoId: string; at: number; skipped: boolean }[] = [];
+  /** Chave `usuário:tópico`. */
+  affinity = new Map<string, number>();
+  now = () => 0;
+  rng = () => 0.5;
   private seq = 0;
+
+  private bump(userId: string, videoId: string, delta: number) {
+    for (const t of this.videos.get(videoId)!.topics) {
+      const id = this.topics.find((x) => x.slug === t.slug)!.id;
+      const key = `${userId}:${id}`;
+      this.affinity.set(key, clampScore((this.affinity.get(key) ?? 0) + delta));
+    }
+  }
 
   async listTopics() {
     return this.topics;
@@ -123,10 +138,27 @@ class MemoryStore implements Store {
   }
   async feed(userId: string, exclude: string[], limit: number) {
     const all = [...this.videos.values()].filter((v) => v.status === "aprovado" && v.videoUrl);
-    let videos = all.filter((v) => !exclude.includes(v.id));
-    const restarted = videos.length === 0 && exclude.length > 0;
-    if (restarted) videos = all;
-    return { videos: videos.slice(0, limit).map((v) => this.toFeed(v, userId)), restarted };
+    const cands = all.map((v) => {
+      const seen = this.views.filter((e) => e.userId === userId && e.videoId === v.id).map((e) => e.at);
+      return {
+        id: v.id,
+        topicIds: v.topics.map((t) => this.topics.find((x) => x.slug === t.slug)!.id),
+        liked: this.likes.get(v.id)?.has(userId) ?? false,
+        lastViewedAt: seen.length ? Math.max(...seen) : null,
+      };
+    });
+    const affinity = new Map(
+      [...this.affinity].filter(([k]) => k.startsWith(`${userId}:`)).map(([k, v]) => [Number(k.split(":")[1]), v]),
+    );
+    const pick = pickFeed(cands, affinity, exclude, limit, this.now(), this.rng);
+    return { videos: pick.ids.map((id) => this.toFeed(this.videos.get(id)!, userId)), restarted: pick.restarted };
+  }
+  async recordView(userId: string, videoId: string, view: ViewInput) {
+    if (this.videos.get(videoId)?.status !== "aprovado") return false;
+    const { skipped, delta } = viewDelta(view);
+    this.views.push({ userId, videoId, at: this.now(), skipped });
+    if (delta) this.bump(userId, videoId, delta);
+    return true;
   }
   async listComments(videoId: string) {
     if (this.videos.get(videoId)?.status !== "aprovado") return null;
@@ -136,12 +168,15 @@ class MemoryStore implements Store {
     if (this.videos.get(videoId)?.status !== "aprovado") return null;
     const user = [...this.users.values()].find((u) => u.user.id === userId)!.user;
     const comment = { id: `c${++this.seq}`, text, createdAt: new Date(0).toISOString(), author: { nickname: user.nickname, avatarUrl: null, isAi: false } };
-    this.comments.set(videoId, [...(this.comments.get(videoId) ?? []), comment]);
+    const list = [...(this.comments.get(videoId) ?? []), comment];
+    this.comments.set(videoId, list);
+    if (list.filter((c) => c.author.nickname === user.nickname).length === 1) this.bump(userId, videoId, COMMENT_DELTA);
     return comment;
   }
   async setLike(userId: string, videoId: string, liked: boolean) {
     if (this.videos.get(videoId)?.status !== "aprovado") return null;
     const set = this.likes.get(videoId) ?? new Set<string>();
+    if (set.has(userId) !== liked) this.bump(userId, videoId, liked ? LIKE_DELTA : -LIKE_DELTA);
     if (liked) set.add(userId);
     else set.delete(userId);
     this.likes.set(videoId, set);
@@ -176,6 +211,7 @@ beforeEach(async () => {
   queue = { send: vi.fn(async () => "job-1") };
   removeMedia = vi.fn(async () => {});
   clock = 0;
+  store.now = () => clock;
 });
 
 const app = (fetchImpl?: typeof fetch) => buildApp({ config, store, queue, fetchImpl, removeMedia, now: () => clock });
@@ -468,6 +504,71 @@ describe("feed", () => {
     const feed = await app().inject({ method: "POST", url: "/feed", headers, payload: {} });
     expect(feed.json().videos[0]).toMatchObject({ liked: true, likeCount: 1 });
     expect((await app().inject({ method: "DELETE", url: `/videos/${id}/like`, headers })).json()).toEqual({ liked: false, likeCount: 0 });
+  });
+});
+
+describe("visualizações e recomendação", () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  async function approvedWith(slug: string) {
+    const id = await store.createVideo(`https://youtu.be/${slug}${store.videos.size}`, "youtube", "u-dono");
+    Object.assign(store.videos.get(id)!, {
+      status: "aprovado",
+      videoUrl: `/media/${id}/video.mp4`,
+      topics: [{ slug, name: slug, source: "user" }],
+    });
+    return id;
+  }
+  const view = (id: string, headers: Record<string, string>, payload: object) =>
+    app().inject({ method: "POST", url: `/videos/${id}/view`, headers, payload });
+
+  it("grava a visualização e recusa valores fora da faixa", async () => {
+    const headers = await auth("morador", "1111");
+    const id = await approvedWith("humor");
+    expect((await view(id, headers, { watchedMs: 900, watchPct: 0.05, replays: 0 })).statusCode).toBe(204);
+    expect(store.views).toEqual([expect.objectContaining({ userId: "u-morador", videoId: id, skipped: true })]);
+    expect(store.affinity.get("u-morador:1")).toBe(-1);
+
+    expect((await view(id, headers, { watchedMs: 900, watchPct: 2, replays: 0 })).statusCode).toBe(400);
+    expect((await view(id, headers, { watchedMs: -1, watchPct: 0.5, replays: 0 })).statusCode).toBe(400);
+    expect((await view(id, headers, { watchedMs: 900, watchPct: 0.5 })).statusCode).toBe(400);
+    const pending = await store.createVideo("https://youtu.be/p", "youtube");
+    expect((await view(pending, headers, { watchedMs: 1, watchPct: 0, replays: 0 })).statusCode).toBe(404);
+    expect((await app().inject({ method: "POST", url: `/videos/${id}/view`, payload: { watchedMs: 1, watchPct: 0, replays: 0 } })).statusCode).toBe(401);
+  });
+
+  it("curtida, descurtida e comentário mexem na afinidade do tópico", async () => {
+    const headers = await auth("morador", "1111");
+    const id = await approvedWith("animais");
+    await app().inject({ method: "PUT", url: `/videos/${id}/like`, headers });
+    await app().inject({ method: "PUT", url: `/videos/${id}/like`, headers });
+    expect(store.affinity.get("u-morador:2")).toBe(2);
+    await app().inject({ method: "DELETE", url: `/videos/${id}/like`, headers });
+    expect(store.affinity.get("u-morador:2")).toBe(0);
+    for (const text of ["um", "dois"]) await app().inject({ method: "POST", url: `/videos/${id}/comments`, headers, payload: { text } });
+    expect(store.affinity.get("u-morador:2")).toBe(1);
+  });
+
+  it("deixa o vídeo visto em quarentena por 3 dias", async () => {
+    const headers = await auth("morador", "1111");
+    const a = await approvedWith("humor");
+    const b = await approvedWith("dicas");
+    await view(a, headers, { watchedMs: 10_000, watchPct: 1, replays: 0 });
+    const feed = () => app().inject({ method: "POST", url: "/feed", headers, payload: {} });
+    expect((await feed()).json().videos.map((v: FeedVideo) => v.id)).toEqual([b]);
+    clock += 3 * DAY;
+    expect((await feed()).json().videos.map((v: FeedVideo) => v.id).sort()).toEqual([a, b].sort());
+  });
+
+  it("com tudo em quarentena, volta primeiro o que foi curtido", async () => {
+    const headers = await auth("morador", "1111");
+    const a = await approvedWith("humor");
+    const b = await approvedWith("dicas");
+    await view(a, headers, { watchedMs: 10_000, watchPct: 1, replays: 0 });
+    clock += 1000;
+    await view(b, headers, { watchedMs: 10_000, watchPct: 1, replays: 0 });
+    await app().inject({ method: "PUT", url: `/videos/${b}/like`, headers });
+    const res = await app().inject({ method: "POST", url: "/feed", headers, payload: {} });
+    expect(res.json()).toMatchObject({ restarted: false, videos: [{ id: b }, { id: a }] });
   });
 });
 

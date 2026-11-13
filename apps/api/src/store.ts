@@ -1,4 +1,6 @@
-import type { Pool } from "pg";
+import type { Pool, PoolClient } from "pg";
+import { COMMENT_DELTA, LIKE_DELTA, SCORE_MAX, SCORE_MIN, viewDelta, type ViewInput } from "./affinity.js";
+import { pickFeed, type Candidate, type Rng } from "./recommend.js";
 
 export type VideoStatus = "baixando" | "processando" | "pendente" | "aprovado" | "rejeitado" | "falhou";
 
@@ -94,7 +96,7 @@ export interface Store {
   sessionUser(tokenHash: string): Promise<UserView | null>;
   deleteSession(tokenHash: string): Promise<void>;
   statusOf(ids: string[]): Promise<Map<string, string>>;
-  /** Vídeos aprovados e com arquivo, em ordem aleatória, fora os já vistos. A recomendação vem no passo 5. */
+  /** Vídeos aprovados e com arquivo, escolhidos pela afinidade (recommend.ts), fora os já entregues e os em quarentena. */
   feed(userId: string, exclude: string[], limit: number): Promise<FeedPage>;
   /** null quando o vídeo não existe ou não está aprovado. */
   listComments(videoId: string): Promise<CommentView[] | null>;
@@ -102,6 +104,8 @@ export interface Store {
   addComment(userId: string, videoId: string, text: string): Promise<CommentView | null>;
   /** Curte ou descurte; null quando o vídeo não existe ou não está aprovado. */
   setLike(userId: string, videoId: string, liked: boolean): Promise<{ liked: boolean; likeCount: number } | null>;
+  /** Grava a visualização e ajusta a afinidade; false quando o vídeo não existe ou não está aprovado. */
+  recordView(userId: string, videoId: string, view: ViewInput): Promise<boolean>;
   /** viewerId decide o campo liked dos vídeos curtidos. */
   profile(nickname: string, viewerId: string): Promise<Profile | null>;
   /** Vídeos aprovados em que alguma persona ainda não comentou (usado na subida). */
@@ -222,8 +226,42 @@ const toFeedVideo = (r: FeedRow): FeedVideo => ({
     : null,
 });
 
+interface CandidateRow {
+  id: string;
+  topic_ids: number[];
+  liked: boolean;
+  last_viewed: Date | null;
+}
+
+/** Soma delta na afinidade de quem ($1) com os tópicos do vídeo ($2), dentro da faixa do score. */
+const BUMP_AFFINITY = `
+  INSERT INTO user_topic_affinity (user_id, topic_id, score)
+  SELECT DISTINCT $1::uuid, vt.topic_id, LEAST(GREATEST($3::real, ${SCORE_MIN}), ${SCORE_MAX})
+    FROM video_topics vt WHERE vt.video_id = $2
+  ON CONFLICT (user_id, topic_id) DO UPDATE
+    SET score = LEAST(GREATEST(user_topic_affinity.score + $3::real, ${SCORE_MIN}), ${SCORE_MAX}), updated_at = now()`;
+
 export class PgStore implements Store {
-  constructor(private readonly pool: Pool) {}
+  constructor(
+    private readonly pool: Pool,
+    private readonly rng: Rng = Math.random,
+    private readonly now: () => number = Date.now,
+  ) {}
+
+  private async tx<T>(fn: (c: PoolClient) => Promise<T>): Promise<T> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const out = await fn(client);
+      await client.query("COMMIT");
+      return out;
+    } catch (err) {
+      await client.query("ROLLBACK").catch(() => {});
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
 
   async listTopics() {
     return (await this.pool.query<Topic>("SELECT id, name, slug FROM topics ORDER BY name")).rows;
@@ -368,18 +406,50 @@ export class PgStore implements Store {
   }
 
   async feed(userId: string, exclude: string[], limit: number): Promise<FeedPage> {
-    const query = (ids: string[]) =>
-      this.pool.query<FeedRow>(
-        `${FEED_SELECT}
-          WHERE v.status = 'aprovado' AND v.file_path IS NOT NULL AND NOT (v.id = ANY($2::uuid[]))
-          ORDER BY random() LIMIT $3`,
-        [userId, ids, limit],
+    const [cands, aff] = await Promise.all([
+      this.pool.query<CandidateRow>(
+        `SELECT v.id,
+                COALESCE(array_agg(DISTINCT vt.topic_id) FILTER (WHERE vt.topic_id IS NOT NULL), '{}'::int[]) AS topic_ids,
+                EXISTS (SELECT 1 FROM likes l WHERE l.video_id = v.id AND l.user_id = $1) AS liked,
+                (SELECT max(e.created_at) FROM view_events e WHERE e.video_id = v.id AND e.user_id = $1) AS last_viewed
+           FROM videos v LEFT JOIN video_topics vt ON vt.video_id = v.id
+          WHERE v.status = 'aprovado' AND v.file_path IS NOT NULL
+          GROUP BY v.id`,
+        [userId],
+      ),
+      this.pool.query<{ topic_id: number; score: number }>(
+        "SELECT topic_id, score FROM user_topic_affinity WHERE user_id = $1",
+        [userId],
+      ),
+    ]);
+    const candidates: Candidate[] = cands.rows.map((r) => ({
+      id: r.id,
+      topicIds: r.topic_ids,
+      liked: r.liked,
+      lastViewedAt: r.last_viewed ? r.last_viewed.getTime() : null,
+    }));
+    const affinity = new Map(aff.rows.map((r) => [r.topic_id, r.score]));
+    const pick = pickFeed(candidates, affinity, exclude.filter(isUuid), limit, this.now(), this.rng);
+    if (pick.ids.length === 0) return { videos: [], restarted: pick.restarted };
+    const res = await this.pool.query<FeedRow>(`${FEED_SELECT} WHERE v.id = ANY($2::uuid[])`, [userId, pick.ids]);
+    const byId = new Map(res.rows.map((r) => [r.id, toFeedVideo(r)]));
+    const videos = pick.ids.flatMap((id) => byId.get(id) ?? []);
+    return { videos, restarted: pick.restarted };
+  }
+
+  async recordView(userId: string, videoId: string, view: ViewInput) {
+    if (!isUuid(videoId)) return false;
+    const { skipped, delta } = viewDelta(view);
+    return this.tx(async (c) => {
+      const ins = await c.query(
+        `INSERT INTO view_events (user_id, video_id, watched_ms, watch_pct, replays, skipped)
+         SELECT $1, $2, $3, $4, $5, $6 WHERE EXISTS (SELECT 1 FROM videos WHERE id = $2 AND status = 'aprovado')`,
+        [userId, videoId, view.watchedMs, view.watchPct, view.replays, skipped],
       );
-    const ids = exclude.filter(isUuid);
-    let res = await query(ids);
-    const restarted = res.rowCount === 0 && ids.length > 0;
-    if (restarted) res = await query([]);
-    return { videos: res.rows.map(toFeedVideo), restarted };
+      if (!ins.rowCount) return false;
+      if (delta !== 0) await c.query(BUMP_AFFINITY, [userId, videoId, delta]);
+      return true;
+    });
   }
 
   async addComment(userId: string, videoId: string, text: string) {
@@ -392,19 +462,28 @@ export class PgStore implements Store {
        SELECT ins.id, ins.text, ins.created_at, u.nickname, u.avatar, u.is_ai FROM ins JOIN users u ON u.id = ins.user_id`,
       [videoId, userId, text],
     );
-    return res.rows[0] ? toComment(res.rows[0]) : null;
+    const row = res.rows[0];
+    if (!row) return null;
+    const mine = await this.pool.query<{ n: number }>(
+      "SELECT count(*)::int AS n FROM comments WHERE video_id = $1 AND user_id = $2",
+      [videoId, userId],
+    );
+    if (mine.rows[0]!.n === 1) await this.pool.query(BUMP_AFFINITY, [userId, videoId, COMMENT_DELTA]);
+    return toComment(row);
   }
 
   async setLike(userId: string, videoId: string, liked: boolean) {
     if (!isUuid(videoId)) return null;
     const video = await this.pool.query("SELECT 1 FROM videos WHERE id = $1 AND status = 'aprovado'", [videoId]);
     if (!video.rowCount) return null;
-    await this.pool.query(
+    const changed = await this.pool.query(
       liked
         ? "INSERT INTO likes (user_id, video_id) VALUES ($1, $2) ON CONFLICT DO NOTHING"
         : "DELETE FROM likes WHERE user_id = $1 AND video_id = $2",
       [userId, videoId],
     );
+    // Só muda a afinidade quando a curtida mudou: descurtir desfaz o que curtir somou.
+    if (changed.rowCount) await this.pool.query(BUMP_AFFINITY, [userId, videoId, liked ? LIKE_DELTA : -LIKE_DELTA]);
     const count = await this.pool.query<{ n: number }>("SELECT count(*)::int AS n FROM likes WHERE video_id = $1", [videoId]);
     return { liked, likeCount: count.rows[0]!.n };
   }

@@ -270,6 +270,30 @@ export function buildApp({
       });
     }
 
+    // Sinais de visualização do feed (SPEC §6). Os limites do schema seguram valores absurdos.
+    priv.post<{ Params: { id: string }; Body: { watchedMs: number; watchPct: number; replays: number } }>(
+      "/videos/:id/view",
+      {
+        schema: {
+          params: idParams,
+          body: {
+            type: "object",
+            required: ["watchedMs", "watchPct", "replays"],
+            additionalProperties: false,
+            properties: {
+              watchedMs: { type: "integer", minimum: 0, maximum: 3_600_000 },
+              watchPct: { type: "number", minimum: 0, maximum: 1 },
+              replays: { type: "integer", minimum: 0, maximum: 100 },
+            },
+          },
+        },
+      },
+      async (req, reply) =>
+        (await store.recordView(req.user.id, req.params.id, req.body))
+          ? reply.code(204).send()
+          : reply.code(404).send({ error: "Vídeo não encontrado." }),
+    );
+
     priv.get<{ Params: { id: string } }>("/videos/:id", { schema: { params: idParams } }, async (req, reply) => {
       const video = await store.getVideo(req.params.id);
       return video ?? reply.code(404).send({ error: "Vídeo não encontrado." });
