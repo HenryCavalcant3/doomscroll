@@ -3,6 +3,7 @@ import { api, apiUrl, type Comment, type FeedVideo } from "../api";
 import { Avatar } from "../components/Avatar";
 import { appendPage, initialFeed, needsMore, patchVideo, type FeedState } from "../feedQueue";
 import { profileHref } from "../router";
+import { ViewTracker } from "../viewTracker";
 
 /** Tela 2 do SPEC (wireframe `feed`): um vídeo por tela, rolagem vertical, autoplay. */
 export function Feed() {
@@ -127,6 +128,25 @@ function FeedItem({ index, video, active, mounted, muted, onUnmute, onComments, 
   const ref = useRef<HTMLVideoElement>(null);
   const [paused, setPaused] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [tracker] = useState(() => new ViewTracker());
+
+  // Sinais para a recomendação: uma medição por vez que o vídeo fica ativo, mandada quando ele
+  // deixa de ser o ativo, quando a tela do feed fecha ou quando a aba é escondida.
+  useEffect(() => {
+    if (!active) return;
+    tracker.start();
+    if (ref.current && !ref.current.paused && !document.hidden) tracker.play();
+    const send = () => {
+      const view = tracker.finish();
+      if (view) api.view(video.id, view).catch(() => {});
+    };
+    const onVisibility = () => document.hidden && send();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      send();
+    };
+  }, [active, tracker, video.id]);
 
   useEffect(() => {
     const el = ref.current;
@@ -172,9 +192,12 @@ function FeedItem({ index, video, active, mounted, muted, onUnmute, onComments, 
           playsInline
           disablePictureInPicture
           onClick={onTap}
+          onPlaying={() => active && !document.hidden && tracker.play()}
+          onPause={() => tracker.pause()}
           onTimeUpdate={(e) => {
             const el = e.currentTarget;
             if (el.duration) setProgress(el.currentTime / el.duration);
+            if (active && !document.hidden) tracker.time(el.currentTime, el.duration);
           }}
         />
       ) : (

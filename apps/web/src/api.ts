@@ -1,4 +1,5 @@
 import { stored } from "./router";
+import type { ViewPayload } from "./viewTracker";
 
 export type VideoStatus = "baixando" | "processando" | "pendente" | "aprovado" | "rejeitado" | "falhou";
 
@@ -108,7 +109,7 @@ export const auth = {
 
 export async function request<T>(
   path: string,
-  opts: { method?: string; body?: unknown } = {},
+  opts: { method?: string; body?: unknown; keepalive?: boolean } = {},
   fetchImpl: typeof fetch = fetch,
 ): Promise<T> {
   const headers: Record<string, string> = {};
@@ -118,6 +119,7 @@ export async function request<T>(
     method: opts.method ?? "GET",
     headers,
     body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
+    keepalive: opts.keepalive,
   });
   const text = await res.text();
   const data = text ? (JSON.parse(text) as Record<string, unknown>) : {};
@@ -141,6 +143,9 @@ export const api = {
   feed: (exclude: string[]) => request<FeedPage>("/feed", { method: "POST", body: { exclude } }),
   comments: (videoId: string) => request<Comment[]>(`/videos/${videoId}/comments`),
   addComment: (videoId: string, text: string) => request<Comment>(`/videos/${videoId}/comments`, { method: "POST", body: { text } }),
+  /** keepalive: o envio continua mesmo se a página for fechada logo depois. */
+  view: (videoId: string, view: ViewPayload) =>
+    request<void>(`/videos/${videoId}/view`, { method: "POST", body: view, keepalive: true }),
   like: (videoId: string, liked: boolean) =>
     request<{ liked: boolean; likeCount: number }>(`/videos/${videoId}/like`, { method: liked ? "PUT" : "DELETE" }),
   profile: (nickname: string) => request<Profile>(`/users/${encodeURIComponent(nickname)}`),
