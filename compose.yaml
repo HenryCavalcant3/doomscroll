@@ -1,0 +1,97 @@
+name: doomscroll
+
+x-db-env: &db-env
+  POSTGRES_USER: ${POSTGRES_USER:-doomscroll}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-doomscroll}
+  POSTGRES_DB: ${POSTGRES_DB:-doomscroll}
+
+x-database-url: &database-url postgres://${POSTGRES_USER:-doomscroll}:${POSTGRES_PASSWORD:-doomscroll}@db:5432/${POSTGRES_DB:-doomscroll}
+
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    environment: *db-env
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./docker/db/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
+    environment:
+      LLM_MODEL: ${LLM_MODEL:-qwen2.5:3b}
+      EMBED_MODEL: ${EMBED_MODEL:-nomic-embed-text}
+    volumes:
+      - ollama-models:/root/.ollama
+      - ./docker/ollama/entrypoint.sh:/entrypoint.sh:ro
+    healthcheck:
+      # Fica "healthy" só depois que os modelos estão baixados.
+      test: ["CMD-SHELL", "test -f /tmp/models-ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 30m
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      PORT: 3000
+      DATABASE_URL: *database-url
+      OLLAMA_URL: http://ollama:11434
+      LLM_MODEL: ${LLM_MODEL:-qwen2.5:3b}
+      EMBED_MODEL: ${EMBED_MODEL:-nomic-embed-text}
+      OWNER_PIN: ${OWNER_PIN:-}
+    ports:
+      - "${API_PORT:-3000}:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+      args:
+        YT_DLP_VERSION: ${YT_DLP_VERSION:-latest}
+    environment:
+      DATABASE_URL: *database-url
+      OLLAMA_URL: http://ollama:11434
+      LLM_MODEL: ${LLM_MODEL:-qwen2.5:3b}
+      EMBED_MODEL: ${EMBED_MODEL:-nomic-embed-text}
+      WHISPER_MODEL: ${WHISPER_MODEL:-base}
+      PERSONA_RATE: ${PERSONA_RATE:-30}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  db-data:
+  ollama-models:
