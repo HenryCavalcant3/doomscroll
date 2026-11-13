@@ -16,7 +16,7 @@ Um computador roda tudo (backend, frontend, banco e IA) e compartilha uma rede l
 
 É um projeto open source, meio meme, meio laboratório de rede social com IA local. A especificação completa está em [SPEC.md](SPEC.md).
 
-> **Estado atual:** passo 3 do SPEC. Já dá para cadastrar vídeos por link (o worker baixa, converte, transcreve e a IA sugere tópicos), aprovar no painel do dono e assistir no feed vertical, onde o Tio Valdir comenta cada vídeo aprovado. Login, curtidas, recomendação, chat e as outras personas ainda não existem.
+> **Estado atual:** passo 4 do SPEC. Cada pessoa entra com apelido e PIN, cadastra vídeos por link (o worker baixa, converte, transcreve e a IA sugere tópicos), o dono aprova no painel e todo mundo assiste no feed vertical, curte e comenta. O Tio Valdir comenta cada vídeo aprovado, e o perfil mostra os vídeos curtidos. Recomendação, chat e as outras personas ainda não existem.
 
 ## Como rodar
 
@@ -44,11 +44,17 @@ curl -X POST http://localhost:3000/ai/teste -H "Content-Type: application/json" 
 
 A primeira resposta pode levar até um minuto em CPU, porque o modelo precisa ser carregado na memória.
 
+### Entrar
+
+Em <http://localhost:8080>, escolha um apelido e um PIN de 4 a 6 números. Se o apelido ainda não existe, a conta é criada na hora; nas próximas vezes o mesmo PIN entra. O PIN fica guardado com hash, e depois de 5 PINs errados o apelido fica bloqueado por 15 minutos. Os apelidos das personas são reservados.
+
+O dono do bunker entra com o apelido `dono` e o PIN do dono.
+
 ### Cadastrar vídeos e aprovar
 
-1. Em <http://localhost:8080>, aba **Adicionar**, cole um link do YouTube Shorts ou do TikTok.
+1. Na aba **Adicionar**, cole um link do YouTube Shorts ou do TikTok.
 2. Acompanhe o processamento (download, conversão, transcrição e tópicos sugeridos pela IA) e confirme os tópicos.
-3. Em **Perfil → Painel do dono**, entre com o PIN do dono e aprove ou rejeite o vídeo.
+3. Entrando como `dono`, abra **Perfil → Painel do dono** e aprove ou rejeite o vídeo.
 
 O PIN do dono é o `OWNER_PIN` do `.env`. Se ele não estiver definido, a api gera um PIN na primeira subida e mostra uma única vez no log:
 
@@ -56,7 +62,7 @@ O PIN do dono é o `OWNER_PIN` do `.env`. Se ele não estiver definido, a api ge
 docker compose logs api | grep PIN
 ```
 
-Ao aprovar, o vídeo entra no feed (aba **Feed**, a tela inicial) e o Tio Valdir escreve um comentário, que aparece em **comentar**. Em CPU o comentário leva alguns segundos para ficar pronto.
+Ao aprovar, o vídeo entra no feed (aba **Feed**, a tela inicial) e o Tio Valdir escreve um comentário, que aparece em **comentar**. Em CPU o comentário leva alguns segundos para ficar pronto. No feed, qualquer pessoa curte e comenta; tocar no apelido de alguém abre o perfil, com os vídeos que essa pessoa curtiu.
 
 Na primeira transcrição, o worker baixa o modelo do Whisper (`WHISPER_MODEL`, cerca de 150 MB no `base`). Os vídeos ficam no volume `media` e nunca vão para o repositório.
 
