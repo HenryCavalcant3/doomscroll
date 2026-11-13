@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="320" viewBox="0 0 320 320" role="img" aria-label="Doomscroll">
+<rect width="320" height="320" rx="72" fill="#141414"/>
+<polygon points="112,84 112,236 244,160" fill="#FFD400" stroke="#FFD400" stroke-width="28" stroke-linejoin="round"/>
+<polyline points="132,140 152,158 172,140" fill="none" stroke="#141414" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+<polyline points="132,164 152,182 172,164" fill="none" stroke="#141414" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>

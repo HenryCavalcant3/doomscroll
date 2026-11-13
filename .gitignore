@@ -1,0 +1,29 @@
+# dependências e builds
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# ambiente e segredos
+.env
+.env.*
+!.env.example
+
+# acervo, modelos e dados (nunca versionar)
+data/
+media/
+videos/
+models/
+*.mp4
+*.webm
+*.mkv
+*.mov
+*.gguf
+*.bin
+
+# sistema / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160" role="img" aria-label="Tio Valdir">
+<circle cx="80" cy="80" r="80" fill="#141414"/>
+<path d="M48 108 a32 32 0 0 1 64 0 z" fill="#FFD400"/>
+<g fill="none" stroke="#FFD400" stroke-width="8" stroke-linecap="round">
+<line x1="80" y1="62" x2="80" y2="46"/>
+<line x1="52" y1="76" x2="41" y2="65"/>
+<line x1="108" y1="76" x2="119" y2="65"/>
+<line x1="28" y1="110" x2="132" y2="110"/>
+</g>

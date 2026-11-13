@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160" role="img" aria-label="Rato">
+<circle cx="80" cy="80" r="80" fill="#141414"/>
+<path d="M118 98 q24 2 14 -24" fill="none" stroke="#FFD400" stroke-width="6" stroke-linecap="round"/>
+<ellipse cx="88" cy="94" rx="34" ry="22" fill="#FFD400"/>
+<polygon points="64,78 30,98 64,110" fill="#FFD400" stroke="#FFD400" stroke-width="6" stroke-linejoin="round"/>
+<circle cx="66" cy="72" r="11" fill="#FFD400"/>
+<circle cx="52" cy="92" r="3.5" fill="#141414"/>
