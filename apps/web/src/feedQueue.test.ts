@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { FeedVideo } from "./api";
-import { appendPage, initialFeed, needsMore } from "./feedQueue";
+import { appendPage, initialFeed, needsMore, patchVideo } from "./feedQueue";
 
 const v = (id: string) => ({ id }) as FeedVideo;
 
@@ -38,5 +38,12 @@ describe("fila do feed", () => {
     expect(needsMore(s, 0)).toBe(false);
     expect(needsMore(s, 2)).toBe(true);
     expect(needsMore(initialFeed, 0)).toBe(true);
+  });
+
+  it("atualiza curtidas do vídeo em todas as voltas", () => {
+    let s = appendPage(initialFeed, { videos: [v("a"), v("b")], restarted: false });
+    s = appendPage(s, { videos: [v("a")], restarted: true });
+    s = patchVideo(s, "a", { liked: true, likeCount: 1 });
+    expect(s.entries.map((e) => e.video.liked)).toEqual([true, undefined, true]);
   });
 });

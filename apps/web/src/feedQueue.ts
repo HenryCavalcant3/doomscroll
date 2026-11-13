@@ -35,3 +35,11 @@ export function appendPage(state: FeedState, page: FeedPage): FeedState {
 
 /** Pede mais vídeos quando faltam poucos para o fim da lista. */
 export const needsMore = (state: FeedState, active: number) => !state.empty && active >= state.entries.length - 2;
+
+/** Atualiza um vídeo em todas as entradas (ele pode aparecer mais de uma vez, em voltas diferentes). */
+export function patchVideo(state: FeedState, id: string, patch: Partial<FeedVideo>): FeedState {
+  return {
+    ...state,
+    entries: state.entries.map((e) => (e.video.id === id ? { ...e, video: { ...e.video, ...patch } } : e)),
+  };
+}

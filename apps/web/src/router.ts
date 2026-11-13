@@ -1,39 +1,54 @@
 import { useEffect, useState } from "react";
 
-export type Route = "feed" | "adicionar" | "perfil" | "dono";
-const ROUTES: Route[] = ["feed", "adicionar", "perfil", "dono"];
+export type Route =
+  | { name: "feed" | "adicionar" | "perfil" | "dono" }
+  /** Perfil de outra pessoa ou persona: #/u/<apelido>. */
+  | { name: "usuario"; nickname: string };
 
-function current(): Route {
-  const name = window.location.hash.replace(/^#\/?/, "");
-  return (ROUTES as string[]).includes(name) ? (name as Route) : "feed";
+const SIMPLE = ["feed", "adicionar", "perfil", "dono"] as const;
+
+export function parseRoute(hash: string): Route {
+  const path = hash.replace(/^#\/?/, "");
+  const user = /^u\/([^/]+)$/.exec(path);
+  if (user) return { name: "usuario", nickname: decodeURIComponent(user[1]!) };
+  return (SIMPLE as readonly string[]).includes(path) ? { name: path as (typeof SIMPLE)[number] } : { name: "feed" };
 }
 
-/** Rotas por hash (#/feed, #/adicionar, #/perfil, #/dono): simples e funciona servido por qualquer servidor estático. */
+export const profileHref = (nickname: string) => `#/u/${encodeURIComponent(nickname)}`;
+
+/** Rotas por hash (#/feed, #/u/apelido...): simples e funciona servido por qualquer servidor estático. */
 export function useRoute(): Route {
-  const [route, setRoute] = useState(current);
+  const [route, setRoute] = useState(() => parseRoute(window.location.hash));
   useEffect(() => {
-    const onChange = () => setRoute(current());
+    const onChange = () => setRoute(parseRoute(window.location.hash));
     window.addEventListener("hashchange", onChange);
     return () => window.removeEventListener("hashchange", onChange);
   }, []);
   return route;
 }
 
-/** sessionStorage pode falhar (aba privada, bloqueio); nada no app depende dele para funcionar. */
-export const session = {
-  get(key: string): string | null {
-    try {
-      return sessionStorage.getItem(key);
-    } catch {
-      return null;
-    }
-  },
-  set(key: string, value: string | null) {
-    try {
-      if (value === null) sessionStorage.removeItem(key);
-      else sessionStorage.setItem(key, value);
-    } catch {
-      // sem armazenamento: segue sem lembrar
-    }
-  },
-};
+/** Armazenamento do navegador pode falhar (aba privada, bloqueio); nada no app depende dele para funcionar. */
+function safeStorage(get: () => Storage) {
+  return {
+    get(key: string): string | null {
+      try {
+        return get().getItem(key);
+      } catch {
+        return null;
+      }
+    },
+    set(key: string, value: string | null) {
+      try {
+        if (value === null) get().removeItem(key);
+        else get().setItem(key, value);
+      } catch {
+        // sem armazenamento: segue sem lembrar
+      }
+    },
+  };
+}
+
+/** Some ao fechar a aba. */
+export const session = safeStorage(() => sessionStorage);
+/** Fica entre visitas (sessão de login). */
+export const stored = safeStorage(() => localStorage);

@@ -284,7 +284,9 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
   flex-direction: column;
   gap: 8px;
 }
-.feed-author { font-size: 15px; font-weight: 700; }
+.feed-author { font-size: 15px; font-weight: 700; color: var(--fg); text-decoration: none; text-shadow: 0 1px 4px rgb(0 0 0 / 60%); align-self: flex-start; }
+.feed-rail a { display: block; border-radius: 50%; }
+.feed-action[aria-pressed="true"] { color: var(--accent); }
 .feed-desc { margin: 0; font-size: 14px; line-height: 1.35; }
 .feed-progress {
   position: absolute;
@@ -321,18 +323,94 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
   background: var(--bg);
   border-top: 1px solid var(--line);
   border-radius: 16px 16px 0 0;
-  overflow-y: auto;
 }
 .drawer header { display: flex; align-items: center; justify-content: space-between; }
 .drawer h2 { margin: 0; font-size: 16px; }
 .comments { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 16px; }
 .comments li { display: flex; gap: 12px; align-items: flex-start; }
-.comments img, .comment-avatar {
+.comments a { color: var(--fg); text-decoration: none; }
+.comment-author { font-size: 13px; font-weight: 700; }
+.drawer-body { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
+.comment-form { display: flex; gap: 8px; }
+.comment-form .input { flex: 1; min-width: 0; }
+.comments p { margin: 2px 0 0; font-size: 14px; line-height: 1.4; }
+
+/* Avatar: SVG da persona ou inicial do apelido */
+.avatar {
   flex: none;
-  width: 36px;
-  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 50%;
   background: var(--line);
+  color: var(--fg);
+  font-weight: 700;
+  object-fit: cover;
 }
-.comments strong { font-size: 13px; }
-.comments p { margin: 2px 0 0; font-size: 14px; line-height: 1.4; }
+
+/* Entrada (tela 1) */
+.enter { justify-content: center; gap: 28px; padding-bottom: 32px; }
+.enter-logo { align-self: center; border-radius: 22px; }
+.enter-head { text-align: center; display: flex; flex-direction: column; gap: 6px; }
+.enter-head h1 { font-size: 28px; }
+.enter-form { display: flex; flex-direction: column; gap: 16px; }
+
+/* Perfil (wireframe persona) */
+.profile { gap: 0; padding-top: 28px; }
+.profile-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 20px;
+  text-align: center;
+}
+.profile-head h1 { font-size: 22px; }
+.profile-avatar { border: 2px solid var(--accent); }
+.badge {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 10px;
+  background: var(--accent);
+  color: var(--on-accent);
+  border-radius: 999px;
+}
+.profile-bio { margin: 0; max-width: 280px; font-size: 14px; line-height: 1.4; color: var(--muted); }
+.profile-actions { display: flex; gap: 8px; }
+.profile-head .btn[aria-disabled="true"] { opacity: 0.45; cursor: not-allowed; }
+.profile-empty { padding: 24px 0; text-align: center; }
+.notice {
+  margin: 16px 0 4px;
+  padding: 10px 14px;
+  background: var(--surface);
+  border: 1px dashed var(--muted);
+  border-radius: var(--radius);
+  font-size: 13px;
+  line-height: 1.4;
+}
+.liked-grid {
+  list-style: none;
+  margin: 2px -20px 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2px;
+}
+.liked-grid button { display: block; width: 100%; aspect-ratio: 9 / 16; padding: 0; border: 0; background: var(--surface); }
+.liked-grid img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+/* Player do vídeo curtido */
+.player { position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; background: #000; }
+.player video { width: 100%; height: 100%; max-width: 480px; object-fit: contain; }
+.player-close { position: absolute; top: 12px; right: 12px; background: rgb(20 20 20 / 55%); border-radius: 50%; }
+.player-desc {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  top: 20px;
+  margin: 0 auto;
+  max-width: 400px;
+  padding-right: 48px;
+  font-size: 14px;
+  text-shadow: 0 1px 4px rgb(0 0 0 / 80%);
+}

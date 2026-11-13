@@ -2,7 +2,7 @@ import type { Route } from "../router";
 
 /** Mensagens chega no passo 7 do SPEC; por enquanto fica visível, mas inativo. */
 export function BottomNav({ route }: { route: Route }) {
-  const active = route === "dono" ? "perfil" : route;
+  const active = route.name === "dono" ? "perfil" : route.name;
   return (
     <nav className="bottom-nav" aria-label="Navegação principal">
       <a href="#/feed" aria-current={active === "feed" ? "page" : undefined}>

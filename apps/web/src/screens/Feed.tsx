@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { api, apiUrl, type Comment, type FeedVideo } from "../api";
-import { appendPage, initialFeed, needsMore, type FeedState } from "../feedQueue";
+import { Avatar } from "../components/Avatar";
+import { appendPage, initialFeed, needsMore, patchVideo, type FeedState } from "../feedQueue";
+import { profileHref } from "../router";
 
 /** Tela 2 do SPEC (wireframe `feed`): um vídeo por tela, rolagem vertical, autoplay. */
 export function Feed() {
@@ -12,6 +14,18 @@ export function Feed() {
   const loading = useRef(false);
   const scroller = useRef<HTMLDivElement>(null);
   const closeComments = useCallback(() => setCommentsFor(null), []);
+  const onCommented = useCallback((id: string, count: number) => setFeed((f) => patchVideo(f, id, { commentCount: count })), []);
+
+  // Curtida otimista: muda na hora e corrige com a resposta (ou desfaz se der erro).
+  const toggleLike = (video: FeedVideo) => {
+    const liked = !video.liked;
+    const before = { liked: video.liked, likeCount: video.likeCount };
+    setFeed((f) => patchVideo(f, video.id, { liked, likeCount: video.likeCount + (liked ? 1 : -1) }));
+    api.like(video.id, liked).then(
+      (res) => setFeed((f) => patchVideo(f, video.id, res)),
+      () => setFeed((f) => patchVideo(f, video.id, before)),
+    );
+  };
 
   // Busca mais vídeos quando o usuário chega perto do fim da lista.
   useEffect(() => {
@@ -74,6 +88,7 @@ export function Feed() {
             muted={muted}
             onUnmute={() => setMuted(false)}
             onComments={() => setCommentsFor(entry.video)}
+            onLike={() => toggleLike(entry.video)}
           />
         ))}
         {(feed.entries.length === 0 || error) && (
@@ -91,7 +106,7 @@ export function Feed() {
           </div>
         )}
       </div>
-      {commentsFor && <CommentsDrawer video={commentsFor} onClose={closeComments} />}
+      {commentsFor && <CommentsDrawer video={commentsFor} onClose={closeComments} onCommented={onCommented} />}
     </main>
   );
 }
@@ -105,9 +120,10 @@ interface ItemProps {
   muted: boolean;
   onUnmute(): void;
   onComments(): void;
+  onLike(): void;
 }
 
-function FeedItem({ index, video, active, mounted, muted, onUnmute, onComments }: ItemProps) {
+function FeedItem({ index, video, active, mounted, muted, onUnmute, onComments, onLike }: ItemProps) {
   const ref = useRef<HTMLVideoElement>(null);
   const [paused, setPaused] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -173,10 +189,21 @@ function FeedItem({ index, video, active, mounted, muted, onUnmute, onComments }
       )}
 
       <div className="feed-rail">
-        <div className="feed-avatar" aria-hidden="true" />
-        <button className="feed-action" aria-disabled="true" title="Curtidas chegam em breve">
-          <HeartIcon />
-          curtir
+        {video.author ? (
+          <a href={profileHref(video.author.nickname)} aria-label={`Perfil de @${video.author.nickname}`}>
+            <Avatar who={video.author} size={48} className="feed-avatar" />
+          </a>
+        ) : (
+          <div className="feed-avatar" aria-hidden="true" />
+        )}
+        <button
+          className="feed-action"
+          onClick={onLike}
+          aria-pressed={video.liked}
+          aria-label={`${video.liked ? "Descurtir" : "Curtir"} (${video.likeCount})`}
+        >
+          <HeartIcon filled={video.liked} />
+          {video.likeCount > 0 ? video.likeCount : "curtir"}
         </button>
         <button className="feed-action" onClick={onComments} aria-label={`Comentários (${video.commentCount})`}>
           <CommentIcon />
@@ -189,8 +216,11 @@ function FeedItem({ index, video, active, mounted, muted, onUnmute, onComments }
       </div>
 
       <div className="feed-info">
-        {/* Até o login (passo 4) os vídeos não guardam quem enviou. */}
-        <div className="feed-author">@morador</div>
+        {video.author && (
+          <a className="feed-author" href={profileHref(video.author.nickname)}>
+            @{video.author.nickname}
+          </a>
+        )}
         {video.description && <p className="feed-desc">{video.description}</p>}
         {video.topics.length > 0 && (
           <div className="pills">
@@ -210,10 +240,19 @@ function FeedItem({ index, video, active, mounted, muted, onUnmute, onComments }
   );
 }
 
-function CommentsDrawer({ video, onClose }: { video: FeedVideo; onClose(): void }) {
+interface DrawerProps {
+  video: FeedVideo;
+  onClose(): void;
+  onCommented(videoId: string, count: number): void;
+}
+
+function CommentsDrawer({ video, onClose, onCommented }: DrawerProps) {
   const [comments, setComments] = useState<Comment[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [text, setText] = useState("");
+  const [sending, setSending] = useState(false);
   const close = useRef<HTMLButtonElement>(null);
+  const list = useRef<HTMLUListElement>(null);
 
   useEffect(() => {
     close.current?.focus();
@@ -222,6 +261,24 @@ function CommentsDrawer({ video, onClose }: { video: FeedVideo; onClose(): void 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [video.id, onClose]);
+
+  async function send(e: FormEvent) {
+    e.preventDefault();
+    setSending(true);
+    setError(null);
+    try {
+      const comment = await api.addComment(video.id, text);
+      const next = [...(comments ?? []), comment];
+      setComments(next);
+      onCommented(video.id, next.length);
+      setText("");
+      requestAnimationFrame(() => list.current?.lastElementChild?.scrollIntoView({ block: "nearest" }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não deu para comentar.");
+    } finally {
+      setSending(false);
+    }
+  }
 
   return (
     <div className="drawer-backdrop" onClick={onClose}>
@@ -238,25 +295,43 @@ function CommentsDrawer({ video, onClose }: { video: FeedVideo; onClose(): void 
             <CloseIcon />
           </button>
         </header>
-        {error && <p className="error">{error}</p>}
-        {!comments && !error && <p className="hint">Carregando…</p>}
-        {comments?.length === 0 && <p className="hint">Ninguém comentou ainda.</p>}
-        <ul className="comments">
-          {comments?.map((c) => (
-            <li key={c.id}>
-              {c.author.avatarUrl ? (
-                <img src={apiUrl(c.author.avatarUrl)} alt="" width={36} height={36} />
-              ) : (
-                <span className="comment-avatar" aria-hidden="true" />
-              )}
-              <div>
-                <strong>@{c.author.nickname}</strong>
-                <p>{c.text}</p>
-              </div>
-            </li>
-          ))}
-        </ul>
-        <p className="hint">Por enquanto só as personas comentam.</p>
+        <div className="drawer-body">
+          {!comments && !error && <p className="hint">Carregando…</p>}
+          {comments?.length === 0 && <p className="hint">Ninguém comentou ainda. Seja o primeiro!</p>}
+          <ul className="comments" ref={list}>
+            {comments?.map((c) => (
+              <li key={c.id}>
+                <a href={profileHref(c.author.nickname)} aria-label={`Perfil de @${c.author.nickname}`}>
+                  <Avatar who={c.author} size={36} />
+                </a>
+                <div>
+                  <a className="comment-author" href={profileHref(c.author.nickname)}>
+                    @{c.author.nickname}
+                  </a>
+                  <p>{c.text}</p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+        {error && (
+          <p className="error" role="alert">
+            {error}
+          </p>
+        )}
+        <form className="comment-form" onSubmit={send}>
+          <input
+            className="input"
+            aria-label="Escreva um comentário"
+            placeholder="Escreva um comentário…"
+            maxLength={500}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+          />
+          <button className="btn btn-primary btn-small" type="submit" disabled={sending || !text.trim()}>
+            Enviar
+          </button>
+        </form>
       </div>
     </div>
   );
@@ -264,9 +339,9 @@ function CommentsDrawer({ video, onClose }: { video: FeedVideo; onClose(): void 
 
 const icon = { width: 28, height: 28, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinejoin: "round" as const, "aria-hidden": true };
 
-function HeartIcon() {
+function HeartIcon({ filled }: { filled: boolean }) {
   return (
-    <svg {...icon}>
+    <svg {...icon} fill={filled ? "var(--accent)" : "none"} stroke={filled ? "var(--accent)" : "currentColor"}>
       <path d="M12 21s-7-4.6-9.5-9A5.5 5.5 0 0 1 12 6a5.5 5.5 0 0 1 9.5 6c-2.5 4.4-9.5 9-9.5 9z" />
     </svg>
   );

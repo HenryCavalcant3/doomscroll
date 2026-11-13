@@ -1,14 +1,27 @@
 import { describe, expect, it, vi } from "vitest";
-import { ApiError, request } from "./api";
+import { ApiError, auth, request } from "./api";
+import { parseRoute } from "./router";
 import { isProcessing, processingSteps } from "./stages";
 
 describe("request", () => {
-  it("chama a api via /api e manda o PIN do dono no cabeçalho", async () => {
+  it("chama a api via /api e manda o token da sessão", async () => {
+    auth.setToken("tok_abc");
     const fetchImpl = vi.fn<typeof fetch>(async () => new Response(JSON.stringify([{ id: 1 }])));
-    await expect(request("/owner/videos", { ownerPin: "1234" }, fetchImpl)).resolves.toEqual([{ id: 1 }]);
+    await expect(request("/owner/videos", {}, fetchImpl)).resolves.toEqual([{ id: 1 }]);
     const [url, init] = fetchImpl.mock.calls[0]!;
     expect(url).toBe("/api/owner/videos");
-    expect(init?.headers).toEqual({ "x-owner-pin": "1234" });
+    expect(init?.headers).toEqual({ authorization: "Bearer tok_abc" });
+    auth.setToken(null);
+  });
+
+  it("esquece a sessão recusada e avisa o app", async () => {
+    auth.setToken("tok_velho");
+    const onOut = vi.fn();
+    auth.onUnauthorized(onOut);
+    const fetchImpl = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ error: "Entre" }), { status: 401 }));
+    await expect(request("/feed", {}, fetchImpl)).rejects.toMatchObject({ status: 401 });
+    expect(onOut).toHaveBeenCalledOnce();
+    expect(auth.hasToken()).toBe(false);
   });
 
   it("lança a mensagem de erro da api, com status e corpo", async () => {
@@ -22,7 +35,7 @@ describe("request", () => {
 
   it("aceita resposta vazia (204)", async () => {
     const fetchImpl = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
-    await expect(request("/owner/login", { method: "POST" }, fetchImpl)).resolves.toEqual({});
+    await expect(request("/auth/sair", { method: "POST" }, fetchImpl)).resolves.toEqual({});
   });
 });
 
@@ -47,5 +60,14 @@ describe("etapas do processamento", () => {
     expect(isProcessing({ stage: "convertendo", status: "processando" })).toBe(true);
     expect(isProcessing({ stage: "aguardando_confirmacao", status: "processando" })).toBe(false);
     expect(isProcessing({ stage: "baixando", status: "falhou" })).toBe(false);
+  });
+});
+
+describe("rotas", () => {
+  it("entende as telas e o perfil por apelido", () => {
+    expect(parseRoute("")).toEqual({ name: "feed" });
+    expect(parseRoute("#/adicionar")).toEqual({ name: "adicionar" });
+    expect(parseRoute("#/u/tio_valdir")).toEqual({ name: "usuario", nickname: "tio_valdir" });
+    expect(parseRoute("#/qualquer")).toEqual({ name: "feed" });
   });
 });

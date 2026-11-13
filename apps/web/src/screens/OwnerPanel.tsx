@@ -1,28 +1,18 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { api, apiUrl, ApiError, type Topic, type Video } from "../api";
-import { session } from "../router";
+import { api, apiUrl, type Topic, type User, type Video } from "../api";
 
-const KEY = "doomscroll.pinDono";
 type Tab = "fila" | "topicos";
 
 /** Tela 7 do SPEC (sem wireframe; segue o padrão dos outros). Personas entram no passo 8. */
-export function OwnerPanel() {
-  const [pin, setPin] = useState<string | null>(() => session.get(KEY));
+export function OwnerPanel({ me }: { me: User }) {
   const [tab, setTab] = useState<Tab>("fila");
 
-  const logout = () => {
-    session.set(KEY, null);
-    setPin(null);
-  };
-
-  if (!pin) {
+  if (me.role !== "owner") {
     return (
-      <PinGate
-        onEnter={(p) => {
-          session.set(KEY, p);
-          setPin(p);
-        }}
-      />
+      <main className="screen placeholder">
+        <h1>Painel do dono</h1>
+        <p>Só o dono do bunker entra aqui. Ele usa o apelido dono e o PIN do .env.</p>
+      </main>
     );
   }
 
@@ -37,67 +27,12 @@ export function OwnerPanel() {
           Tópicos
         </button>
       </div>
-      {tab === "fila" ? <Queue pin={pin} onUnauthorized={logout} /> : <Topics pin={pin} onUnauthorized={logout} />}
-      <button className="btn btn-small" type="button" onClick={logout}>
-        Sair do painel
-      </button>
+      {tab === "fila" ? <Queue /> : <Topics />}
     </main>
   );
 }
 
-function PinGate({ onEnter }: { onEnter(pin: string): void }) {
-  const [pin, setPin] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  async function submit(e: FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    setError(null);
-    try {
-      await api.owner.login(pin);
-      onEnter(pin);
-    } catch (err) {
-      setError(err instanceof ApiError && err.status === 401 ? "PIN incorreto." : "Não foi possível entrar.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <main className="screen">
-      <h1>Painel do dono</h1>
-      <form className="field" onSubmit={submit}>
-        <label htmlFor="pin">PIN do dono do bunker</label>
-        <input
-          id="pin"
-          className="input"
-          type="password"
-          inputMode="numeric"
-          autoComplete="current-password"
-          value={pin}
-          onChange={(e) => setPin(e.target.value)}
-          required
-        />
-        <button className="btn btn-primary" type="submit" disabled={busy || !pin}>
-          Entrar
-        </button>
-      </form>
-      {error && <p className="error" role="alert">{error}</p>}
-      <p className="hint">
-        O PIN é o OWNER_PIN do .env. Sem ele, um PIN foi gerado na primeira subida e aparece no log da api
-        (docker compose logs api).
-      </p>
-    </main>
-  );
-}
-
-interface PanelProps {
-  pin: string;
-  onUnauthorized(): void;
-}
-
-function useOwnerCall({ onUnauthorized }: PanelProps) {
+function useOwnerCall() {
   const [error, setError] = useState<string | null>(null);
   const call = useCallback(
     async <T,>(fn: () => Promise<T>): Promise<T | undefined> => {
@@ -105,27 +40,26 @@ function useOwnerCall({ onUnauthorized }: PanelProps) {
       try {
         return await fn();
       } catch (err) {
-        if (err instanceof ApiError && err.status === 401) onUnauthorized();
-        else setError(err instanceof Error ? err.message : "Algo deu errado.");
+        // 401 já leva para a tela de entrada (api.ts).
+        setError(err instanceof Error ? err.message : "Algo deu errado.");
         return undefined;
       }
     },
-    [onUnauthorized],
+    [],
   );
   return { error, call };
 }
 
-function Queue(props: PanelProps) {
-  const { pin } = props;
-  const { error, call } = useOwnerCall(props);
+function Queue() {
+  const { error, call } = useOwnerCall();
   const [videos, setVideos] = useState<Video[] | null>(null);
 
   useEffect(() => {
-    call(() => api.owner.pending(pin)).then((list) => list && setVideos(list));
-  }, [call, pin]);
+    call(() => api.owner.pending()).then((list) => list && setVideos(list));
+  }, [call]);
 
   async function decide(id: string, approve: boolean) {
-    const done = await call(() => (approve ? api.owner.approve(pin, id) : api.owner.reject(pin, id)));
+    const done = await call(() => (approve ? api.owner.approve(id) : api.owner.reject(id)));
     if (done) setVideos((vs) => vs?.filter((v) => v.id !== id) ?? null);
   }
 
@@ -172,9 +106,8 @@ function Queue(props: PanelProps) {
   );
 }
 
-function Topics(props: PanelProps) {
-  const { pin } = props;
-  const { error, call } = useOwnerCall(props);
+function Topics() {
+  const { error, call } = useOwnerCall();
   const [topics, setTopics] = useState<Topic[]>([]);
   const [name, setName] = useState("");
 
@@ -184,7 +117,7 @@ function Topics(props: PanelProps) {
 
   async function add(e: FormEvent) {
     e.preventDefault();
-    const topic = await call(() => api.owner.createTopic(pin, name));
+    const topic = await call(() => api.owner.createTopic(name));
     if (topic) {
       setTopics((ts) => [...ts, topic].sort((a, b) => a.name.localeCompare(b.name)));
       setName("");
