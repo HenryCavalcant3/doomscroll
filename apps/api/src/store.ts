@@ -45,6 +45,7 @@ export interface Store {
   approve(id: string, ownerId: string): Promise<boolean>;
   reject(id: string, ownerId: string): Promise<boolean>;
   getOwner(): Promise<{ id: string; pinHash: string } | null>;
+  statusOf(ids: string[]): Promise<Map<string, string>>;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -191,7 +192,8 @@ export class PgStore implements Store {
   async reject(id: string, ownerId: string) {
     if (!isUuid(id)) return false;
     const res = await this.pool.query(
-      `UPDATE videos SET status = 'rejeitado', stage = 'concluido', approved_by = $2, updated_at = now()
+      `UPDATE videos SET status = 'rejeitado', stage = 'concluido', approved_by = $2,
+              file_path = NULL, thumb_path = NULL, updated_at = now()
         WHERE id = $1 AND status = 'pendente'`,
       [id, ownerId],
     );
@@ -204,5 +206,13 @@ export class PgStore implements Store {
     );
     const row = res.rows[0];
     return row ? { id: row.id, pinHash: row.pin_hash } : null;
+  }
+
+  async statusOf(ids: string[]) {
+    const res = await this.pool.query<{ id: string; status: string }>(
+      "SELECT id, status FROM videos WHERE id = ANY($1::uuid[])",
+      [ids],
+    );
+    return new Map(res.rows.map((r) => [r.id, r.status]));
   }
 }

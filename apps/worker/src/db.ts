@@ -111,7 +111,11 @@ export class PgVideoDb implements VideoDb {
 
   async fail(id: string, error: string, keepStatus: boolean) {
     await this.pool.query(
-      `UPDATE videos SET error = $2, status = CASE WHEN $3 THEN status ELSE 'falhou' END, updated_at = now()
+      `UPDATE videos SET error = $2,
+              status = CASE WHEN $3 THEN status ELSE 'falhou' END,
+              file_path = CASE WHEN $3 THEN file_path END,
+              thumb_path = CASE WHEN $3 THEN thumb_path END,
+              updated_at = now()
         WHERE id = $1`,
       [id, error.slice(0, 500), keepStatus],
     );

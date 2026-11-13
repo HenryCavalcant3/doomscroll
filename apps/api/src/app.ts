@@ -19,6 +19,8 @@ export interface AppDeps {
   logger?: boolean;
   /** Serve os arquivos de MEDIA_DIR em /media (desligado nos testes). */
   serveMedia?: boolean;
+  /** Apaga os arquivos de um vídeo rejeitado. */
+  removeMedia?: (id: string) => Promise<void>;
 }
 
 const STATUSES: VideoStatus[] = ["baixando", "processando", "pendente", "aprovado", "rejeitado", "falhou"];
@@ -38,7 +40,15 @@ const idParams = {
   properties: { id: { type: "string" } },
 } as const;
 
-export function buildApp({ config, store, queue, fetchImpl, logger = false, serveMedia = false }: AppDeps) {
+export function buildApp({
+  config,
+  store,
+  queue,
+  fetchImpl,
+  logger = false,
+  serveMedia = false,
+  removeMedia = async () => {},
+}: AppDeps) {
   const app = Fastify({ logger });
 
   if (serveMedia) {
@@ -189,6 +199,8 @@ export function buildApp({ config, store, queue, fetchImpl, logger = false, serv
         if (!(await store.reject(req.params.id, ownerId(req)))) {
           return reply.code(409).send({ error: "Só vídeos pendentes podem ser rejeitados." });
         }
+        // O registro fica como histórico; os arquivos saem do disco.
+        await removeMedia(req.params.id).catch((err) => req.log.error({ err }, "falha ao apagar mídia"));
         return store.getVideo(req.params.id);
       },
     );

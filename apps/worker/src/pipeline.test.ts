@@ -100,13 +100,28 @@ describe("pipeline de ingestão", () => {
     expect(db.video.embedding).toEqual([0.1, 0.2]);
   });
 
-  it("marca o vídeo como falhou só na última tentativa", async () => {
-    deps.download = async () => {
-      throw new Error("vídeo privado");
+  it("marca o vídeo como falhou só na última tentativa e apaga os arquivos", async () => {
+    await runStep(QUEUES.download, deps, job);
+    deps.convert = async () => {
+      throw new Error("arquivo corrompido");
     };
-    await expect(runStep(QUEUES.download, deps, job)).rejects.toThrow("vídeo privado");
-    expect(db.video.status).toBe("baixando");
-    await expect(runStep(QUEUES.download, deps, { ...job, retryCount: 2 })).rejects.toThrow();
-    expect(db.video).toMatchObject({ status: "falhou", error: "vídeo privado" });
+    await expect(runStep(QUEUES.convert, deps, job)).rejects.toThrow("arquivo corrompido");
+    expect(db.video.status).toBe("processando");
+    expect(await readdir(deps.mediaDir)).toContain(ID);
+
+    await expect(runStep(QUEUES.convert, deps, { ...job, retryCount: 2 })).rejects.toThrow();
+    expect(db.video).toMatchObject({ status: "falhou", error: "arquivo corrompido" });
+    expect(await readdir(deps.mediaDir)).not.toContain(ID);
+  });
+
+  it("falha no embedding mantém o vídeo aprovado e os arquivos", async () => {
+    await runStep(QUEUES.download, deps, job);
+    db.video.status = "aprovado";
+    deps.embed = async () => {
+      throw new Error("ollama fora");
+    };
+    await expect(runStep(QUEUES.embed, deps, { ...job, retryCount: 2 })).rejects.toThrow();
+    expect(db.video).toMatchObject({ status: "aprovado", error: "ollama fora" });
+    expect(await readdir(deps.mediaDir)).toContain(ID);
   });
 });

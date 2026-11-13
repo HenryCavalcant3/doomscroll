@@ -92,7 +92,7 @@ const steps: Record<QueueName, Step> = {
 
 /**
  * Executa uma etapa do pipeline. Na última tentativa que falhar, registra o erro no vídeo
- * (status `falhou`; no embedding, o vídeo continua aprovado e só guarda o erro).
+ * (status `falhou` e arquivos apagados; no embedding, o vídeo continua aprovado e só guarda o erro).
  */
 export async function runStep(queue: QueueName, deps: PipelineDeps, job: JobInfo): Promise<void> {
   const id = job.data.videoId;
@@ -103,7 +103,10 @@ export async function runStep(queue: QueueName, deps: PipelineDeps, job: JobInfo
     const message = err instanceof Error ? err.message : String(err);
     deps.log?.(`[worker] ${queue} falhou (${id}, tentativa ${job.retryCount + 1}): ${message}`);
     if (job.retryCount >= QUEUE_OPTIONS.retryLimit) {
-      await deps.db.fail(id, message, queue === QUEUES.embed);
+      const keepStatus = queue === QUEUES.embed;
+      await deps.db.fail(id, message, keepStatus);
+      // Vídeo que falhou não vai para o feed: não deixa arquivos ocupando espaço.
+      if (!keepStatus) await rm(join(deps.mediaDir, id), { recursive: true, force: true });
     }
     throw err;
   }

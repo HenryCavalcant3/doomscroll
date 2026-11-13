@@ -82,18 +82,23 @@ class MemoryStore implements Store {
   async getOwner() {
     return this.owner;
   }
+  async statusOf(ids: string[]) {
+    return new Map(ids.filter((id) => this.videos.has(id)).map((id) => [id, this.videos.get(id)!.status as string]));
+  }
 }
 
 let store: MemoryStore;
 let queue: JobQueue & { send: ReturnType<typeof vi.fn> };
+let removeMedia: ReturnType<typeof vi.fn<(id: string) => Promise<void>>>;
 
 beforeEach(async () => {
   store = new MemoryStore();
   store.owner.pinHash = await hashPin("1234");
   queue = { send: vi.fn(async () => "job-1") };
+  removeMedia = vi.fn(async () => {});
 });
 
-const app = (fetchImpl?: typeof fetch) => buildApp({ config, store, queue, fetchImpl });
+const app = (fetchImpl?: typeof fetch) => buildApp({ config, store, queue, fetchImpl, removeMedia });
 
 describe("api básica", () => {
   it("GET /health responde ok", async () => {
@@ -219,12 +224,21 @@ describe("painel do dono", () => {
     expect(again.statusCode).toBe(409);
   });
 
-  it("rejeita um vídeo pendente sem gerar embedding", async () => {
+  it("rejeita um vídeo pendente, apaga os arquivos e não gera embedding", async () => {
     const id = await store.createVideo("https://youtu.be/w", "youtube");
     store.videos.get(id)!.status = "pendente";
     const res = await app().inject({ method: "POST", url: `/owner/videos/${id}/reject`, headers });
     expect(res.json().status).toBe("rejeitado");
+    expect(removeMedia).toHaveBeenCalledWith(id);
     expect(queue.send).not.toHaveBeenCalled();
+  });
+
+  it("não apaga arquivos de vídeo que não estava pendente", async () => {
+    const id = await store.createVideo("https://youtu.be/v", "youtube");
+    store.videos.get(id)!.status = "aprovado";
+    const res = await app().inject({ method: "POST", url: `/owner/videos/${id}/reject`, headers });
+    expect(res.statusCode).toBe(409);
+    expect(removeMedia).not.toHaveBeenCalled();
   });
 
   it("cria tópicos novos com slug sem acento", async () => {
