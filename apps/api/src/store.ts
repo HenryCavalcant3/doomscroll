@@ -31,8 +31,33 @@ export interface VideoView {
   createdAt: string;
 }
 
+/** Quem aparece como autor de um vídeo ou comentário. */
+export interface AuthorView {
+  nickname: string;
+  avatarUrl: string | null;
+  isAi: boolean;
+}
+
+export interface UserView extends AuthorView {
+  id: string;
+  role: "owner" | "resident";
+}
+
 export interface FeedVideo extends VideoView {
   commentCount: number;
+  likeCount: number;
+  /** Se quem pediu o feed curtiu o vídeo. */
+  liked: boolean;
+  /** Quem cadastrou o vídeo. */
+  author: AuthorView | null;
+}
+
+export interface Profile extends UserView {
+  /** Nome de exibição e bio (só personas). */
+  name: string | null;
+  bio: string | null;
+  /** Vídeos curtidos, do mais recente para o mais antigo. */
+  liked: FeedVideo[];
 }
 
 export interface FeedPage {
@@ -45,7 +70,7 @@ export interface CommentView {
   id: string;
   text: string;
   createdAt: string;
-  author: { nickname: string; avatarUrl: string | null; isAi: boolean };
+  author: AuthorView;
 }
 
 export type ConfirmResult = "ok" | "not_found" | "invalid_state" | "invalid_topics";
@@ -61,12 +86,24 @@ export interface Store {
   confirmTopics(id: string, slugs: string[]): Promise<ConfirmResult>;
   approve(id: string, ownerId: string): Promise<boolean>;
   reject(id: string, ownerId: string): Promise<boolean>;
-  getOwner(): Promise<{ id: string; pinHash: string } | null>;
+  /** pinHash é null para personas (não fazem login). */
+  findUser(nickname: string): Promise<{ user: UserView; pinHash: string | null } | null>;
+  /** null se o apelido já existe. */
+  createUser(nickname: string, pinHash: string): Promise<UserView | null>;
+  createSession(userId: string, tokenHash: string): Promise<void>;
+  sessionUser(tokenHash: string): Promise<UserView | null>;
+  deleteSession(tokenHash: string): Promise<void>;
   statusOf(ids: string[]): Promise<Map<string, string>>;
   /** Vídeos aprovados e com arquivo, em ordem aleatória, fora os já vistos. A recomendação vem no passo 5. */
-  feed(exclude: string[], limit: number): Promise<FeedPage>;
+  feed(userId: string, exclude: string[], limit: number): Promise<FeedPage>;
   /** null quando o vídeo não existe ou não está aprovado. */
   listComments(videoId: string): Promise<CommentView[] | null>;
+  /** null quando o vídeo não existe ou não está aprovado. */
+  addComment(userId: string, videoId: string, text: string): Promise<CommentView | null>;
+  /** Curte ou descurte; null quando o vídeo não existe ou não está aprovado. */
+  setLike(userId: string, videoId: string, liked: boolean): Promise<{ liked: boolean; likeCount: number } | null>;
+  /** viewerId decide o campo liked dos vídeos curtidos. */
+  profile(nickname: string, viewerId: string): Promise<Profile | null>;
   /** Vídeos aprovados em que alguma persona ainda não comentou (usado na subida). */
   videosMissingPersonaComments(): Promise<string[]>;
 }
@@ -96,7 +133,7 @@ interface VideoRow {
 
 const VIDEO_SELECT = `
   SELECT v.id, v.source_url, v.platform, v.status, v.stage, v.error, v.title, v.description, v.hashtags,
-         v.duration, v.file_path, v.thumb_path, v.created_at,
+         v.duration, v.file_path, v.thumb_path, v.created_at, v.submitted_by,
          COALESCE(
            (SELECT json_agg(json_build_object('slug', t.slug, 'name', t.name, 'source', vt.source) ORDER BY t.name)
               FROM video_topics vt JOIN topics t ON t.id = vt.topic_id WHERE vt.video_id = v.id),
@@ -121,6 +158,69 @@ function toView(r: VideoRow): VideoView {
     createdAt: r.created_at.toISOString(),
   };
 }
+
+interface UserRow {
+  id: string;
+  nickname: string;
+  avatar: string | null;
+  role: "owner" | "resident";
+  is_ai: boolean;
+}
+
+const USER_COLUMNS = "id, nickname, avatar, role, is_ai";
+
+const toUser = (r: UserRow): UserView => ({
+  id: r.id,
+  nickname: r.nickname,
+  avatarUrl: avatarUrl(r.avatar),
+  role: r.role,
+  isAi: r.is_ai,
+});
+
+interface CommentRow {
+  id: string;
+  text: string;
+  created_at: Date;
+  nickname: string;
+  avatar: string | null;
+  is_ai: boolean;
+}
+
+const toComment = (r: CommentRow): CommentView => ({
+  id: r.id,
+  text: r.text,
+  createdAt: r.created_at.toISOString(),
+  author: { nickname: r.nickname, avatarUrl: avatarUrl(r.avatar), isAi: r.is_ai },
+});
+
+interface FeedRow extends VideoRow {
+  comment_count: number;
+  like_count: number;
+  liked: boolean;
+  author_nickname: string | null;
+  author_avatar: string | null;
+  author_is_ai: boolean | null;
+}
+
+/** Vídeo com contagens, curtida de quem pede ($1) e autor. Quem usa completa com WHERE e ORDER BY. */
+const FEED_SELECT = `
+  SELECT v.*, c.comment_count, l.like_count, l.liked,
+         u.nickname AS author_nickname, u.avatar AS author_avatar, u.is_ai AS author_is_ai
+    FROM (${VIDEO_SELECT}) v
+    LEFT JOIN users u ON u.id = v.submitted_by
+    CROSS JOIN LATERAL (SELECT count(*)::int AS comment_count FROM comments c WHERE c.video_id = v.id) c
+    CROSS JOIN LATERAL (SELECT count(*)::int AS like_count, COALESCE(bool_or(l.user_id = $1), false) AS liked
+                          FROM likes l WHERE l.video_id = v.id) l`;
+
+const toFeedVideo = (r: FeedRow): FeedVideo => ({
+  ...toView(r),
+  commentCount: r.comment_count,
+  likeCount: r.like_count,
+  liked: r.liked,
+  author: r.author_nickname
+    ? { nickname: r.author_nickname, avatarUrl: avatarUrl(r.author_avatar), isAi: Boolean(r.author_is_ai) }
+    : null,
+});
 
 export class PgStore implements Store {
   constructor(private readonly pool: Pool) {}
@@ -226,12 +326,37 @@ export class PgStore implements Store {
     return res.rowCount === 1;
   }
 
-  async getOwner() {
-    const res = await this.pool.query<{ id: string; pin_hash: string }>(
-      "SELECT id, pin_hash FROM users WHERE role = 'owner' ORDER BY created_at LIMIT 1",
+  async findUser(nickname: string) {
+    const res = await this.pool.query<UserRow & { pin_hash: string | null }>(
+      `SELECT ${USER_COLUMNS}, pin_hash FROM users WHERE nickname = $1`,
+      [nickname],
     );
     const row = res.rows[0];
-    return row ? { id: row.id, pinHash: row.pin_hash } : null;
+    return row ? { user: toUser(row), pinHash: row.pin_hash } : null;
+  }
+
+  async createUser(nickname: string, pinHash: string) {
+    const res = await this.pool.query<UserRow>(
+      `INSERT INTO users (nickname, pin_hash) VALUES ($1, $2) ON CONFLICT (nickname) DO NOTHING RETURNING ${USER_COLUMNS}`,
+      [nickname, pinHash],
+    );
+    return res.rows[0] ? toUser(res.rows[0]) : null;
+  }
+
+  async createSession(userId: string, tokenHash: string) {
+    await this.pool.query("INSERT INTO sessions (token_hash, user_id) VALUES ($1, $2)", [tokenHash, userId]);
+  }
+
+  async sessionUser(tokenHash: string) {
+    const res = await this.pool.query<UserRow>(
+      `SELECT ${USER_COLUMNS.replace(/(\w+)/g, "u.$1")} FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = $1`,
+      [tokenHash],
+    );
+    return res.rows[0] ? toUser(res.rows[0]) : null;
+  }
+
+  async deleteSession(tokenHash: string) {
+    await this.pool.query("DELETE FROM sessions WHERE token_hash = $1", [tokenHash]);
   }
 
   async statusOf(ids: string[]) {
@@ -242,45 +367,76 @@ export class PgStore implements Store {
     return new Map(res.rows.map((r) => [r.id, r.status]));
   }
 
-  async feed(exclude: string[], limit: number): Promise<FeedPage> {
+  async feed(userId: string, exclude: string[], limit: number): Promise<FeedPage> {
     const query = (ids: string[]) =>
-      this.pool.query<VideoRow & { comment_count: number }>(
-        `SELECT * FROM (${VIDEO_SELECT}) v,
-                LATERAL (SELECT count(*)::int AS comment_count FROM comments c WHERE c.video_id = v.id) c
-          WHERE v.status = 'aprovado' AND v.file_path IS NOT NULL AND NOT (v.id = ANY($1::uuid[]))
-          ORDER BY random() LIMIT $2`,
-        [ids, limit],
+      this.pool.query<FeedRow>(
+        `${FEED_SELECT}
+          WHERE v.status = 'aprovado' AND v.file_path IS NOT NULL AND NOT (v.id = ANY($2::uuid[]))
+          ORDER BY random() LIMIT $3`,
+        [userId, ids, limit],
       );
     const ids = exclude.filter(isUuid);
     let res = await query(ids);
     const restarted = res.rowCount === 0 && ids.length > 0;
     if (restarted) res = await query([]);
-    return { videos: res.rows.map((r) => ({ ...toView(r), commentCount: r.comment_count })), restarted };
+    return { videos: res.rows.map(toFeedVideo), restarted };
+  }
+
+  async addComment(userId: string, videoId: string, text: string) {
+    if (!isUuid(videoId)) return null;
+    const res = await this.pool.query<CommentRow>(
+      `WITH ins AS (
+         INSERT INTO comments (video_id, user_id, text)
+         SELECT $1::uuid, $2::uuid, $3 WHERE EXISTS (SELECT 1 FROM videos WHERE id = $1 AND status = 'aprovado')
+         RETURNING id, text, created_at, user_id)
+       SELECT ins.id, ins.text, ins.created_at, u.nickname, u.avatar, u.is_ai FROM ins JOIN users u ON u.id = ins.user_id`,
+      [videoId, userId, text],
+    );
+    return res.rows[0] ? toComment(res.rows[0]) : null;
+  }
+
+  async setLike(userId: string, videoId: string, liked: boolean) {
+    if (!isUuid(videoId)) return null;
+    const video = await this.pool.query("SELECT 1 FROM videos WHERE id = $1 AND status = 'aprovado'", [videoId]);
+    if (!video.rowCount) return null;
+    await this.pool.query(
+      liked
+        ? "INSERT INTO likes (user_id, video_id) VALUES ($1, $2) ON CONFLICT DO NOTHING"
+        : "DELETE FROM likes WHERE user_id = $1 AND video_id = $2",
+      [userId, videoId],
+    );
+    const count = await this.pool.query<{ n: number }>("SELECT count(*)::int AS n FROM likes WHERE video_id = $1", [videoId]);
+    return { liked, likeCount: count.rows[0]!.n };
+  }
+
+  async profile(nickname: string, viewerId: string) {
+    const res = await this.pool.query<UserRow & { bio: string | null; name: string | null }>(
+      `SELECT ${USER_COLUMNS.replace(/(\w+)/g, "u.$1")}, p.bio, p.config->>'nome' AS name
+         FROM users u LEFT JOIN personas p ON p.user_id = u.id WHERE u.nickname = $1`,
+      [nickname],
+    );
+    const row = res.rows[0];
+    if (!row) return null;
+    const liked = await this.pool.query<FeedRow>(
+      `${FEED_SELECT} JOIN likes pl ON pl.video_id = v.id AND pl.user_id = $2
+        WHERE v.status = 'aprovado' AND v.file_path IS NOT NULL
+        ORDER BY pl.created_at DESC LIMIT 200`,
+      [viewerId, row.id],
+    );
+    return { ...toUser(row), name: row.name, bio: row.bio, liked: liked.rows.map(toFeedVideo) };
   }
 
   async listComments(videoId: string) {
     if (!isUuid(videoId)) return null;
     const video = await this.pool.query("SELECT 1 FROM videos WHERE id = $1 AND status = 'aprovado'", [videoId]);
     if (!video.rowCount) return null;
-    const res = await this.pool.query<{
-      id: string;
-      text: string;
-      created_at: Date;
-      nickname: string;
-      avatar: string | null;
-      is_ai: boolean;
-    }>(
+    const res = await this.pool.query<CommentRow>(
       `SELECT c.id, c.text, c.created_at, u.nickname, u.avatar, u.is_ai
          FROM comments c JOIN users u ON u.id = c.user_id
         WHERE c.video_id = $1 ORDER BY c.created_at`,
       [videoId],
     );
-    return res.rows.map((r) => ({
-      id: r.id,
-      text: r.text,
-      createdAt: r.created_at.toISOString(),
-      author: { nickname: r.nickname, avatarUrl: avatarUrl(r.avatar), isAi: r.is_ai },
-    }));
+    return res.rows.map(toComment);
   }
 
   async videosMissingPersonaComments() {
