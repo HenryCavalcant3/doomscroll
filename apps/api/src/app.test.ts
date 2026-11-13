@@ -251,7 +251,7 @@ describe("entrada com apelido e PIN", () => {
     const blocked = await enter("dono", "1234", a);
     expect(blocked.statusCode).toBe(429);
     expect(blocked.headers["retry-after"]).toBe("900");
-    // Outro apelido no mesmo IP ainda pode entrar.
+    // Outro apelido continua entrando (todos chegam com o mesmo IP atrás do Docker).
     expect((await enter("outro", "5555", a)).statusCode).toBe(201);
     clock += 15 * 60_000;
     expect((await enter("dono", "1234", a)).statusCode).toBe(200);

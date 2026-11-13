@@ -62,10 +62,9 @@ export function buildApp({
   removeMedia = async () => {},
   now = Date.now,
 }: AppDeps) {
-  // Atrás do nginx do web: o IP de quem acessa vem no X-Forwarded-For.
-  const app = Fastify({ logger, trustProxy: true });
-  const failuresByNickname = new LoginLimiter(5, LOGIN_WINDOW_MS, now);
-  const failuresByIp = new LoginLimiter(20, LOGIN_WINDOW_MS, now);
+  const app = Fastify({ logger });
+  // Limite por apelido, não por IP: atrás do Docker todos os celulares chegam com o mesmo IP do gateway.
+  const failures = new LoginLimiter(5, LOGIN_WINDOW_MS, now);
 
   if (serveMedia) {
     app.register(fastifyStatic, { root: config.mediaDir, prefix: "/media/", index: false, list: false });
@@ -135,9 +134,7 @@ export function buildApp({
       if (!NICKNAME.test(nickname)) {
         return reply.code(400).send({ error: "O apelido precisa ter de 3 a 30 letras sem acento, números ou _." });
       }
-      const nickKey = `apelido:${nickname}`;
-      const ipKey = `ip:${req.ip}`;
-      const wait = Math.max(failuresByNickname.blockedFor(nickKey), failuresByIp.blockedFor(ipKey));
+      const wait = failures.blockedFor(nickname);
       if (wait > 0) {
         return reply
           .code(429)
@@ -151,11 +148,10 @@ export function buildApp({
       if (found) {
         if (!found.pinHash) return reply.code(409).send({ error: "Esse apelido é de uma persona. Escolha outro." });
         if (!(await verifyPin(pin, found.pinHash))) {
-          failuresByNickname.fail(nickKey);
-          failuresByIp.fail(ipKey);
+          failures.fail(nickname);
           return reply.code(401).send({ error: "PIN incorreto." });
         }
-        failuresByNickname.reset(nickKey);
+        failures.reset(nickname);
         user = found.user;
       } else {
         if (!NEW_PIN.test(pin)) return reply.code(400).send({ error: "O PIN precisa ter de 4 a 6 números." });

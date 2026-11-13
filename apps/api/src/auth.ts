@@ -23,8 +23,8 @@ interface Bucket {
 }
 
 /**
- * Limite de PIN errado, em memória (um processo de api só). Conta falhas por chave (apelido e IP)
- * numa janela fixa; um acerto zera a chave do apelido.
+ * Limite de PIN errado, em memória (um processo de api só). Conta falhas por chave (o apelido)
+ * numa janela fixa; um acerto zera a chave.
  */
 export class LoginLimiter {
   private readonly buckets = new Map<string, Bucket>();
