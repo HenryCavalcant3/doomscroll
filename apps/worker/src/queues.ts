@@ -7,6 +7,7 @@ export const QUEUES = {
   transcribe: "video.transcribe",
   suggest: "video.suggest",
   embed: "video.embed",
+  personaComment: "persona.comment",
 } as const;
 
 export type QueueName = (typeof QUEUES)[keyof typeof QUEUES];

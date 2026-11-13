@@ -1,5 +1,5 @@
 import type { Pool } from "pg";
-import type { TopicOption } from "./ai.js";
+import type { PersonaProfile, TopicOption, VideoForComment } from "./ai.js";
 
 export interface VideoRecord {
   id: string;
@@ -23,6 +23,12 @@ export interface VideoDb {
   saveEmbedding(id: string, embedding: number[]): Promise<void>;
   fail(id: string, error: string, keepStatus: boolean): Promise<void>;
   listTopics(): Promise<TopicOption[]>;
+  /** Status, título, descrição e nomes dos tópicos do vídeo, para o comentário da persona. */
+  videoForComment(id: string): Promise<(VideoForComment & { status: string }) | null>;
+  /** Personas que ainda não comentaram o vídeo. */
+  personasWithoutComment(videoId: string): Promise<PersonaProfile[]>;
+  /** Grava o comentário só se a persona ainda não comentou (seguro para novas tentativas). */
+  addPersonaComment(videoId: string, userId: string, text: string): Promise<boolean>;
 }
 
 export class PgVideoDb implements VideoDb {
@@ -123,5 +129,54 @@ export class PgVideoDb implements VideoDb {
 
   async listTopics() {
     return (await this.pool.query<TopicOption>("SELECT slug, name FROM topics ORDER BY name")).rows;
+  }
+
+  async videoForComment(id: string) {
+    const res = await this.pool.query<{ status: string; title: string | null; description: string | null; topics: string[] }>(
+      `SELECT v.status, v.title, v.description,
+              COALESCE(array_agg(t.name ORDER BY t.name) FILTER (WHERE t.id IS NOT NULL), '{}') AS topics
+         FROM videos v
+         LEFT JOIN video_topics vt ON vt.video_id = v.id
+         LEFT JOIN topics t ON t.id = vt.topic_id
+        WHERE v.id = $1
+        GROUP BY v.id`,
+      [id],
+    );
+    return res.rows[0] ?? null;
+  }
+
+  async personasWithoutComment(videoId: string) {
+    const res = await this.pool.query<{
+      user_id: string;
+      nickname: string;
+      bio: string;
+      tone: string;
+      examples: string[];
+      config: { nome?: string };
+    }>(
+      `SELECT p.user_id, u.nickname, p.bio, p.tone, p.examples, p.config
+         FROM personas p JOIN users u ON u.id = p.user_id
+        WHERE NOT EXISTS (SELECT 1 FROM comments c WHERE c.video_id = $1 AND c.user_id = p.user_id)
+        ORDER BY u.nickname`,
+      [videoId],
+    );
+    return res.rows.map((r) => ({
+      userId: r.user_id,
+      nickname: r.nickname,
+      name: r.config.nome ?? r.nickname,
+      bio: r.bio,
+      tone: r.tone,
+      examples: r.examples,
+    }));
+  }
+
+  async addPersonaComment(videoId: string, userId: string, text: string) {
+    const res = await this.pool.query(
+      `INSERT INTO comments (video_id, user_id, text)
+         SELECT $1::uuid, $2::uuid, $3
+          WHERE NOT EXISTS (SELECT 1 FROM comments WHERE video_id = $1::uuid AND user_id = $2::uuid)`,
+      [videoId, userId, text],
+    );
+    return res.rowCount === 1;
   }
 }

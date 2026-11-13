@@ -7,8 +7,20 @@ import { runStep, type PipelineDeps } from "./pipeline.js";
 import { QUEUES } from "./queues.js";
 
 const ID = "11111111-1111-4111-8111-111111111111";
+const VALDIR = {
+  userId: "22222222-2222-4222-8222-222222222222",
+  nickname: "tio_valdir",
+  name: "Tio Valdir",
+  bio: "Tio do bunker.",
+  tone: "Animado.",
+  examples: ["Bom dia!"],
+};
 
-function fakeDb(): VideoDb & { video: VideoRecord & { stage: string; error?: string; embedding?: number[] }; topics: string[] } {
+function fakeDb(): VideoDb & {
+  video: VideoRecord & { stage: string; error?: string; embedding?: number[] };
+  topics: string[];
+  comments: { userId: string; text: string }[];
+} {
   const video = {
     id: ID, sourceUrl: "https://youtu.be/x", status: "baixando", stage: "baixando", title: null as string | null,
     hashtags: [] as string[], description: null as string | null, transcript: null as string | null, filePath: null as string | null,
@@ -29,6 +41,15 @@ function fakeDb(): VideoDb & { video: VideoRecord & { stage: string; error?: str
     saveEmbedding: async (_: string, embedding: number[]) => Object.assign(db.video, { embedding, stage: "concluido" }),
     fail: async (_: string, error: string, keep: boolean) => Object.assign(db.video, { error, status: keep ? video.status : "falhou" }),
     listTopics: async () => [{ slug: "humor", name: "Humor" }],
+    comments: [] as { userId: string; text: string }[],
+    videoForComment: async () => ({ status: video.status, title: video.title, description: video.description, topics: ["Humor"] }),
+    personasWithoutComment: async () =>
+      [VALDIR].filter((p) => !db.comments.some((c) => c.userId === p.userId)),
+    addPersonaComment: async (_: string, userId: string, text: string) => {
+      if (db.comments.some((c) => c.userId === userId)) return false;
+      db.comments.push({ userId, text });
+      return true;
+    },
   };
   return db as never;
 }
@@ -56,6 +77,8 @@ beforeEach(async () => {
     transcribe: async () => "miau",
     suggest: vi.fn(async () => ({ topics: ["humor"], description: "Um gato." })),
     embed: vi.fn(async () => [0.1, 0.2]),
+    comment: vi.fn(async () => "Bom dia, sobreviventes!"),
+    random: () => 0.5,
   };
 });
 
@@ -122,6 +145,39 @@ describe("pipeline de ingestão", () => {
     };
     await expect(runStep(QUEUES.embed, deps, { ...job, retryCount: 2 })).rejects.toThrow();
     expect(db.video).toMatchObject({ status: "aprovado", error: "ollama fora" });
+    expect(await readdir(deps.mediaDir)).toContain(ID);
+  });
+});
+
+describe("comentário da persona", () => {
+  it("só comenta vídeo aprovado, uma vez por persona", async () => {
+    await runStep(QUEUES.personaComment, deps, job);
+    expect(deps.comment).not.toHaveBeenCalled();
+
+    db.video.status = "aprovado";
+    await runStep(QUEUES.personaComment, deps, job);
+    await runStep(QUEUES.personaComment, deps, job);
+    expect(deps.comment).toHaveBeenCalledTimes(1);
+    expect(deps.comment).toHaveBeenCalledWith(VALDIR, expect.objectContaining({ topics: ["Humor"] }), false);
+    expect(db.comments).toEqual([{ userId: VALDIR.userId, text: "Bom dia, sobreviventes!" }]);
+  });
+
+  it("às vezes pede a brincadeira com o fim do mundo", async () => {
+    db.video.status = "aprovado";
+    deps.random = () => 0.01;
+    await runStep(QUEUES.personaComment, deps, job);
+    expect(deps.comment).toHaveBeenCalledWith(VALDIR, expect.anything(), true);
+  });
+
+  it("falha no comentário não tira o vídeo do feed nem apaga arquivos", async () => {
+    await runStep(QUEUES.download, deps, job);
+    db.video.status = "aprovado";
+    deps.comment = async () => {
+      throw new Error("ollama fora");
+    };
+    await expect(runStep(QUEUES.personaComment, deps, { ...job, retryCount: 2 })).rejects.toThrow();
+    expect(db.video.status).toBe("aprovado");
+    expect(db.video.error).toBeUndefined();
     expect(await readdir(deps.mediaDir)).toContain(ID);
   });
 });

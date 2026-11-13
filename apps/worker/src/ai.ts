@@ -106,6 +106,94 @@ export function embeddingText(v: VideoText & { description: string | null }): st
   return `search_document: ${parts.filter(Boolean).join("\n")}`;
 }
 
+/** Persona como o worker a lê do banco (carregada de personas/*.json pela api). */
+export interface PersonaProfile {
+  userId: string;
+  nickname: string;
+  name: string;
+  bio: string;
+  tone: string;
+  examples: string[];
+}
+
+/** O que a persona sabe do vídeo para comentar. A transcrição fica de fora: é longa e às vezes errada. */
+export interface VideoForComment {
+  title: string | null;
+  description: string | null;
+  topics: string[];
+}
+
+export const MAX_COMMENT = 160;
+
+/**
+ * Prompt do comentário pré-gerado (SPEC 5.1, passo 6). O tema apocalipse aparece só às vezes,
+ * decidido por sorteio fora do modelo (SPEC 7.1: decisões por pesos, LLM só gera texto).
+ */
+export function buildCommentPrompt(persona: PersonaProfile, video: VideoForComment, apocalypse: boolean): string {
+  const examples = persona.examples.map((e) => `- ${e}`).join("\n");
+  const theme = apocalypse
+    ? "- Desta vez, termine com uma piada curta sobre guardar o vídeo para quando a internet acabar ou sobre a vida no bunker."
+    : "- Não fale de fim do mundo, apocalipse nem bunker. Reaja como uma pessoa comum.";
+  return `Você é ${persona.name}, usuário de uma rede social brasileira de vídeos curtos.
+Quem você é: ${persona.bio}
+Seu jeito de escrever: ${persona.tone}
+
+Frases suas (imite o estilo, não copie):
+${examples}
+
+Regras:
+- Escreva UM comentário curto, de uma ou duas frases (até ${MAX_COMMENT - 60} caracteres), em português do Brasil.
+- Escreva do jeito das suas frases acima: mesmas expressões, mesma pontuação, mesmos emojis.
+- Reaja ao assunto do vídeo como quem comenta no celular. Não resuma o vídeo e não elogie a técnica.
+- Sem hashtags e sem aspas.
+${theme}
+- Responda só com JSON: {"comentario": "..."}
+
+Vídeo:
+Título: ${clip(video.title ?? "(sem título)", 200)}
+Descrição: ${video.description || "(sem descrição)"}
+Tópicos: ${video.topics.join(", ") || "(nenhum)"}
+`;
+}
+
+export const commentSchema = {
+  type: "object",
+  properties: { comentario: { type: "string" } },
+  required: ["comentario"],
+};
+
+/** Limpa a resposta do modelo; devolve null se não sobrar um comentário usável. */
+export function parseComment(raw: string): string | null {
+  let data: { comentario?: unknown };
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (typeof data.comentario !== "string") return null;
+  const text = data.comentario
+    .replace(/#[\p{L}\p{N}_]+/gu, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^["'“”]+|["'“”]+$/g, "")
+    .trim();
+  if (text.length < 2) return null;
+  return clip(text, MAX_COMMENT);
+}
+
+const normalize = (s: string) =>
+  s
+    .normalize("NFD")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .toLowerCase()
+    .trim();
+
+/** true quando o comentário é só uma frase de exemplo da persona repetida. */
+export function copiesExample(text: string, examples: string[]): boolean {
+  const t = normalize(text);
+  return examples.some((e) => normalize(e) === t);
+}
+
 export class OllamaClient {
   constructor(
     private readonly baseUrl: string,
@@ -135,6 +223,25 @@ export class OllamaClient {
       options: { temperature: 0, num_ctx: 4096 },
     });
     return parseSuggestion(data.response, slugs, video.title);
+  }
+
+  async comment(persona: PersonaProfile, video: VideoForComment, apocalypse: boolean): Promise<string> {
+    let last = "";
+    // O modelo pequeno às vezes devolve uma das frases de exemplo inteira: nesse caso tenta de novo.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const data = await this.post<{ response: string }>("/api/generate", {
+        model: this.llmModel,
+        prompt: buildCommentPrompt(persona, video, apocalypse),
+        format: commentSchema,
+        stream: false,
+        // Um pouco de variação: comentários iguais em todo vídeo ficariam artificiais.
+        options: { temperature: 0.8, num_ctx: 4096, num_predict: 120 },
+      });
+      last = data.response;
+      const text = parseComment(data.response);
+      if (text && !copiesExample(text, persona.examples)) return text;
+    }
+    throw new Error(`Comentário vazio, inválido ou copiado do exemplo: ${last.slice(0, 120)}`);
   }
 
   async embed(text: string): Promise<number[]> {

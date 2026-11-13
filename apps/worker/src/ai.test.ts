@@ -1,5 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
-import { buildTopicPrompt, EMBED_DIM, embeddingText, OllamaClient, parseSuggestion, topicSchema } from "./ai.js";
+import {
+  buildCommentPrompt,
+  buildTopicPrompt,
+  copiesExample,
+  EMBED_DIM,
+  embeddingText,
+  MAX_COMMENT,
+  OllamaClient,
+  parseComment,
+  parseSuggestion,
+  topicSchema,
+} from "./ai.js";
 
 const topics = [
   { slug: "humor", name: "Humor" },
@@ -55,4 +66,43 @@ describe("OllamaClient", () => {
 
 it("monta o texto do embedding com prefixo de documento", () => {
   expect(embeddingText({ title: "T", description: "D", hashtags: ["a"], transcript: null })).toBe("search_document: T\nD\n#a");
+});
+
+describe("comentário da persona", () => {
+  const persona = {
+    userId: "u1",
+    nickname: "tio_valdir",
+    name: "Tio Valdir",
+    bio: "Tio do bunker.",
+    tone: "Animado.",
+    examples: ["Bom dia, sobreviventes!", "KKKK"],
+  };
+  const v = { title: "Gato pula no sofá", description: "Um gato pula no sofá.", topics: ["Animais"] };
+
+  it("usa a voz da persona e só pede o tema apocalipse quando sorteado", () => {
+    const normal = buildCommentPrompt(persona, v, false);
+    expect(normal).toContain("Você é Tio Valdir");
+    expect(normal).toContain("- Bom dia, sobreviventes!");
+    expect(normal).toContain("Tópicos: Animais");
+    expect(normal).toContain("Não fale de fim do mundo");
+    expect(buildCommentPrompt(persona, v, true)).toContain("quando a internet acabar");
+  });
+
+  it("limpa aspas e hashtags e corta comentários longos", () => {
+    expect(parseComment('{"comentario": "\\"Que lindo!! #gato #fofo\\""}')).toBe("Que lindo!!");
+    expect(parseComment(JSON.stringify({ comentario: "a".repeat(500) }))!.length).toBeLessThanOrEqual(MAX_COMMENT + 1);
+  });
+
+  it("recusa resposta vazia ou fora do formato", () => {
+    expect(parseComment("não é json")).toBeNull();
+    expect(parseComment('{"comentario": "  "}')).toBeNull();
+    expect(parseComment('{"outra": "coisa"}')).toBeNull();
+  });
+});
+
+describe("cópia de exemplo", () => {
+  it("reconhece frase de exemplo repetida, ignorando pontuação e emojis", () => {
+    expect(copiesExample("KKKKKK esse aí sou eu no churrasco da família 😂", ["KKKKKK esse aí sou eu no churrasco da família"])).toBe(true);
+    expect(copiesExample("Esse cachorro é demais!", ["KKKKKK esse aí sou eu no churrasco da família"])).toBe(false);
+  });
 });

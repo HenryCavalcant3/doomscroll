@@ -47,6 +47,7 @@ const deps: PipelineDeps = {
   transcribe: async (wav, outBase) => transcribe(await ensureModel(config.whisperDir, config.whisperModel), wav, outBase),
   suggest: (video, topics) => ollama.suggest(video, topics),
   embed: (text) => ollama.embed(text),
+  comment: (persona, video, apocalypse) => ollama.comment(persona, video, apocalypse),
   log: (msg) => console.log(msg),
 };
 

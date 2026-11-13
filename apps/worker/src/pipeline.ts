@@ -1,6 +1,6 @@
 import { mkdir, readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
-import type { Suggestion, TopicOption, VideoText } from "./ai.js";
+import type { PersonaProfile, Suggestion, TopicOption, VideoForComment, VideoText } from "./ai.js";
 import { embeddingText } from "./ai.js";
 import type { VideoDb } from "./db.js";
 import type { Probe } from "./ffmpeg.js";
@@ -18,8 +18,17 @@ export interface PipelineDeps {
   transcribe(wav: string, outBase: string): Promise<string>;
   suggest(video: VideoText, topics: TopicOption[]): Promise<Suggestion>;
   embed(text: string): Promise<number[]>;
+  comment(persona: PersonaProfile, video: VideoForComment, apocalypse: boolean): Promise<string>;
+  /** Sorteio (0 a 1); substituível nos testes. */
+  random?: () => number;
   log?: (msg: string) => void;
 }
+
+/** Chance de o comentário brincar com o fim do mundo (SPEC 7.3: só uma parte pequena das falas). */
+export const APOCALYPSE_CHANCE = 0.15;
+
+/** Filas que rodam depois da aprovação: uma falha nelas não tira o vídeo do feed. */
+const AFTER_APPROVAL: ReadonlySet<QueueName> = new Set([QUEUES.embed, QUEUES.personaComment]);
 
 export interface JobInfo {
   data: { videoId: string };
@@ -88,11 +97,24 @@ const steps: Record<QueueName, Step> = {
     if (video.status !== "aprovado") return; // rejeitado ou removido nesse meio-tempo
     await deps.db.saveEmbedding(id, await deps.embed(embeddingText(video)));
   },
+
+  async [QUEUES.personaComment](deps, id) {
+    const video = await deps.db.videoForComment(id);
+    if (video?.status !== "aprovado") return;
+    const random = deps.random ?? Math.random;
+    // Só personas que ainda não comentaram: nova tentativa ou job repetido não duplica comentário.
+    for (const persona of await deps.db.personasWithoutComment(id)) {
+      const text = await deps.comment(persona, video, random() < APOCALYPSE_CHANCE);
+      await deps.db.addPersonaComment(id, persona.userId, text);
+      deps.log?.(`[worker] ${persona.nickname} comentou (${id}): ${text}`);
+    }
+  },
 };
 
 /**
  * Executa uma etapa do pipeline. Na última tentativa que falhar, registra o erro no vídeo
- * (status `falhou` e arquivos apagados; no embedding, o vídeo continua aprovado e só guarda o erro).
+ * (status `falhou` e arquivos apagados). Depois da aprovação o vídeo continua no feed: o embedding só
+ * guarda o erro e o comentário da persona apenas registra no log.
  */
 export async function runStep(queue: QueueName, deps: PipelineDeps, job: JobInfo): Promise<void> {
   const id = job.data.videoId;
@@ -103,10 +125,15 @@ export async function runStep(queue: QueueName, deps: PipelineDeps, job: JobInfo
     const message = err instanceof Error ? err.message : String(err);
     deps.log?.(`[worker] ${queue} falhou (${id}, tentativa ${job.retryCount + 1}): ${message}`);
     if (job.retryCount >= QUEUE_OPTIONS.retryLimit) {
-      const keepStatus = queue === QUEUES.embed;
-      await deps.db.fail(id, message, keepStatus);
-      // Vídeo que falhou não vai para o feed: não deixa arquivos ocupando espaço.
-      if (!keepStatus) await rm(join(deps.mediaDir, id), { recursive: true, force: true });
+      if (queue === QUEUES.personaComment) {
+        // Sem comentário o vídeo continua no feed; a api tenta de novo na próxima subida.
+      } else if (AFTER_APPROVAL.has(queue)) {
+        await deps.db.fail(id, message, true);
+      } else {
+        await deps.db.fail(id, message, false);
+        // Vídeo que falhou não vai para o feed: não deixa arquivos ocupando espaço.
+        await rm(join(deps.mediaDir, id), { recursive: true, force: true });
+      }
     }
     throw err;
   }
