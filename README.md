@@ -16,7 +16,7 @@ Um computador roda tudo (backend, frontend, banco e IA) e compartilha uma rede l
 
 É um projeto open source, meio meme, meio laboratório de rede social com IA local. A especificação completa está em [SPEC.md](SPEC.md).
 
-> **Estado atual:** passo 8 do SPEC, em andamento. Cada pessoa entra com apelido e PIN, cadastra vídeos por link (o worker baixa, converte, transcreve e a IA sugere tópicos), o dono aprova no painel e todo mundo assiste no feed vertical, curte e comenta. As cinco personas (Tio Valdir, Capitão Enlatado, Dona Neide, Rato e Kelly) comentam os vídeos aprovados, até o limite de `PERSONA_RATE` ações por hora, e o perfil mostra os vídeos curtidos. O feed aprende o gosto de cada pessoa pelos tópicos e pelo conteúdo dos vídeos. As pessoas conversam entre si em tempo real, em conversas diretas e grupos (todo mundo da rede já entra no Grupo do Bunker), mandam vídeos do feed e reagem às mensagens com emoji. As personas já estão no Grupo do Bunker, mas ainda não conversam no chat.
+> **Estado atual:** passo 8 do SPEC, em andamento. Cada pessoa entra com apelido e PIN, cadastra vídeos por link (o worker baixa, converte, transcreve e a IA sugere tópicos), o dono aprova no painel e todo mundo assiste no feed vertical, curte e comenta. As cinco personas (Tio Valdir, Capitão Enlatado, Dona Neide, Rato e Kelly) comentam os vídeos aprovados, até o limite de `PERSONA_RATE` ações por hora, e o perfil mostra os vídeos curtidos. O feed aprende o gosto de cada pessoa pelos tópicos e pelo conteúdo dos vídeos. As pessoas conversam entre si em tempo real, em conversas diretas e grupos (todo mundo da rede já entra no Grupo do Bunker), mandam vídeos do feed e reagem às mensagens com emoji. Também dá para conversar com as personas por mensagem direta: a resposta chega aos poucos, como alguém digitando, e cada persona guarda um resumo do que sabe de cada pessoa. No painel do dono, a aba Personas mostra quanto cada uma agiu na última hora. As personas já estão no Grupo do Bunker, mas ainda não falam em grupos.
 
 ## Como rodar
 
@@ -78,7 +78,7 @@ Tudo funciona sem `.env`. Para mudar os padrões, copie [.env.example](.env.exam
 | `EMBED_MODEL` | `nomic-embed-text` | Modelo de embeddings |
 | `WHISPER_MODEL` | `base` | Modelo do Whisper usado na transcrição |
 | `OWNER_PIN` | gerado na 1ª subida | PIN inicial do dono do bunker |
-| `PERSONA_RATE` | `30` | Limite de ações de persona por hora |
+| `PERSONA_RATE` | `30` | Limite de comentários de persona por hora (respostas no chat também contam, mas nunca são barradas; `0` desliga os comentários) |
 
 ### GPU (NVIDIA)
 
@@ -151,6 +151,12 @@ Para ver como a persona escreve antes de mandar, rode a bancada de avaliação. 
 ```bash
 DATABASE_URL=postgres://doomscroll:doomscroll@127.0.0.1:5432/doomscroll OLLAMA_URL=http://127.0.0.1:11434 \
   pnpm --filter @doomscroll/worker avaliar --amostras 2 --so tio_valdir
+```
+
+O modo de chat da bancada roda conversas roteirizadas com cada persona (cumprimento, pergunta direta, vídeo compartilhado, assunto pessoal) com o mesmo prompt e as mesmas regras do app. O relatório mostra as conversas inteiras, as respostas recusadas (que repetiam a mensagem ou copiavam um exemplo) e quantas soaram como assistente ("se precisar, estou aqui"). Ele só precisa do Ollama:
+
+```bash
+OLLAMA_URL=http://127.0.0.1:11434 pnpm --filter @doomscroll/api avaliar --amostras 2 --so rato,kelly
 ```
 
 Dicas que a bancada mostrou com o modelo pequeno: frases de exemplo genéricas ("que vídeo bom") são copiadas inteiras, então prefira exemplos ligados a um vídeo concreto e com começos variados; deixe o tema fim do mundo fora dos exemplos (o app sorteia quando ele aparece); e descreva no `tom` o que a persona repara num vídeo.
