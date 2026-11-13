@@ -136,35 +136,54 @@ export interface PersonaProfile {
   examples: string[];
 }
 
-/** O que a persona sabe do vídeo para comentar. A transcrição fica de fora: é longa e às vezes errada. */
+/** O que a persona sabe do vídeo para comentar. A transcrição é opcional e entra só no começo. */
 export interface VideoForComment {
   title: string | null;
   description: string | null;
   topics: string[];
+  transcript?: string | null;
 }
 
 export const MAX_COMMENT = 160;
+/** Quantas frases de exemplo entram em cada pedido (sorteadas: com todas, o modelo se apega a uma). */
+export const EXAMPLES_PER_PROMPT = 3;
+const TRANSCRIPT_IN_COMMENT = 400;
+
+/** Sorteia `n` frases de exemplo, em ordem aleatória. */
+export function pickExamples(examples: string[], n = EXAMPLES_PER_PROMPT, random = Math.random): string[] {
+  const pool = [...examples];
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j]!, pool[i]!];
+  }
+  return pool.slice(0, n);
+}
 
 /**
  * Prompt do comentário pré-gerado (SPEC 5.1, passo 6). O tema apocalipse aparece só às vezes,
  * decidido por sorteio fora do modelo (SPEC 7.1: decisões por pesos, LLM só gera texto).
  */
-export function buildCommentPrompt(persona: PersonaProfile, video: VideoForComment, apocalypse: boolean): string {
-  const examples = persona.examples.map((e) => `- ${e}`).join("\n");
+export function buildCommentPrompt(
+  persona: PersonaProfile,
+  video: VideoForComment,
+  apocalypse: boolean,
+  examples: string[] = persona.examples,
+): string {
   const theme = apocalypse
     ? "- Desta vez, termine com uma piada curta sobre guardar o vídeo para quando a internet acabar ou sobre a vida no bunker."
     : "- Não fale de fim do mundo, apocalipse nem bunker. Reaja como uma pessoa comum.";
+  const transcript = video.transcript ? `\nO que se ouve no começo: ${clip(video.transcript, TRANSCRIPT_IN_COMMENT)}` : "";
   return `Você é ${persona.name}, usuário de uma rede social brasileira de vídeos curtos.
 Quem você é: ${persona.bio}
 Seu jeito de escrever: ${persona.tone}
 
-Frases suas (só mostram o estilo; não repita nem pedaços delas):
-${examples}
+Comentários que você fez em OUTROS vídeos (só mostram o jeito de escrever):
+${examples.map((e) => `- ${e}`).join("\n")}
 
 Regras:
-- Escreva UM comentário curto, de uma ou duas frases (até ${MAX_COMMENT - 60} caracteres), em português do Brasil.
-- Escreva do jeito das suas frases acima: mesmas expressões, mesma pontuação, mesmos emojis.
-- Reaja ao assunto do vídeo como quem comenta no celular. Não resuma o vídeo e não elogie a técnica.
+- Escreva UM comentário novo, de uma ou duas frases (até ${MAX_COMMENT - 60} caracteres), em português do Brasil, mesmo que o título esteja em outra língua.
+- Copie o jeito das frases acima (expressões, pontuação, emojis), nunca o assunto: não cite nada delas que não esteja neste vídeo.
+- Comente sobre ESTE vídeo como quem comenta no celular. Não resuma o vídeo, não elogie a técnica e não invente fatos.
 - Sem hashtags e sem aspas.
 ${theme}
 - Responda só com JSON: {"comentario": "..."}
@@ -172,7 +191,7 @@ ${theme}
 Vídeo:
 Título: ${clip(video.title ?? "(sem título)", 200)}
 Descrição: ${video.description || "(sem descrição)"}
-Tópicos: ${video.topics.join(", ") || "(nenhum)"}
+Tópicos: ${video.topics.join(", ") || "(nenhum)"}${transcript}
 `;
 }
 
@@ -238,7 +257,7 @@ export class OllamaClient {
     for (let attempt = 0; attempt < 3; attempt++) {
       const data = await this.post<{ response: string }>("/api/generate", {
         model: this.llmModel,
-        prompt: buildCommentPrompt(persona, video, apocalypse),
+        prompt: buildCommentPrompt(persona, video, apocalypse, pickExamples(persona.examples)),
         format: commentSchema,
         stream: false,
         // Um pouco de variação: comentários iguais em todo vídeo ficariam artificiais.
@@ -246,7 +265,7 @@ export class OllamaClient {
       });
       last = data.response;
       const text = parseComment(data.response);
-      const about = [video.title, video.description, video.topics.join(" ")].join(" ");
+      const about = [video.title, video.description, video.topics.join(" "), video.transcript ?? ""].join(" ");
       if (text && !copiesExample(text, persona.examples, about)) return text;
     }
     throw new Error(`Comentário vazio, inválido ou copiado do exemplo: ${last.slice(0, 120)}`);

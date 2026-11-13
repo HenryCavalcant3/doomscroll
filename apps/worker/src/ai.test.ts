@@ -3,11 +3,13 @@ import {
   buildCommentPrompt,
   buildTopicPrompt,
   EMBED_DIM,
+  EXAMPLES_PER_PROMPT,
   embeddingText,
   MAX_COMMENT,
   OllamaClient,
   parseComment,
   parseSuggestion,
+  pickExamples,
   topicSchema,
 } from "./ai.js";
 
@@ -91,6 +93,25 @@ describe("comentário da persona", () => {
     expect(normal).toContain("Tópicos: Animais");
     expect(normal).toContain("Não fale de fim do mundo");
     expect(buildCommentPrompt(persona, v, true)).toContain("quando a internet acabar");
+    expect(normal).not.toContain("O que se ouve");
+  });
+
+  it("mostra só as frases sorteadas e o começo da transcrição, quando houver", () => {
+    const prompt = buildCommentPrompt(persona, { ...v, transcript: "miau ".repeat(200) }, false, ["KKKK"]);
+    expect(prompt).toContain("- KKKK");
+    expect(prompt).not.toContain("Bom dia, sobreviventes!");
+    expect(prompt).toMatch(/O que se ouve no começo: (miau ){20}/);
+    expect(prompt.length).toBeLessThan(buildCommentPrompt(persona, v, false).length + 500);
+  });
+
+  it("sorteia frases de exemplo sem repetir", () => {
+    const examples = ["a", "b", "c", "d", "e", "f"];
+    const picked = pickExamples(examples);
+    expect(picked).toHaveLength(EXAMPLES_PER_PROMPT);
+    expect(new Set(picked).size).toBe(EXAMPLES_PER_PROMPT);
+    expect(picked.every((e) => examples.includes(e))).toBe(true);
+    expect(pickExamples(["a", "b"])).toHaveLength(2);
+    expect(examples).toEqual(["a", "b", "c", "d", "e", "f"]);
   });
 
   it("limpa aspas e hashtags e corta comentários longos", () => {
