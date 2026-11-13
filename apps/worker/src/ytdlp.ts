@@ -1,11 +1,13 @@
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
+import { cleanSourceDescription } from "./text.js";
 import { run } from "./tools.js";
 
 export interface DownloadResult {
   filePath: string;
   title: string | null;
   hashtags: string[];
+  sourceDescription: string | null;
 }
 
 /** Vídeos acima disso (ou ao vivo) não entram no bunker. */
@@ -40,16 +42,20 @@ interface YtDlpInfo {
   tags?: string[];
 }
 
-export function parseInfo(stdout: string): { title: string | null; hashtags: string[] } {
+export function parseInfo(stdout: string): Omit<DownloadResult, "filePath"> {
   const line = stdout.trim().split("\n").filter(Boolean).at(-1);
-  if (!line) return { title: null, hashtags: [] };
+  if (!line) return { title: null, hashtags: [], sourceDescription: null };
   const info = JSON.parse(line) as YtDlpInfo;
   const tags = new Set<string>();
   for (const t of info.tags ?? []) tags.add(t.toLowerCase().replace(/^#/, ""));
   for (const m of `${info.title ?? ""} ${info.description ?? ""}`.matchAll(/#([\p{L}\p{N}_]+)/gu)) {
     tags.add(m[1]!.toLowerCase());
   }
-  return { title: info.title?.trim() || null, hashtags: [...tags].filter(Boolean).slice(0, 20) };
+  return {
+    title: info.title?.trim() || null,
+    hashtags: [...tags].filter(Boolean).slice(0, 20),
+    sourceDescription: cleanSourceDescription(info.description),
+  };
 }
 
 export async function download(url: string, dir: string): Promise<DownloadResult> {

@@ -4,13 +4,15 @@ import type { PersonaProfile, Suggestion, TopicOption, VideoForComment, VideoTex
 import { embeddingText } from "./ai.js";
 import type { VideoDb } from "./db.js";
 import type { Probe } from "./ffmpeg.js";
+import { cleanTranscript } from "./text.js";
+import type { DownloadResult } from "./ytdlp.js";
 import { QUEUE_OPTIONS, QUEUES, type QueueName } from "./queues.js";
 
 export interface PipelineDeps {
   db: VideoDb;
   mediaDir: string;
   send(queue: QueueName, data: { videoId: string }): Promise<unknown>;
-  download(url: string, dir: string): Promise<{ filePath: string; title: string | null; hashtags: string[] }>;
+  download(url: string, dir: string): Promise<DownloadResult>;
   convert(input: string, output: string): Promise<void>;
   probe(file: string): Promise<Probe>;
   thumbnail(input: string, output: string, atSeconds: number): Promise<void>;
@@ -51,7 +53,7 @@ const steps: Record<QueueName, Step> = {
     await rm(dir, { recursive: true, force: true });
     await mkdir(dir, { recursive: true });
     const result = await deps.download(video.sourceUrl, dir);
-    await deps.db.saveDownload(id, result.title, result.hashtags);
+    await deps.db.saveDownload(id, result.title, result.hashtags, result.sourceDescription);
     await deps.send(QUEUES.convert, { videoId: id });
   },
 
@@ -76,7 +78,8 @@ const steps: Record<QueueName, Step> = {
       const wav = join(dir, "audio.wav");
       await deps.extractAudio(video, wav);
       try {
-        transcript = await deps.transcribe(wav, join(dir, "transcricao"));
+        // Só marcações de música ou frase inventada repetida contam como "sem fala".
+        transcript = cleanTranscript(await deps.transcribe(wav, join(dir, "transcricao")));
       } finally {
         await rm(wav, { force: true });
         await rm(join(dir, "transcricao.txt"), { force: true });

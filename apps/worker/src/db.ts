@@ -7,6 +7,7 @@ export interface VideoRecord {
   status: string;
   title: string | null;
   hashtags: string[];
+  sourceDescription: string | null;
   description: string | null;
   transcript: string | null;
   filePath: string | null;
@@ -16,7 +17,7 @@ export interface VideoRecord {
 export interface VideoDb {
   get(id: string): Promise<VideoRecord | null>;
   setStage(id: string, status: string, stage: string): Promise<void>;
-  saveDownload(id: string, title: string | null, hashtags: string[]): Promise<void>;
+  saveDownload(id: string, title: string | null, hashtags: string[], sourceDescription: string | null): Promise<void>;
   saveMedia(id: string, filePath: string, thumbPath: string, duration: number): Promise<void>;
   saveTranscript(id: string, transcript: string): Promise<void>;
   saveSuggestion(id: string, description: string, topicSlugs: string[]): Promise<void>;
@@ -36,7 +37,7 @@ export class PgVideoDb implements VideoDb {
 
   async get(id: string) {
     const res = await this.pool.query(
-      `SELECT id, source_url, status, title, hashtags, description, transcript, file_path FROM videos WHERE id = $1`,
+      `SELECT id, source_url, status, title, hashtags, source_description, description, transcript, file_path FROM videos WHERE id = $1`,
       [id],
     );
     const r = res.rows[0];
@@ -47,6 +48,7 @@ export class PgVideoDb implements VideoDb {
           status: r.status,
           title: r.title,
           hashtags: r.hashtags,
+          sourceDescription: r.source_description,
           description: r.description,
           transcript: r.transcript,
           filePath: r.file_path,
@@ -62,11 +64,11 @@ export class PgVideoDb implements VideoDb {
     ]);
   }
 
-  async saveDownload(id: string, title: string | null, hashtags: string[]) {
+  async saveDownload(id: string, title: string | null, hashtags: string[], sourceDescription: string | null) {
     await this.pool.query(
-      `UPDATE videos SET title = $2, hashtags = $3, status = 'processando', stage = 'convertendo', updated_at = now()
+      `UPDATE videos SET title = $2, hashtags = $3, source_description = $4, status = 'processando', stage = 'convertendo', updated_at = now()
         WHERE id = $1`,
-      [id, title, hashtags],
+      [id, title, hashtags, sourceDescription],
     );
   }
 

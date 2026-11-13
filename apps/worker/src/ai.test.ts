@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from "vitest";
 import {
   buildCommentPrompt,
   buildTopicPrompt,
-  copiesExample,
   EMBED_DIM,
   embeddingText,
   MAX_COMMENT,
@@ -18,7 +17,7 @@ const topics = [
   { slug: "dicas", name: "Dicas" },
 ];
 const slugs = topics.map((t) => t.slug);
-const video = { title: "Cachorro abre a geladeira", hashtags: ["cachorro"], transcript: "olha só isso".repeat(500) };
+const video = { title: "Cachorro abre a geladeira", hashtags: ["cachorro"], sourceDescription: null, transcript: "olha só isso".repeat(500) };
 
 describe("prompt de tópicos", () => {
   it("lista só os tópicos permitidos, traz exemplos e corta a transcrição", () => {
@@ -42,6 +41,10 @@ describe("parseSuggestion", () => {
 
   it("usa o título quando a resposta não é JSON", () => {
     expect(parseSuggestion("não sei", slugs, "Título")).toEqual({ topics: [], description: "Título" });
+    const meta = JSON.stringify({ topicos: [], descricao: "Transcrição confusa, não identifiquei tópico claro." });
+    expect(parseSuggestion(meta, slugs, "Título")).toEqual({ topics: [], description: "Título" });
+    const copied = JSON.stringify({ topicos: ["humor"], descricao: "Gato derruba um copo e finge inocência." });
+    expect(parseSuggestion(copied, slugs, "LA CALABAZA#meowtakeover")).toEqual({ topics: ["humor"], description: "LA CALABAZA" });
   });
 });
 
@@ -65,7 +68,9 @@ describe("OllamaClient", () => {
 });
 
 it("monta o texto do embedding com prefixo de documento", () => {
-  expect(embeddingText({ title: "T", description: "D", hashtags: ["a"], transcript: null })).toBe("search_document: T\nD\n#a");
+  expect(embeddingText({ title: "T", description: "D", hashtags: ["a"], sourceDescription: "S", transcript: null })).toBe(
+    "search_document: T\nD\nS\n#a",
+  );
 });
 
 describe("comentário da persona", () => {
@@ -100,9 +105,3 @@ describe("comentário da persona", () => {
   });
 });
 
-describe("cópia de exemplo", () => {
-  it("reconhece frase de exemplo repetida, ignorando pontuação e emojis", () => {
-    expect(copiesExample("KKKKKK esse aí sou eu no churrasco da família 😂", ["KKKKKK esse aí sou eu no churrasco da família"])).toBe(true);
-    expect(copiesExample("Esse cachorro é demais!", ["KKKKKK esse aí sou eu no churrasco da família"])).toBe(false);
-  });
-});

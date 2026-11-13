@@ -23,15 +23,15 @@ function fakeDb(): VideoDb & {
 } {
   const video = {
     id: ID, sourceUrl: "https://youtu.be/x", status: "baixando", stage: "baixando", title: null as string | null,
-    hashtags: [] as string[], description: null as string | null, transcript: null as string | null, filePath: null as string | null,
+    hashtags: [] as string[], sourceDescription: null as string | null, description: null as string | null, transcript: null as string | null, filePath: null as string | null,
   };
   const db = {
     video: video as typeof video & { error?: string; embedding?: number[] },
     topics: [] as string[],
     get: async () => ({ ...video }),
     setStage: async (_: string, status: string, stage: string) => Object.assign(video, { status, stage }),
-    saveDownload: async (_: string, title: string | null, hashtags: string[]) =>
-      Object.assign(video, { title, hashtags, status: "processando", stage: "convertendo" }),
+    saveDownload: async (_: string, title: string | null, hashtags: string[], sourceDescription: string | null) =>
+      Object.assign(video, { title, hashtags, sourceDescription, status: "processando", stage: "convertendo" }),
     saveMedia: async (_: string, filePath: string) => Object.assign(video, { filePath, stage: "transcrevendo" }),
     saveTranscript: async (_: string, transcript: string) => Object.assign(video, { transcript, stage: "sugerindo" }),
     saveSuggestion: async (_: string, description: string, topics: string[]) => {
@@ -68,13 +68,13 @@ beforeEach(async () => {
     send: async (queue) => sent.push(queue),
     download: async (_url, dir) => {
       await writeFile(join(dir, "source.mkv"), "x");
-      return { filePath: join(dir, "source.mkv"), title: "Gato", hashtags: ["gato"] };
+      return { filePath: join(dir, "source.mkv"), title: "Gato", hashtags: ["gato"], sourceDescription: "Meu gato" };
     },
     convert: async (_in, out) => writeFile(out, "mp4"),
     probe: async () => ({ duration: 8, hasAudio: true }),
     thumbnail: async (_in, out) => writeFile(out, "jpg"),
     extractAudio: async (_in, out) => writeFile(out, "wav"),
-    transcribe: async () => "miau",
+    transcribe: async () => "miau miau, olha o gato",
     suggest: vi.fn(async () => ({ topics: ["humor"], description: "Um gato." })),
     embed: vi.fn(async () => [0.1, 0.2]),
     comment: vi.fn(async () => "Bom dia, sobreviventes!"),
@@ -96,7 +96,8 @@ describe("pipeline de ingestão", () => {
       status: "processando",
       stage: "aguardando_confirmacao",
       title: "Gato",
-      transcript: "miau",
+      transcript: "miau miau, olha o gato",
+      sourceDescription: "Meu gato",
       description: "Um gato.",
       filePath: `${ID}/video.mp4`,
     });
@@ -112,6 +113,14 @@ describe("pipeline de ingestão", () => {
     deps.transcribe = vi.fn();
     await runStep(QUEUES.transcribe, deps, job);
     expect(deps.transcribe).not.toHaveBeenCalled();
+    expect(db.video.transcript).toBe("");
+  });
+
+  it("trata transcrição só de música como vídeo sem fala", async () => {
+    await runStep(QUEUES.download, deps, job);
+    await runStep(QUEUES.convert, deps, job);
+    deps.transcribe = async () => "(upbeat music)";
+    await runStep(QUEUES.transcribe, deps, job);
     expect(db.video.transcript).toBe("");
   });
 

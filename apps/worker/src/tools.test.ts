@@ -10,9 +10,13 @@ describe("yt-dlp", () => {
     expect(args).toContain("--no-playlist");
   });
 
-  it("junta tags e hashtags do título e da descrição", () => {
-    const stdout = `${JSON.stringify({ title: "Gato #Fofo", description: "veja #gato #fofo", tags: ["Animais"] })}\n`;
-    expect(parseInfo(stdout)).toEqual({ title: "Gato #Fofo", hashtags: ["animais", "fofo", "gato"] });
+  it("junta tags e hashtags do título e da descrição e guarda o texto da descrição", () => {
+    const stdout = `${JSON.stringify({ title: "Gato #Fofo", description: "Meu gato no sofá #gato #fofo", tags: ["Animais"] })}\n`;
+    expect(parseInfo(stdout)).toEqual({
+      title: "Gato #Fofo",
+      hashtags: ["animais", "fofo", "gato"],
+      sourceDescription: "Meu gato no sofá",
+    });
   });
 });
 

@@ -1,3 +1,5 @@
+import { copiesExample, isMetaDescription } from "./text.js";
+
 export interface TopicOption {
   slug: string;
   name: string;
@@ -6,6 +8,8 @@ export interface TopicOption {
 export interface VideoText {
   title: string | null;
   hashtags: string[];
+  /** Descrição escrita por quem postou, já limpa (sem links e hashtags). */
+  sourceDescription: string | null;
   transcript: string | null;
 }
 
@@ -23,7 +27,8 @@ const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}…` : s
 function describeVideo(v: VideoText): string {
   const tags = v.hashtags.length ? v.hashtags.map((h) => `#${h}`).join(" ") : "(nenhuma)";
   const transcript = v.transcript ? clip(v.transcript, MAX_TRANSCRIPT) : "(sem fala)";
-  return `Título: ${clip(v.title ?? "(sem título)", 200)}\nHashtags: ${tags}\nTranscrição: ${transcript}`;
+  const source = v.sourceDescription ? clip(v.sourceDescription, 300) : "(nenhuma)";
+  return `Título: ${clip(v.title ?? "(sem título)", 200)}\nHashtags: ${tags}\nDescrição do autor: ${source}\nTranscrição: ${transcript}`;
 }
 
 /** Prompt curto com exemplos: modelos pequenos imitam melhor do que seguem descrição (SPEC 7.1). */
@@ -39,31 +44,36 @@ Regras:
 - Use 2 só se o vídeo for claramente das duas coisas ao mesmo tempo. Nunca chute.
 - Se nenhum tópico servir, devolva a lista vazia.
 - Escreva uma descrição de uma frase curta (até 120 caracteres), sem hashtags, SEMPRE em português do Brasil correto, mesmo que o vídeo seja em outra língua.
-- A transcrição é automática e pode ter palavras erradas: descreva só o que está claro.
+- Descreva o que acontece no vídeo. Se a transcrição não ajudar, use o título e a descrição do autor.
+- Nunca fale da transcrição, do áudio ou do que você não entendeu.
 - Responda só com JSON.
 
 Exemplo 1
 Título: Cachorro aprende a abrir a porta sozinho
 Hashtags: #cachorro #pet
+Descrição do autor: (nenhuma)
 Transcrição: olha ele empurrando a maçaneta com a pata
 {"topicos": ["animais"], "descricao": "Cachorro aprende a abrir a porta com a pata."}
 
 Exemplo 2
 Título: Previsão de chuva forte no fim de semana
 Hashtags: #tempo
+Descrição do autor: Fique atento aos alertas da sua cidade.
 Transcrição: a defesa civil alerta para temporais em todo o estado
 {"topicos": ["noticias"], "descricao": "Alerta de temporais para o fim de semana."}
 
 Exemplo 3
 Título: Feeding the ducks at the park
 Hashtags: #ducks
+Descrição do autor: (nenhuma)
 Transcrição: look at them coming, they love the bread, so cute
 {"topicos": ["animais"], "descricao": "Patos correm para ganhar pão no parque."}
 
 Exemplo 4
 Título: Gato derruba copo da mesa e finge que não foi ele
 Hashtags: #gato #engraçado
-Transcrição: (risos) olha a cara dele, não fui eu
+Descrição do autor: O Mingau aprontando de novo
+Transcrição: (sem fala)
 {"topicos": ["animais", "humor"], "descricao": "Gato derruba um copo e finge inocência."}
 
 Agora este vídeo:
@@ -83,6 +93,13 @@ export function topicSchema(slugs: string[]) {
   };
 }
 
+/** Descrições dos exemplos do prompt: sem informação, o modelo às vezes devolve uma delas. */
+const EXAMPLE_DESCRIPTIONS = new Set(
+  [...buildTopicPrompt({ title: null, hashtags: [], sourceDescription: null, transcript: null }, []).matchAll(/"descricao": "([^"]+)"/g)].map(
+    (m) => m[1]!,
+  ),
+);
+
 /** Confere a resposta do modelo mesmo com o schema: só tópicos válidos, no máximo 3, descrição curta. */
 export function parseSuggestion(raw: string, slugs: string[], fallbackDescription: string | null): Suggestion {
   let data: { topicos?: unknown; descricao?: unknown } = {};
@@ -96,13 +113,16 @@ export function parseSuggestion(raw: string, slugs: string[], fallbackDescriptio
     ? [...new Set(data.topicos.filter((t): t is string => typeof t === "string" && allowed.has(t)))].slice(0, 3)
     : [];
   let description = typeof data.descricao === "string" ? data.descricao.replace(/\s+/g, " ").trim() : "";
-  if (!description) description = fallbackDescription ?? "";
+  // Descrição vazia, falando da transcrição ou copiada de um exemplo do prompt: fica o título.
+  if (!description || isMetaDescription(description) || EXAMPLE_DESCRIPTIONS.has(description)) {
+    description = (fallbackDescription ?? "").replace(/#[\p{L}\p{N}_]+/gu, " ").replace(/\s+/g, " ").trim();
+  }
   return { topics, description: clip(description, 200) };
 }
 
 /** Texto do vídeo usado para o embedding (prefixo de documento do nomic-embed-text). */
 export function embeddingText(v: VideoText & { description: string | null }): string {
-  const parts = [v.title, v.description, v.hashtags.map((h) => `#${h}`).join(" "), v.transcript && clip(v.transcript, 2000)];
+  const parts = [v.title, v.description, v.sourceDescription, v.hashtags.map((h) => `#${h}`).join(" "), v.transcript && clip(v.transcript, 2000)];
   return `search_document: ${parts.filter(Boolean).join("\n")}`;
 }
 
@@ -138,7 +158,7 @@ export function buildCommentPrompt(persona: PersonaProfile, video: VideoForComme
 Quem você é: ${persona.bio}
 Seu jeito de escrever: ${persona.tone}
 
-Frases suas (imite o estilo, não copie):
+Frases suas (só mostram o estilo; não repita nem pedaços delas):
 ${examples}
 
 Regras:
@@ -181,19 +201,6 @@ export function parseComment(raw: string): string | null {
   return clip(text, MAX_COMMENT);
 }
 
-const normalize = (s: string) =>
-  s
-    .normalize("NFD")
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
-    .toLowerCase()
-    .trim();
-
-/** true quando o comentário é só uma frase de exemplo da persona repetida. */
-export function copiesExample(text: string, examples: string[]): boolean {
-  const t = normalize(text);
-  return examples.some((e) => normalize(e) === t);
-}
-
 export class OllamaClient {
   constructor(
     private readonly baseUrl: string,
@@ -227,7 +234,7 @@ export class OllamaClient {
 
   async comment(persona: PersonaProfile, video: VideoForComment, apocalypse: boolean): Promise<string> {
     let last = "";
-    // O modelo pequeno às vezes devolve uma das frases de exemplo inteira: nesse caso tenta de novo.
+    // O modelo pequeno às vezes copia uma frase de exemplo, inteira ou em parte: nesse caso tenta de novo.
     for (let attempt = 0; attempt < 3; attempt++) {
       const data = await this.post<{ response: string }>("/api/generate", {
         model: this.llmModel,
@@ -239,7 +246,8 @@ export class OllamaClient {
       });
       last = data.response;
       const text = parseComment(data.response);
-      if (text && !copiesExample(text, persona.examples)) return text;
+      const about = [video.title, video.description, video.topics.join(" ")].join(" ");
+      if (text && !copiesExample(text, persona.examples, about)) return text;
     }
     throw new Error(`Comentário vazio, inválido ou copiado do exemplo: ${last.slice(0, 120)}`);
   }
