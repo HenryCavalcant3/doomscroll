@@ -258,8 +258,9 @@ export class PgChatStore implements ChatStore {
 
   async joinBunker(userId: string) {
     await this.pool.query(
-      `INSERT INTO conversation_members (conversation_id, user_id)
-       SELECT id, $1 FROM conversations WHERE bunker ON CONFLICT DO NOTHING`,
+      // Quem chega não herda o histórico do grupo como não lido.
+      `INSERT INTO conversation_members (conversation_id, user_id, last_read_at)
+       SELECT id, $1, now() FROM conversations WHERE bunker ON CONFLICT DO NOTHING`,
       [userId],
     );
   }

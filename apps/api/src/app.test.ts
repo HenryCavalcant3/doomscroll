@@ -312,10 +312,14 @@ class MemoryChatStore implements ChatStore {
   }
   async ensureBunker() {
     const c = this.conversations.find((x) => x.bunker) ?? this.create("group", BUNKER_NAME, null, [], true);
-    for (const { user } of this.users().values()) if (!user.isAi) await this.joinBunker(user.id, c.id);
+    for (const { user } of this.users().values()) {
+      if (!user.isAi && !this.member(user.id, c.id)) this.members.push({ conversationId: c.id, userId: user.id, lastRead: -Infinity });
+    }
   }
-  async joinBunker(userId: string, id = this.conversations.find((x) => x.bunker)?.id) {
-    if (id && !this.member(userId, id)) this.members.push({ conversationId: id, userId, lastRead: -Infinity });
+  async joinBunker(userId: string) {
+    const id = this.conversations.find((x) => x.bunker)?.id;
+    // Quem chega não herda o histórico como não lido.
+    if (id && !this.member(userId, id)) this.members.push({ conversationId: id, userId, lastRead: this.tick });
   }
   async listConversations(userId: string) {
     const at = (c: (typeof this.conversations)[number]) => c.lastAt ?? c.createdAt;
@@ -921,9 +925,13 @@ describe("chat", () => {
     await auth("ana", "1111");
     await chat.ensureBunker();
     await chat.ensureBunker();
+    const ana = await auth("ana", "1111");
+    const bunkerId = chat.conversations.find((c) => c.bunker)!.id;
+    await send(ana, bunkerId, "cheguei primeiro");
     const bia = await auth("bia", "2222");
     const [bunker] = await inbox(bia);
-    expect(bunker).toMatchObject({ type: "group", name: BUNKER_NAME, bunker: true });
+    // Quem entra depois não vê o histórico como não lido.
+    expect(bunker).toMatchObject({ type: "group", name: BUNKER_NAME, bunker: true, unread: 0 });
     expect(bunker.members.map((m: AuthorView) => m.nickname)).toEqual(["dono", "ana"]);
     expect(chat.conversations.filter((c) => c.bunker)).toHaveLength(1);
   });
