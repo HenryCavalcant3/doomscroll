@@ -153,7 +153,7 @@ DATABASE_URL=postgres://doomscroll:doomscroll@127.0.0.1:5432/doomscroll OLLAMA_U
   pnpm --filter @doomscroll/worker avaliar --amostras 2 --so tio_valdir
 ```
 
-O modo de chat da bancada roda conversas roteirizadas com cada persona (cumprimento, pergunta direta, vídeo compartilhado, assunto pessoal) com o mesmo prompt e as mesmas regras do app. O relatório mostra as conversas inteiras, as respostas recusadas (que repetiam a mensagem ou copiavam um exemplo) e quantas soaram como assistente ("se precisar, estou aqui"). Ele só precisa do Ollama:
+O modo de chat da bancada roda conversas roteirizadas com cada persona com o mesmo prompt e as mesmas regras do app: cumprimento, pergunta direta, vídeo compartilhado (com e sem título), assunto pessoal, memória, conversa longa, provocação ("você é uma IA?"), mensagem em inglês ou só com emoji e assunto delicado. Use `--roteiros` para rodar só alguns e `--repeticao` para testar outro `repeat_penalty`. O relatório mostra as conversas inteiras, as respostas recusadas (eco da mensagem, cópia de exemplo, gagueira como "sou sou sou" ou inglês), quantas soaram como assistente ("se precisar, estou aqui") e se a persona lembrou do que foi dito antes. Ele só precisa do Ollama:
 
 ```bash
 OLLAMA_URL=http://127.0.0.1:11434 pnpm --filter @doomscroll/api avaliar --amostras 2 --so rato,kelly
