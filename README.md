@@ -80,6 +80,8 @@ Com o [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native
 docker compose -f compose.yaml -f compose.gpu.yaml up -d --build
 ```
 
+Para não repetir o `-f` em todo comando, descomente as linhas `COMPOSE_PATH_SEPARATOR` e `COMPOSE_FILE` no `.env`. Confira com `docker compose exec ollama ollama ps`: a coluna PROCESSOR deve mostrar `100% GPU`.
+
 ### Acesso pela rede local (Windows)
 
 1. Descubra o IP do computador na rede (`ipconfig`, adaptador do hotspot ou Wi-Fi).
