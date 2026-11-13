@@ -1,6 +1,7 @@
 import type { Pool, PoolClient } from "pg";
 import { COMMENT_DELTA, LIKE_DELTA, SCORE_MAX, SCORE_MIN, viewDelta, type ViewInput } from "./affinity.js";
 import { pickFeed, type Candidate, type Rng } from "./recommend.js";
+import { fromPgVector, TASTE_VIDEOS, tasteVector, toPgVector } from "./taste.js";
 
 export type VideoStatus = "baixando" | "processando" | "pendente" | "aprovado" | "rejeitado" | "falhou";
 
@@ -231,6 +232,7 @@ interface CandidateRow {
   topic_ids: number[];
   liked: boolean;
   last_viewed: Date | null;
+  similarity: number | null;
 }
 
 /** Soma delta na afinidade de quem ($1) com os tópicos do vídeo ($2), dentro da faixa do score. */
@@ -405,17 +407,44 @@ export class PgStore implements Store {
     return new Map(res.rows.map((r) => [r.id, r.status]));
   }
 
+  /**
+   * Vetor de gosto: nota de cada vídeo (visualizações, curtida, primeiro comentário), só os de nota
+   * positiva e com embedding, os mais recentes primeiro.
+   */
+  private async taste(userId: string): Promise<number[] | null> {
+    const res = await this.pool.query<{ score: number; embedding: string }>(
+      `WITH signals AS (
+         SELECT video_id, sum(affinity_delta) AS score, max(created_at) AS at
+           FROM view_events WHERE user_id = $1 GROUP BY video_id
+         UNION ALL
+         SELECT video_id, ${LIKE_DELTA}, created_at FROM likes WHERE user_id = $1
+         UNION ALL
+         SELECT video_id, ${COMMENT_DELTA}, min(created_at) FROM comments WHERE user_id = $1 GROUP BY video_id
+       ), rated AS (
+         SELECT video_id, sum(score) AS score, max(at) AS at FROM signals GROUP BY video_id HAVING sum(score) > 0
+       )
+       SELECT r.score::float8 AS score, v.embedding::text AS embedding
+         FROM rated r JOIN videos v ON v.id = r.video_id
+        WHERE v.embedding IS NOT NULL
+        ORDER BY r.at DESC LIMIT ${TASTE_VIDEOS}`,
+      [userId],
+    );
+    return tasteVector(res.rows.map((r) => ({ score: r.score, embedding: fromPgVector(r.embedding) })));
+  }
+
   async feed(userId: string, exclude: string[], limit: number): Promise<FeedPage> {
+    const taste = await this.taste(userId);
     const [cands, aff] = await Promise.all([
       this.pool.query<CandidateRow>(
         `SELECT v.id,
                 COALESCE(array_agg(DISTINCT vt.topic_id) FILTER (WHERE vt.topic_id IS NOT NULL), '{}'::int[]) AS topic_ids,
                 EXISTS (SELECT 1 FROM likes l WHERE l.video_id = v.id AND l.user_id = $1) AS liked,
-                (SELECT max(e.created_at) FROM view_events e WHERE e.video_id = v.id AND e.user_id = $1) AS last_viewed
+                (SELECT max(e.created_at) FROM view_events e WHERE e.video_id = v.id AND e.user_id = $1) AS last_viewed,
+                (1 - (v.embedding <=> $2::vector))::float8 AS similarity
            FROM videos v LEFT JOIN video_topics vt ON vt.video_id = v.id
           WHERE v.status = 'aprovado' AND v.file_path IS NOT NULL
           GROUP BY v.id`,
-        [userId],
+        [userId, taste ? toPgVector(taste) : null],
       ),
       this.pool.query<{ topic_id: number; score: number }>(
         "SELECT topic_id, score FROM user_topic_affinity WHERE user_id = $1",
@@ -427,6 +456,7 @@ export class PgStore implements Store {
       topicIds: r.topic_ids,
       liked: r.liked,
       lastViewedAt: r.last_viewed ? r.last_viewed.getTime() : null,
+      similarity: r.similarity,
     }));
     const affinity = new Map(aff.rows.map((r) => [r.topic_id, r.score]));
     const pick = pickFeed(candidates, affinity, exclude.filter(isUuid), limit, this.now(), this.rng);
@@ -442,9 +472,9 @@ export class PgStore implements Store {
     const { skipped, delta } = viewDelta(view);
     return this.tx(async (c) => {
       const ins = await c.query(
-        `INSERT INTO view_events (user_id, video_id, watched_ms, watch_pct, replays, skipped)
-         SELECT $1, $2, $3, $4, $5, $6 WHERE EXISTS (SELECT 1 FROM videos WHERE id = $2 AND status = 'aprovado')`,
-        [userId, videoId, view.watchedMs, view.watchPct, view.replays, skipped],
+        `INSERT INTO view_events (user_id, video_id, watched_ms, watch_pct, replays, skipped, affinity_delta)
+         SELECT $1, $2, $3, $4, $5, $6, $7 WHERE EXISTS (SELECT 1 FROM videos WHERE id = $2 AND status = 'aprovado')`,
+        [userId, videoId, view.watchedMs, view.watchPct, view.replays, skipped, delta],
       );
       if (!ins.rowCount) return false;
       if (delta !== 0) await c.query(BUMP_AFFINITY, [userId, videoId, delta]);

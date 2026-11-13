@@ -4,6 +4,7 @@ import { readConfig } from "./config.js";
 import { clampScore, COMMENT_DELTA, LIKE_DELTA, viewDelta, type ViewInput } from "./affinity.js";
 import { hashPin } from "./pin.js";
 import { pickFeed } from "./recommend.js";
+import { cosine, tasteVector } from "./taste.js";
 import type { CommentView, ConfirmResult, FeedVideo, Store, Topic, UserView, VideoStatus, VideoView } from "./store.js";
 
 const config = { ...readConfig({}), ollamaUrl: "http://ollama:11434", llmModel: "modelo-teste" };
@@ -19,12 +20,12 @@ class MemoryStore implements Store {
     { id: 2, name: "Animais", slug: "animais" },
     { id: 3, name: "Dicas", slug: "dicas" },
   ];
-  videos = new Map<string, VideoView & { submittedBy?: string }>();
+  videos = new Map<string, VideoView & { submittedBy?: string; embedding?: number[] }>();
   users = new Map<string, { user: UserView; pinHash: string | null }>();
   sessions = new Map<string, string>();
   comments = new Map<string, CommentView[]>();
   likes = new Map<string, Set<string>>();
-  views: { userId: string; videoId: string; at: number; skipped: boolean }[] = [];
+  views: { userId: string; videoId: string; at: number; skipped: boolean; delta: number }[] = [];
   /** Chave `usuário:tópico`. */
   affinity = new Map<string, number>();
   now = () => 0;
@@ -66,8 +67,9 @@ class MemoryStore implements Store {
   async getVideo(id: string) {
     const v = this.videos.get(id);
     if (!v) return null;
-    const view: VideoView & { submittedBy?: string } = { ...v };
+    const view: VideoView & { submittedBy?: string; embedding?: number[] } = { ...v };
     delete view.submittedBy;
+    delete view.embedding;
     return view;
   }
   async listVideos(status: VideoStatus) {
@@ -123,11 +125,12 @@ class MemoryStore implements Store {
   async statusOf(ids: string[]) {
     return new Map(ids.filter((id) => this.videos.has(id)).map((id) => [id, this.videos.get(id)!.status as string]));
   }
-  private toFeed(v: VideoView & { submittedBy?: string }, userId: string): FeedVideo {
+  private toFeed(v: VideoView & { submittedBy?: string; embedding?: number[] }, userId: string): FeedVideo {
     const likes = this.likes.get(v.id) ?? new Set();
     const author = [...this.users.values()].find((u) => u.user.id === v.submittedBy)?.user;
-    const view: VideoView & { submittedBy?: string } = { ...v };
+    const view: VideoView & { submittedBy?: string; embedding?: number[] } = { ...v };
     delete view.submittedBy;
+    delete view.embedding;
     return {
       ...view,
       commentCount: this.comments.get(v.id)?.length ?? 0,
@@ -136,8 +139,21 @@ class MemoryStore implements Store {
       author: author ? { nickname: author.nickname, avatarUrl: author.avatarUrl, isAi: author.isAi } : null,
     };
   }
+  /** Mesma nota por vídeo do PgStore: visualizações, curtida e primeiro comentário. */
+  private taste(userId: string) {
+    const nickname = [...this.users.values()].find((u) => u.user.id === userId)?.user.nickname;
+    const rated = [...this.videos.values()].map((v) => ({
+      score:
+        this.views.filter((e) => e.userId === userId && e.videoId === v.id).reduce((s, e) => s + e.delta, 0) +
+        (this.likes.get(v.id)?.has(userId) ? LIKE_DELTA : 0) +
+        (this.comments.get(v.id)?.some((c) => c.author.nickname === nickname) ? COMMENT_DELTA : 0),
+      embedding: v.embedding ?? [],
+    }));
+    return tasteVector(rated);
+  }
   async feed(userId: string, exclude: string[], limit: number) {
     const all = [...this.videos.values()].filter((v) => v.status === "aprovado" && v.videoUrl);
+    const taste = this.taste(userId);
     const cands = all.map((v) => {
       const seen = this.views.filter((e) => e.userId === userId && e.videoId === v.id).map((e) => e.at);
       return {
@@ -145,6 +161,7 @@ class MemoryStore implements Store {
         topicIds: v.topics.map((t) => this.topics.find((x) => x.slug === t.slug)!.id),
         liked: this.likes.get(v.id)?.has(userId) ?? false,
         lastViewedAt: seen.length ? Math.max(...seen) : null,
+        similarity: taste && v.embedding ? cosine(taste, v.embedding) : null,
       };
     });
     const affinity = new Map(
@@ -156,7 +173,7 @@ class MemoryStore implements Store {
   async recordView(userId: string, videoId: string, view: ViewInput) {
     if (this.videos.get(videoId)?.status !== "aprovado") return false;
     const { skipped, delta } = viewDelta(view);
-    this.views.push({ userId, videoId, at: this.now(), skipped });
+    this.views.push({ userId, videoId, at: this.now(), skipped, delta });
     if (delta) this.bump(userId, videoId, delta);
     return true;
   }
@@ -509,9 +526,10 @@ describe("feed", () => {
 
 describe("visualizações e recomendação", () => {
   const DAY = 24 * 60 * 60 * 1000;
-  async function approvedWith(slug: string) {
+  async function approvedWith(slug: string, embedding?: number[]) {
     const id = await store.createVideo(`https://youtu.be/${slug}${store.videos.size}`, "youtube", "u-dono");
     Object.assign(store.videos.get(id)!, {
+      embedding,
       status: "aprovado",
       videoUrl: `/media/${id}/video.mp4`,
       topics: [{ slug, name: slug, source: "user" }],
@@ -557,6 +575,22 @@ describe("visualizações e recomendação", () => {
     expect((await feed()).json().videos.map((v: FeedVideo) => v.id)).toEqual([b]);
     clock += 3 * DAY;
     expect((await feed()).json().videos.map((v: FeedVideo) => v.id).sort()).toEqual([a, b].sort());
+  });
+
+  it("prioriza o vídeo parecido com o que foi curtido, mesmo com tópico diferente", async () => {
+    const headers = await auth("morador", "1111");
+    const outro = await approvedWith("dicas", [0, 0, 1]);
+    const parecido = await approvedWith("dicas", [0.9, 0.1, 0]);
+    const liked = await approvedWith("humor", [1, 0, 0]);
+    await app().inject({ method: "PUT", url: `/videos/${liked}/like`, headers });
+    await view(liked, headers, { watchedMs: 10_000, watchPct: 1, replays: 0 });
+    // 0,3 não explora. Sem o gosto, os dois pesam 0,2 e o sorteio cairia no primeiro (outro);
+    // com o gosto, o parecido pesa 0,2 + 5 e leva.
+    store.rng = () => 0.3;
+    const res = await app().inject({ method: "POST", url: "/feed", headers, payload: { limit: 1 } });
+    expect(res.json().videos.map((v: FeedVideo) => v.id)).toEqual([parecido]);
+    expect(res.json().videos[0]).not.toHaveProperty("embedding");
+    expect(store.videos.has(outro)).toBe(true);
   });
 
   it("com tudo em quarentena, volta primeiro o que foi curtido", async () => {

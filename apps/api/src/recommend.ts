@@ -1,4 +1,4 @@
-/** Escolha dos próximos vídeos do feed (SPEC §6, fase 1). Funções puras: o sorteio vem de fora. */
+/** Escolha dos próximos vídeos do feed (SPEC §6, fases 1 e 2). Funções puras: o sorteio vem de fora. */
 
 /** Vídeo visto fica fora do feed por este tempo. */
 export const QUARANTINE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -6,6 +6,8 @@ export const QUARANTINE_MS = 3 * 24 * 60 * 60 * 1000;
 export const EXPLORE = 0.2;
 /** Peso mínimo: tópicos neutros ou rejeitados ainda aparecem de vez em quando. */
 export const BASE_WEIGHT = 0.2;
+/** Peso da similaridade com o gosto (metade do teto da afinidade por tópico). */
+export const TASTE_WEIGHT = 5;
 
 export interface Candidate {
   id: string;
@@ -13,20 +15,38 @@ export interface Candidate {
   liked: boolean;
   /** Última visualização de quem pede o feed (ms desde 1970), ou null. */
   lastViewedAt: number | null;
+  /** Cosseno entre o embedding do vídeo e o vetor de gosto; null sem um dos dois. */
+  similarity: number | null;
 }
 
 export type Rng = () => number;
 
-/** Peso do vídeo: base mais a média (positiva) da afinidade nos tópicos dele. */
-export function weightOf(c: Candidate, affinity: Map<number, number>): number {
-  if (c.topicIds.length === 0) return BASE_WEIGHT;
-  const mean = c.topicIds.reduce((sum, t) => sum + (affinity.get(t) ?? 0), 0) / c.topicIds.length;
-  return BASE_WEIGHT + Math.max(0, mean);
+/**
+ * Similaridade relativa entre os candidatos: 0 para o menos parecido com o gosto, 1 para o mais
+ * parecido. Não depende da faixa de valores do modelo de embedding. Sem similaridade, fica de fora.
+ */
+export function relativeSimilarity(cands: Candidate[]): Map<string, number> {
+  const sims = cands.flatMap((c) => (c.similarity === null ? [] : [c.similarity]));
+  if (sims.length === 0) return new Map();
+  const min = Math.min(...sims);
+  const span = Math.max(...sims) - min;
+  return new Map(
+    cands.flatMap((c) => (c.similarity === null ? [] : [[c.id, span > 0 ? (c.similarity - min) / span : 0] as const])),
+  );
+}
+
+/** Peso do vídeo: base, mais a média (positiva) da afinidade nos tópicos, mais a similaridade relativa. */
+export function weightOf(c: Candidate, affinity: Map<number, number>, relSim = 0): number {
+  const mean = c.topicIds.length
+    ? c.topicIds.reduce((sum, t) => sum + (affinity.get(t) ?? 0), 0) / c.topicIds.length
+    : 0;
+  return BASE_WEIGHT + Math.max(0, mean) + TASTE_WEIGHT * relSim;
 }
 
 /** Sorteia n sem repetir: em cada vaga, exploração uniforme com chance EXPLORE, senão pelo peso. */
 export function sample(cands: Candidate[], affinity: Map<number, number>, n: number, rng: Rng): Candidate[] {
-  const pool = cands.map((c) => ({ c, w: weightOf(c, affinity) }));
+  const rel = relativeSimilarity(cands);
+  const pool = cands.map((c) => ({ c, w: weightOf(c, affinity, rel.get(c.id)) }));
   const picked: Candidate[] = [];
   while (picked.length < n && pool.length > 0) {
     let i: number;

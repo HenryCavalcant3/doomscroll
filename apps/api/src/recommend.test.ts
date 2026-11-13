@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { clampScore, viewDelta } from "./affinity.js";
-import { BASE_WEIGHT, pickFeed, QUARANTINE_MS, sample, weightOf, type Candidate } from "./recommend.js";
+import { BASE_WEIGHT, pickFeed, QUARANTINE_MS, relativeSimilarity, sample, TASTE_WEIGHT, weightOf, type Candidate } from "./recommend.js";
+import { cosine, tasteVector } from "./taste.js";
 
 const cand = (id: string, topicIds: number[] = [], extra: Partial<Candidate> = {}): Candidate => ({
   id,
   topicIds,
   liked: false,
   lastViewedAt: null,
+  similarity: null,
   ...extra,
 });
 
@@ -86,5 +88,46 @@ describe("pickFeed", () => {
     const cands = [cand("a"), cand("b")];
     expect(pickFeed(cands, new Map(), ["a", "b"], 5, now, rng)).toMatchObject({ restarted: true });
     expect(pickFeed([], new Map(), ["a"], 5, now, rng)).toEqual({ ids: [], restarted: false });
+  });
+});
+
+describe("tasteVector", () => {
+  it("faz a média pesada pela nota e normaliza", () => {
+    const v = tasteVector([
+      { score: 3, embedding: [1, 0] },
+      { score: 1, embedding: [0, 1] },
+      { score: -2, embedding: [9, 9] },
+    ])!;
+    expect(v[0]).toBeCloseTo(3 / Math.hypot(3, 1));
+    expect(v[1]).toBeCloseTo(1 / Math.hypot(3, 1));
+  });
+
+  it("devolve null sem vídeo bem avaliado", () => {
+    expect(tasteVector([])).toBeNull();
+    expect(tasteVector([{ score: -1, embedding: [1, 0] }])).toBeNull();
+  });
+
+  it("calcula o cosseno", () => {
+    expect(cosine([1, 0], [2, 0])).toBeCloseTo(1);
+    expect(cosine([1, 0], [0, 3])).toBeCloseTo(0);
+  });
+});
+
+describe("similaridade relativa", () => {
+  it("vai de 0 (menos parecido) a 1 (mais parecido) e ignora quem não tem", () => {
+    const rel = relativeSimilarity([
+      cand("a", [], { similarity: 0.6 }),
+      cand("b", [], { similarity: 0.8 }),
+      cand("c", [], { similarity: 0.7 }),
+      cand("d"),
+    ]);
+    expect(rel.get("a")).toBe(0);
+    expect(rel.get("b")).toBe(1);
+    expect(rel.get("c")).toBeCloseTo(0.5);
+    expect(rel.has("d")).toBe(false);
+  });
+
+  it("soma na pontuação junto com a afinidade", () => {
+    expect(weightOf(cand("a", [1]), new Map([[1, 2]]), 1)).toBe(BASE_WEIGHT + 2 + TASTE_WEIGHT);
   });
 });
