@@ -23,6 +23,9 @@ COPY --from=prod-deps /app/node_modules node_modules
 COPY --from=prod-deps /app/apps/api/node_modules apps/api/node_modules
 COPY --from=build /app/apps/api/dist apps/api/dist
 COPY apps/api/package.json apps/api/
+COPY apps/api/migrations apps/api/migrations
+# Ponto de montagem do volume de mídia, já com dono node.
+RUN mkdir -p /data/media && chown -R node:node /data
 WORKDIR /app/apps/api
 USER node
 EXPOSE 3000
