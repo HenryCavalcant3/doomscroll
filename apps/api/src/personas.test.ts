@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_PERSONAS_DIR, loadPersonas, validatePersona } from "./personas.js";
+import { crossCheck, DEFAULT_PERSONAS_DIR, loadPersonas, validatePersona, type Persona } from "./personas.js";
 
-const valid = {
+const valid: Persona = {
   apelido: "tio_valdir",
   nome: "Tio Valdir",
   avatar: "tio-valdir.svg",
@@ -16,7 +16,22 @@ const avatars = new Set(["tio-valdir.svg"]);
 describe("personas", () => {
   it("as personas do repositório são válidas", async () => {
     const personas = await loadPersonas(DEFAULT_PERSONAS_DIR);
-    expect(personas.map((p) => p.apelido)).toContain("tio_valdir");
+    expect(personas.map((p) => p.apelido)).toEqual(["capitao_enlatado", "dona_neide", "kelly", "rato", "tio_valdir"]);
+  });
+
+  it("as afinidades das personas do repositório usam só tópicos que existem", async () => {
+    const topics = ["animais", "ciencia", "comida", "dicas", "esporte", "fofoca", "games", "humor", "musica", "noticias", "politica"];
+    for (const p of await loadPersonas(DEFAULT_PERSONAS_DIR)) {
+      expect(Object.keys(p.afinidade).filter((t) => !topics.includes(t)), p.apelido).toEqual([]);
+    }
+  });
+
+  it("relações só apontam para outras personas", () => {
+    const rato = { ...valid, apelido: "rato", relacoes: { tio_valdir: "implica", rato: "eu", kelly: "?" } };
+    expect(crossCheck([valid, rato])).toEqual([
+      "rato: relacoes não pode incluir a própria persona",
+      "rato: relacoes cita kelly, que não é uma persona",
+    ]);
   });
 
   it("aceita uma persona completa", () => {

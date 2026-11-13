@@ -57,6 +57,19 @@ export function validatePersona(data: unknown, fileName: string, avatarFiles: Se
   return errors;
 }
 
+/** Relações só podem apontar para outras personas que existem na pasta. */
+export function crossCheck(personas: Persona[]): string[] {
+  const nicknames = new Set(personas.map((p) => p.apelido));
+  const errors: string[] = [];
+  for (const p of personas) {
+    for (const other of Object.keys(p.relacoes ?? {})) {
+      if (other === p.apelido) errors.push(`${p.apelido}: relacoes não pode incluir a própria persona`);
+      else if (!nicknames.has(other)) errors.push(`${p.apelido}: relacoes cita ${other}, que não é uma persona`);
+    }
+  }
+  return errors;
+}
+
 /** Lê e valida todas as personas da pasta. Qualquer arquivo inválido impede a subida, com a lista de erros. */
 export async function loadPersonas(dir: string): Promise<Persona[]> {
   const files = await readdir(dir);
@@ -75,6 +88,7 @@ export async function loadPersonas(dir: string): Promise<Persona[]> {
     if (errors.length) problems.push(...errors.map((e) => `${file}: ${e}`));
     else personas.push(data as Persona);
   }
+  problems.push(...crossCheck(personas));
   if (problems.length) throw new Error(`Personas inválidas:\n- ${problems.join("\n- ")}`);
   return personas;
 }
