@@ -271,6 +271,19 @@ export class OllamaClient {
     throw new Error(`Comentário vazio, inválido ou copiado do exemplo: ${last.slice(0, 120)}`);
   }
 
+  async memory(personaName: string, contact: string, summary: string, lines: MemoryLine[]): Promise<string> {
+    const data = await this.post<{ response: string }>("/api/generate", {
+      model: this.llmModel,
+      prompt: buildMemoryPrompt(personaName, contact, summary, lines),
+      format: memorySchema,
+      stream: false,
+      options: { temperature: 0.2, num_ctx: 4096, num_predict: 200 },
+    });
+    const text = parseMemory(data.response);
+    if (!text) throw new Error(`Resumo inválido: ${data.response.slice(0, 120)}`);
+    return text;
+  }
+
   async embed(text: string): Promise<number[]> {
     const data = await this.post<{ embeddings: number[][] }>("/api/embed", { model: this.embedModel, input: text });
     const vector = data.embeddings[0];
@@ -282,5 +295,46 @@ export class OllamaClient {
       );
     }
     return vector;
+  }
+}
+
+/** Linha de uma conversa para o resumo da memória. */
+export interface MemoryLine {
+  fromPersona: boolean;
+  text: string;
+}
+
+export const MAX_MEMORY = 400;
+
+/** Prompt do resumo que a persona guarda de um contato (SPEC 7.4, persona_memory). */
+export function buildMemoryPrompt(personaName: string, contact: string, summary: string, lines: MemoryLine[]): string {
+  const talk = lines.map((l) => `${l.fromPersona ? personaName : `@${contact}`}: ${clip(l.text, 300)}`).join("\n");
+  return `Você ajuda ${personaName} a lembrar de @${contact}, uma pessoa com quem conversa por mensagem.
+
+O que ${personaName} já sabia de @${contact}:
+${summary || "(nada ainda)"}
+
+Conversa mais recente:
+${talk}
+
+Escreva um resumo novo, em até 3 frases curtas, em português do Brasil, com o que vale lembrar de @${contact}:
+gostos, assuntos, pedidos, jeito de falar e como anda a relação dos dois. Junte com o que já sabia e
+descarte o que deixou de valer. Não invente nada que não esteja acima. Responda só com JSON: {"resumo": "..."}`;
+}
+
+export const memorySchema = {
+  type: "object",
+  properties: { resumo: { type: "string" } },
+  required: ["resumo"],
+};
+
+export function parseMemory(raw: string): string | null {
+  try {
+    const data = JSON.parse(raw) as { resumo?: unknown };
+    if (typeof data.resumo !== "string") return null;
+    const text = data.resumo.replace(/\s+/g, " ").trim();
+    return text.length >= 5 ? clip(text, MAX_MEMORY) : null;
+  } catch {
+    return null;
   }
 }

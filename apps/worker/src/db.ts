@@ -1,5 +1,5 @@
 import type { Pool } from "pg";
-import type { PersonaProfile, TopicOption, VideoForComment } from "./ai.js";
+import type { MemoryLine, PersonaProfile, TopicOption, VideoForComment } from "./ai.js";
 
 export interface VideoRecord {
   id: string;
@@ -32,6 +32,19 @@ export interface VideoDb {
   addPersonaComment(videoId: string, userId: string, text: string): Promise<boolean>;
   /** Comentários e mensagens de personas na última hora (limite PERSONA_RATE). */
   personaActionsLastHour(): Promise<number>;
+}
+
+/** O que o resumo da memória precisa: a persona, o contato, o resumo atual e a conversa recente. */
+export interface MemoryContext {
+  personaName: string;
+  contact: string;
+  summary: string;
+  lines: MemoryLine[];
+}
+
+export interface MemoryDb {
+  memoryContext(personaId: string, contactId: string, limit: number): Promise<MemoryContext | null>;
+  saveMemory(personaId: string, contactId: string, summary: string): Promise<void>;
 }
 
 export class PgVideoDb implements VideoDb {
@@ -192,5 +205,48 @@ export class PgVideoDb implements VideoDb {
                  WHERE m.created_at > now() - interval '1 hour'))::int AS n`,
     );
     return res.rows[0]?.n ?? 0;
+  }
+}
+
+export class PgMemoryDb implements MemoryDb {
+  constructor(private readonly pool: Pool) {}
+
+  async memoryContext(personaId: string, contactId: string, limit: number) {
+    const who = await this.pool.query<{ name: string; contact: string; summary: string | null }>(
+      `SELECT COALESCE(p.config->>'nome', pu.nickname) AS name, cu.nickname AS contact,
+              (SELECT summary FROM persona_memory WHERE persona_user_id = $1 AND contact_user_id = $2) AS summary
+         FROM personas p JOIN users pu ON pu.id = p.user_id, users cu
+        WHERE p.user_id = $1 AND cu.id = $2`,
+      [personaId, contactId],
+    );
+    const row = who.rows[0];
+    if (!row) return null;
+    // Últimas mensagens da conversa direta dos dois, em ordem de envio.
+    const msgs = await this.pool.query<{ sender_id: string; text: string | null; title: string | null }>(
+      `SELECT * FROM (
+         SELECT m.sender_id, m.text, v.title, m.created_at
+           FROM messages m
+           JOIN conversations c ON c.id = m.conversation_id AND c.type = 'direct'
+           LEFT JOIN videos v ON v.id = m.video_id
+          WHERE c.direct_key = $2
+          ORDER BY m.created_at DESC LIMIT $1) recent
+        ORDER BY created_at`,
+      // Mesma chave da api (apps/api/src/chat.ts, directKey): ids em ordem, separados por ":".
+      [limit, [personaId, contactId].sort().join(":")],
+    );
+    return {
+      personaName: row.name,
+      contact: row.contact,
+      summary: row.summary ?? "",
+      lines: msgs.rows.map((m) => ({ fromPersona: m.sender_id === personaId, text: m.text ?? `[mandou um vídeo: ${m.title ?? "sem título"}]` })),
+    };
+  }
+
+  async saveMemory(personaId: string, contactId: string, summary: string) {
+    await this.pool.query(
+      `INSERT INTO persona_memory (persona_user_id, contact_user_id, summary, updated_at) VALUES ($1, $2, $3, now())
+       ON CONFLICT (persona_user_id, contact_user_id) DO UPDATE SET summary = EXCLUDED.summary, updated_at = now()`,
+      [personaId, contactId, summary],
+    );
   }
 }

@@ -4,10 +4,11 @@ import { PgBoss } from "pg-boss";
 import { OllamaClient } from "./ai.js";
 import { readConfig } from "./config.js";
 import { LlmGate, PRIORITY } from "./gate.js";
-import { PgVideoDb } from "./db.js";
+import { PgMemoryDb, PgVideoDb } from "./db.js";
 import * as ffmpeg from "./ffmpeg.js";
 import { runStep, type PipelineDeps } from "./pipeline.js";
-import { ensureQueues, QUEUES } from "./queues.js";
+import { updateMemory } from "./memory.js";
+import { ensureQueues, QUEUES, VIDEO_QUEUES } from "./queues.js";
 import { run, toolVersion } from "./tools.js";
 import { ensureModel, transcribe } from "./whisper.js";
 import { download } from "./ytdlp.js";
@@ -57,11 +58,23 @@ const deps: PipelineDeps = {
 };
 
 // Um job por vez em cada fila: ffmpeg e Whisper já usam vários núcleos.
-for (const queue of Object.values(QUEUES)) {
+for (const queue of VIDEO_QUEUES) {
   await boss.work<{ videoId: string }>(queue, { batchSize: 1, pollingIntervalSeconds: 2 }, async ([job]) => {
     if (job) await runStep(queue, deps, job);
   });
 }
+const memoryDb = new PgMemoryDb(pool);
+await boss.work<{ personaId: string; contactId: string }>(QUEUES.personaMemory, { batchSize: 1, pollingIntervalSeconds: 5 }, async ([job]) => {
+  if (!job) return;
+  await updateMemory(
+    {
+      db: memoryDb,
+      summarize: (name, contact, summary, lines) => gate.run(PRIORITY.persona, () => ollama.memory(name, contact, summary, lines)),
+      log: (msg) => console.log(msg),
+    },
+    job.data,
+  );
+});
 console.log(`[worker] ouvindo as filas: ${Object.values(QUEUES).join(", ")}`);
 
 const shutdown = async () => {

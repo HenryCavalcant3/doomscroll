@@ -6,12 +6,12 @@ import type { VideoDb } from "./db.js";
 import type { Probe } from "./ffmpeg.js";
 import { cleanTranscript } from "./text.js";
 import type { DownloadResult } from "./ytdlp.js";
-import { QUEUE_OPTIONS, QUEUES, type QueueName } from "./queues.js";
+import { QUEUE_OPTIONS, QUEUES, type VideoQueue } from "./queues.js";
 
 export interface PipelineDeps {
   db: VideoDb;
   mediaDir: string;
-  send(queue: QueueName, data: { videoId: string }, options?: { startAfter: number }): Promise<unknown>;
+  send(queue: VideoQueue, data: { videoId: string }, options?: { startAfter: number }): Promise<unknown>;
   download(url: string, dir: string): Promise<DownloadResult>;
   convert(input: string, output: string): Promise<void>;
   probe(file: string): Promise<Probe>;
@@ -35,7 +35,7 @@ export const APOCALYPSE_CHANCE = 0.15;
 export const RATE_RETRY_SECONDS = 600;
 
 /** Filas que rodam depois da aprovação: uma falha nelas não tira o vídeo do feed. */
-const AFTER_APPROVAL: ReadonlySet<QueueName> = new Set([QUEUES.embed, QUEUES.personaComment]);
+const AFTER_APPROVAL: ReadonlySet<VideoQueue> = new Set([QUEUES.embed, QUEUES.personaComment]);
 
 export interface JobInfo {
   data: { videoId: string };
@@ -50,7 +50,7 @@ async function requireVideo(deps: PipelineDeps, id: string) {
   return video;
 }
 
-const steps: Record<QueueName, Step> = {
+const steps: Record<VideoQueue, Step> = {
   async [QUEUES.download](deps, id) {
     const video = await requireVideo(deps, id);
     await deps.db.setStage(id, "baixando", "baixando");
@@ -143,7 +143,7 @@ const steps: Record<QueueName, Step> = {
  * (status `falhou` e arquivos apagados). Depois da aprovação o vídeo continua no feed: o embedding só
  * guarda o erro e o comentário da persona apenas registra no log.
  */
-export async function runStep(queue: QueueName, deps: PipelineDeps, job: JobInfo): Promise<void> {
+export async function runStep(queue: VideoQueue, deps: PipelineDeps, job: JobInfo): Promise<void> {
   const id = job.data.videoId;
   try {
     await steps[queue](deps, id);
