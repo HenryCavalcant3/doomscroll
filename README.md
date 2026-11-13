@@ -92,14 +92,19 @@ Para não repetir o `-f` em todo comando, descomente as linhas `COMPOSE_PATH_SEP
 
 ### Acesso pela rede local (Windows)
 
-1. Descubra o IP do computador na rede (`ipconfig`, adaptador do hotspot ou Wi-Fi).
-2. Libere as portas no firewall com um PowerShell de administrador:
+Funciona no hotspot do computador ou numa rede Wi-Fi de casa, desde que o celular esteja na mesma rede.
+
+1. Descubra o IP do computador na rede (`ipconfig`, adaptador do hotspot, Wi-Fi ou Ethernet; algo como `192.168.x.x`).
+2. Deixe a rede como **privada** (Configurações > Rede e Internet > propriedades da conexão > Perfil de rede). Numa rede pública o Windows bloqueia quem chega de fora.
+3. Libere a porta do app no firewall com um PowerShell de administrador. Só a 8080 precisa ficar aberta, porque o app fala com a api pelo próprio servidor web:
 
 ```powershell
-New-NetFirewallRule -DisplayName "Doomscroll" -Direction Inbound -Protocol TCP -LocalPort 8080,3000 -Action Allow
+New-NetFirewallRule -DisplayName "Doomscroll" -Direction Inbound -Protocol TCP -LocalPort 8080 -Profile Private -Action Allow
 ```
 
-3. No celular, acesse `http://<ip-do-computador>:8080`.
+4. No celular, acesse `http://<ip-do-computador>:8080`.
+
+Se não abrir, confira se o celular não está nos dados móveis e se o roteador não isola os aparelhos (opção "isolamento de cliente" ou "rede de convidados").
 
 ## Desenvolvimento
 
