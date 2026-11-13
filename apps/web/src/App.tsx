@@ -75,7 +75,16 @@ export function App() {
   useEffect(() => {
     if (signedIn) refreshUnread();
   }, [signedIn, route, refreshUnread]);
-  useEffect(() => (signedIn ? realtime.subscribe(refreshUnread) : undefined), [signedIn, realtime, refreshUnread]);
+  useEffect(() => {
+    if (!signedIn) return;
+    const unsubscribe = realtime.subscribe(refreshUnread);
+    const onVisible = () => !document.hidden && refreshUnread();
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      unsubscribe();
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [signedIn, realtime, refreshUnread]);
 
   const logout = useCallback(async () => {
     await api.logout().catch(() => {});

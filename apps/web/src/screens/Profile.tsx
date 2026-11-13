@@ -22,14 +22,24 @@ export function ProfileScreen({ nickname, me, onLogout }: Props) {
   const [opening, setOpening] = useState(false);
   const [messageError, setMessageError] = useState<string | null>(null);
 
+  // Resposta que chega depois de a pessoa sair do perfil não leva mais para a conversa.
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
   const message = () => {
     setOpening(true);
     setMessageError(null);
     api.openDirect(nickname).then(
       (c) => {
-        window.location.hash = chatHref(c.id);
+        if (mounted.current) window.location.hash = chatHref(c.id);
       },
       (err: Error) => {
+        if (!mounted.current) return;
         setMessageError(err.message);
         setOpening(false);
       },

@@ -52,6 +52,10 @@ export function ChatScreen({ id, me, onRead }: Props) {
 
   useEffect(() => {
     refresh(true);
+    // Celular voltando da tela apagada: a conexão pode ter morrido sem avisar; busca o que chegou.
+    const onVisible = () => !document.hidden && refresh(false);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
   }, [refresh]);
 
   useRealtimeEvents((e) => {

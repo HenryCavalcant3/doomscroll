@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { api, type Conversation, type User } from "../api";
 import { conversationTitle, shortTime, useRealtimeEvents } from "../chat";
 import { Avatar } from "../components/Avatar";
@@ -26,7 +26,18 @@ export function Messages({ me }: { me: User }) {
 
   useEffect(() => {
     load();
+    const onVisible = () => !document.hidden && load();
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
   }, [load]);
+  // Resposta que chega depois de a pessoa sair da tela não leva mais para a conversa.
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   useRealtimeEvents(() => load());
 
   const open = (e: FormEvent) => {
@@ -36,9 +47,10 @@ export function Messages({ me }: { me: User }) {
     setOpenError(null);
     api.openDirect(nickname).then(
       (c) => {
-        window.location.hash = chatHref(c.id);
+        if (mounted.current) window.location.hash = chatHref(c.id);
       },
       (err: Error) => {
+        if (!mounted.current) return;
         setOpenError(err.message);
         setOpening(false);
       },
