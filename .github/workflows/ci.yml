@@ -23,6 +23,19 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: SVGs válidos (logo e avatares)
+        run: |
+          python3 - <<'EOF'
+          import glob, sys, xml.etree.ElementTree as ET
+          bad = 0
+          for f in sorted(glob.glob("docs/**/*.svg", recursive=True) + glob.glob("personas/**/*.svg", recursive=True)):
+              try:
+                  ET.parse(f)
+              except ET.ParseError as e:
+                  print(f"::error file={f}::SVG inválido: {e}")
+                  bad += 1
+          sys.exit(1 if bad else 0)
+          EOF
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
