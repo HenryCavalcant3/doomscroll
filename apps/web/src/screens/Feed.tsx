@@ -15,6 +15,8 @@ export function Feed() {
   const loading = useRef(false);
   const scroller = useRef<HTMLDivElement>(null);
   const closeComments = useCallback(() => setCommentsFor(null), []);
+  // Estável: entra nas dependências do efeito que toca o vídeo.
+  const soundBlocked = useCallback(() => setMuted(true), []);
   const onCommented = useCallback((id: string, count: number) => setFeed((f) => patchVideo(f, id, { commentCount: count })), []);
 
   // Curtida otimista: muda na hora e corrige com a resposta (ou desfaz se der erro).
@@ -88,6 +90,7 @@ export function Feed() {
             mounted={Math.abs(i - active) <= 1}
             muted={muted}
             onUnmute={() => setMuted(false)}
+            onSoundBlocked={soundBlocked}
             onComments={() => setCommentsFor(entry.video)}
             onLike={() => toggleLike(entry.video)}
           />
@@ -120,11 +123,13 @@ interface ItemProps {
   mounted: boolean;
   muted: boolean;
   onUnmute(): void;
+  /** O navegador recusou tocar com som (sem toque recente na tela): volta ao modo mudo. */
+  onSoundBlocked(): void;
   onComments(): void;
   onLike(): void;
 }
 
-function FeedItem({ index, video, active, mounted, muted, onUnmute, onComments, onLike }: ItemProps) {
+function FeedItem({ index, video, active, mounted, muted, onUnmute, onSoundBlocked, onComments, onLike }: ItemProps) {
   const ref = useRef<HTMLVideoElement>(null);
   const [paused, setPaused] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -135,6 +140,26 @@ function FeedItem({ index, video, active, mounted, muted, onUnmute, onComments, 
   useLayoutEffect(() => {
     activeNow.current = active;
   }, [active]);
+  /** A pessoa pausou este vídeo de propósito (aí ele não volta a tocar sozinho). */
+  const userPaused = useRef(false);
+
+  // Tenta tocar o vídeo ativo. Uma recusa por rolagem rápida (o pedido é interrompido antes de o
+  // vídeo carregar) não vira "pausado": quando o vídeo puder tocar, onCanPlay tenta de novo.
+  const tryPlay = useCallback(() => {
+    const el = ref.current;
+    if (!el || !activeNow.current || userPaused.current) return;
+    el.play().then(
+      () => setPaused(false),
+      (err: unknown) => {
+        if (!activeNow.current || userPaused.current || !el.paused) return;
+        if (err instanceof DOMException && err.name === "NotAllowedError") {
+          // Com som o navegador exige um toque recente; sem som deve tocar. Se nem assim, mostra o play.
+          if (!el.muted) onSoundBlocked();
+          else setPaused(true);
+        }
+      },
+    );
+  }, [onSoundBlocked]);
 
   // Sinais para a recomendação: uma medição por vez que o vídeo fica ativo, mandada quando ele
   // deixa de ser o ativo, quando a tela do feed fecha ou quando a aba é escondida.
@@ -160,27 +185,30 @@ function FeedItem({ index, video, active, mounted, muted, onUnmute, onComments, 
     if (!el) return;
     el.muted = muted;
     if (active) {
-      // Navegadores só deixam tocar sozinho sem som; play() pode ser recusado mesmo assim.
-      el.play().then(
-        () => setPaused(false),
-        () => setPaused(true),
-      );
+      tryPlay();
     } else {
+      userPaused.current = false;
       el.pause();
       el.currentTime = 0;
     }
-  }, [active, muted, mounted]);
+  }, [active, muted, mounted, tryPlay]);
 
   const onTap = () => {
     const el = ref.current;
     if (!el) return;
     if (muted) {
+      // Liga o som e toca ainda dentro do toque: alguns navegadores (iPhone) só aceitam assim.
+      userPaused.current = false;
+      el.muted = false;
       onUnmute();
-      if (el.paused) el.play().catch(() => setPaused(true));
+      if (el.paused) tryPlay();
       return;
     }
-    if (el.paused) el.play().then(() => setPaused(false), () => setPaused(true));
-    else {
+    if (el.paused) {
+      userPaused.current = false;
+      el.play().then(() => setPaused(false), () => setPaused(true));
+    } else {
+      userPaused.current = true;
       el.pause();
       setPaused(true);
     }
@@ -199,7 +227,11 @@ function FeedItem({ index, video, active, mounted, muted, onUnmute, onComments, 
           playsInline
           disablePictureInPicture
           onClick={onTap}
-          onPlaying={() => active && !document.hidden && tracker.play()}
+          onCanPlay={() => ref.current?.paused && tryPlay()}
+          onPlaying={() => {
+            setPaused(false);
+            if (active && !document.hidden) tracker.play();
+          }}
           onPause={() => tracker.pause()}
           onTimeUpdate={(e) => {
             const el = e.currentTarget;
