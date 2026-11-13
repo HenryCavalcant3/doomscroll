@@ -516,8 +516,7 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
 .msg { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
 .msg.mine { align-items: flex-end; }
 .msg-sender { font-size: 12px; font-weight: 700; color: var(--muted); text-decoration: none; padding-left: 4px; }
-button.bubble { border: 0; text-align: left; font: inherit; color: inherit; }
-button.bubble.mine { color: var(--on-accent); }
+.msg .bubble { cursor: pointer; user-select: text; -webkit-user-select: text; }
 .msg .bubble { align-self: auto; }
 .msg-video-wrap { display: flex; flex-direction: column; align-items: inherit; gap: 2px; }
 .msg-video {

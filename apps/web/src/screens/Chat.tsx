@@ -37,6 +37,11 @@ export function ChatScreen({ id, me, onRead }: Props) {
   const [pickerFor, setPickerFor] = useState<string | null>(null);
   const closePlayer = useCallback(() => setPlaying(null), []);
 
+  // A escolha de reação abre embaixo da mensagem: na última, ficaria fora da tela.
+  useEffect(() => {
+    if (pickerFor) log.current?.querySelector(".react-picker")?.scrollIntoView({ block: "nearest" });
+  }, [pickerFor]);
+
   // Última página: na abertura e a cada reconexão (traz o que chegou com a conexão caída).
   const refresh = useCallback(
     (first: boolean) =>
@@ -225,15 +230,24 @@ export function ChatScreen({ id, me, onRead }: Props) {
                   </button>
                 </div>
               ) : (
-                <button
+                // div, não button: no celular dá para segurar e copiar o texto. Tocar abre as reações.
+                <div
                   className={`bubble${mine ? " mine" : ""}`}
-                  onClick={() => setPickerFor(pickerFor === m.id ? null : m.id)}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => window.getSelection()?.isCollapsed !== false && setPickerFor(pickerFor === m.id ? null : m.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setPickerFor(pickerFor === m.id ? null : m.id);
+                    }
+                  }}
                   aria-label={`${m.text ?? ""}. ${label}`}
                   aria-expanded={pickerFor === m.id}
                 >
                   {m.text}
                   <span className="bubble-time">{shortTime(m.createdAt)}</span>
-                </button>
+                </div>
               )}
               {pickerFor === m.id ? (
                 <div className="react-picker" role="group" aria-label="Escolha uma reação">

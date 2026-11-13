@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent, type RefObject } from "react";
 import { api, type Conversation, type User } from "../api";
 import { conversationTitle, shortTime, useRealtimeEvents } from "../chat";
 import { ConversationAvatar } from "../components/ConversationAvatar";
@@ -81,7 +81,7 @@ export function Messages({ me }: { me: User }) {
         </button>
       </form>
       {openError && <p className="error">{openError}</p>}
-      <NewGroup />
+      <NewGroup mounted={mounted} />
 
       {error && <p className="error">Não deu para carregar as conversas: {error}</p>}
       {list === null ? (
@@ -122,7 +122,7 @@ export function Messages({ me }: { me: User }) {
 }
 
 /** Grupo novo: nome e apelidos de quem entra (separados por vírgula ou espaço). */
-function NewGroup() {
+function NewGroup({ mounted }: { mounted: RefObject<boolean> }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [people, setPeople] = useState("");
@@ -145,9 +145,10 @@ function NewGroup() {
     setError(null);
     api.createGroup(name, nicknames).then(
       (c) => {
-        window.location.hash = chatHref(c.id);
+        if (mounted.current) window.location.hash = chatHref(c.id);
       },
       (err: Error) => {
+        if (!mounted.current) return;
         setError(err.message);
         setBusy(false);
       },
