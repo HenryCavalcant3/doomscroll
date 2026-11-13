@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { api, type Conversation, type User } from "../api";
 import { conversationTitle, shortTime, useRealtimeEvents } from "../chat";
-import { Avatar } from "../components/Avatar";
+import { ConversationAvatar } from "../components/ConversationAvatar";
 import { chatHref } from "../router";
 
 /** Tela 4 do SPEC (caixa de entrada): conversas, da mais recente para a mais antiga. */
@@ -81,6 +81,7 @@ export function Messages({ me }: { me: User }) {
         </button>
       </form>
       {openError && <p className="error">{openError}</p>}
+      <NewGroup />
 
       {error && <p className="error">Não deu para carregar as conversas: {error}</p>}
       {list === null ? (
@@ -95,11 +96,11 @@ export function Messages({ me }: { me: User }) {
             return (
               <li key={c.id}>
                 <a className="inbox-row" href={chatHref(c.id)}>
-                  {c.members[0] ? <Avatar who={c.members[0]} size={48} /> : <span className="avatar" style={{ width: 48, height: 48 }} />}
+                  <ConversationAvatar conversation={c} size={48} />
                   <span className="inbox-text">
                     <span className={`inbox-name${c.unread ? " unread" : ""}`}>{conversationTitle(c)}</span>
                     <span className="inbox-preview">
-                      {last ? `${mine ? "Você: " : ""}${last.text ?? "vídeo"}` : "Sem mensagens"}
+                      {last ? `${mine ? "Você: " : c.type === "group" ? `@${last.sender.nickname}: ` : ""}${last.video ? "mandou um vídeo" : (last.text ?? "")}` : c.bunker ? "Todo mundo da rede está aqui" : "Sem mensagens"}
                     </span>
                   </span>
                   <span className="inbox-meta">
@@ -117,5 +118,71 @@ export function Messages({ me }: { me: User }) {
         </ul>
       )}
     </main>
+  );
+}
+
+/** Grupo novo: nome e apelidos de quem entra (separados por vírgula ou espaço). */
+function NewGroup() {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [people, setPeople] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const nicknames = people.split(/[\s,]+/).map((n) => n.replace(/^@/, "")).filter(Boolean);
+
+  if (!open) {
+    return (
+      <button className="btn btn-small inbox-group-btn" onClick={() => setOpen(true)}>
+        Novo grupo
+      </button>
+    );
+  }
+
+  const create = (e: FormEvent) => {
+    e.preventDefault();
+    if (!name.trim() || nicknames.length === 0 || busy) return;
+    setBusy(true);
+    setError(null);
+    api.createGroup(name, nicknames).then(
+      (c) => {
+        window.location.hash = chatHref(c.id);
+      },
+      (err: Error) => {
+        setError(err.message);
+        setBusy(false);
+      },
+    );
+  };
+
+  return (
+    <form className="card group-form" onSubmit={create}>
+      <div className="field">
+        <label htmlFor="grupo-nome">Nome do grupo</label>
+        <input id="grupo-nome" className="input" maxLength={40} value={name} onChange={(e) => setName(e.target.value)} />
+      </div>
+      <div className="field">
+        <label htmlFor="grupo-pessoas">Quem entra</label>
+        <input
+          id="grupo-pessoas"
+          className="input"
+          placeholder="@ana, @bia"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+          value={people}
+          onChange={(e) => setPeople(e.target.value)}
+        />
+        <p className="hint">Apelidos separados por vírgula ou espaço. Você entra automaticamente.</p>
+      </div>
+      {error && <p className="error">{error}</p>}
+      <div className="group-actions">
+        <button type="button" className="btn" onClick={() => setOpen(false)}>
+          Cancelar
+        </button>
+        <button className="btn btn-primary" disabled={!name.trim() || nicknames.length === 0 || busy}>
+          Criar grupo
+        </button>
+      </div>
+    </form>
   );
 }

@@ -1,7 +1,12 @@
-import type { Message } from "./api";
+import type { Message, Reaction } from "./api";
 
 /** Avisos da api pelo WebSocket. "ready" chega a cada (re)conexão: hora de buscar o que perdeu. */
-export type RealtimeEvent = { type: "ready" } | { type: "message"; message: Message };
+export type RealtimeEvent =
+  | { type: "ready" }
+  | { type: "message"; message: Message }
+  | { type: "reaction"; conversationId: string; messageId: string; reactions: Reaction[] }
+  /** Conversa nova (grupo) em que você entrou. */
+  | { type: "conversation"; conversationId: string };
 
 type Listener = (event: RealtimeEvent) => void;
 

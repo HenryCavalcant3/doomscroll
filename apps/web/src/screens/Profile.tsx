@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, apiUrl, type FeedVideo, type Profile, type User } from "../api";
 import { Avatar } from "../components/Avatar";
+import { Player } from "../components/Player";
 import { chatHref } from "../router";
 
 type Tab = "curtidos" | "stalker";
@@ -124,38 +125,5 @@ export function ProfileScreen({ nickname, me, onLogout }: Props) {
 
       {playing && <Player video={playing} onClose={closePlayer} />}
     </main>
-  );
-}
-
-/** Vídeo curtido em tela cheia, com os controles do navegador. */
-function Player({ video, onClose }: { video: FeedVideo; onClose(): void }) {
-  const close = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    close.current?.focus();
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
-  return (
-    <div className="player" role="dialog" aria-modal="true" aria-label={video.description ?? video.title ?? "Vídeo"}>
-      {video.videoUrl && (
-        <video
-          src={apiUrl(video.videoUrl)}
-          poster={video.thumbUrl ? apiUrl(video.thumbUrl) : undefined}
-          autoPlay
-          controls
-          loop
-          playsInline
-        />
-      )}
-      <button ref={close} className="icon-btn player-close" onClick={onClose} aria-label="Fechar vídeo">
-        <svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" aria-hidden="true">
-          <path d="M6 6l12 12M18 6L6 18" />
-        </svg>
-      </button>
-      {video.description && <p className="player-desc">{video.description}</p>}
-    </div>
   );
 }

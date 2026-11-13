@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useRef } from "react";
-import type { Conversation, Message } from "./api";
+import type { Conversation, Message, Reaction } from "./api";
 import type { Realtime, RealtimeEvent } from "./realtime";
 
 /** Junta mensagens sem repetir (pelo id), em ordem de envio. */
@@ -7,6 +7,24 @@ export function mergeMessages(current: Message[], incoming: Message[]): Message[
   const byId = new Map(current.map((m) => [m.id, m]));
   for (const m of incoming) byId.set(m.id, m);
   return [...byId.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+}
+
+/** Troca as reações de uma mensagem (aviso em tempo real ou resposta da api). */
+export function applyReactions(messages: Message[], messageId: string, reactions: Reaction[]): Message[] {
+  return messages.map((m) => (m.id === messageId ? { ...m, reactions } : m));
+}
+
+/** Reações agrupadas por emoji, na ordem em que apareceram, e se você está entre quem reagiu. */
+export function groupReactions(reactions: Reaction[], me: string): { emoji: string; count: number; mine: boolean; who: string[] }[] {
+  const groups = new Map<string, { emoji: string; count: number; mine: boolean; who: string[] }>();
+  for (const r of reactions) {
+    const g = groups.get(r.emoji) ?? { emoji: r.emoji, count: 0, mine: false, who: [] };
+    g.count++;
+    g.who.push(r.nickname);
+    if (r.nickname === me) g.mine = true;
+    groups.set(r.emoji, g);
+  }
+  return [...groups.values()];
 }
 
 /** Nome da conversa: o do grupo ou o apelido de quem está do outro lado. */

@@ -505,3 +505,76 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
 }
 .chat-compose .input { flex: 1; min-width: 0; }
 .chat-compose .btn { padding: 0 16px; }
+
+/* Fase 2 do chat: grupos, vídeo e reações */
+.avatar-group { background: var(--surface); border: 1px solid var(--field-line); }
+.avatar-group.bunker { border: 2px solid var(--accent); color: var(--accent); }
+.inbox-group-btn { align-self: flex-start; }
+.group-form { gap: 16px; }
+.group-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
+.msg { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.msg.mine { align-items: flex-end; }
+.msg-sender { font-size: 12px; font-weight: 700; color: var(--muted); text-decoration: none; padding-left: 4px; }
+button.bubble { border: 0; text-align: left; font: inherit; color: inherit; }
+button.bubble.mine { color: var(--on-accent); }
+.msg .bubble { align-self: auto; }
+.msg-video-wrap { display: flex; flex-direction: column; align-items: inherit; gap: 2px; }
+.msg-video {
+  position: relative;
+  width: 140px;
+  height: 200px;
+  padding: 0;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--field-line);
+  border-radius: 16px;
+  color: var(--fg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.msg.mine .msg-video { border-color: var(--accent); }
+.msg-video img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.msg-video svg { position: relative; filter: drop-shadow(0 1px 4px rgb(0 0 0 / 80%)); }
+.msg-react-btn { background: none; border: 0; padding: 0 4px; min-height: 24px; color: var(--muted); }
+.reactions { display: flex; flex-wrap: wrap; gap: 6px; }
+.reaction {
+  min-height: 32px;
+  padding: 0 10px;
+  background: var(--surface);
+  border: 1px solid var(--field-line);
+  border-radius: 999px;
+  font-size: 13px;
+}
+.reaction.mine { border-color: var(--accent); }
+.reaction-add { background: none; border-style: dashed; border-color: var(--muted); }
+.react-picker {
+  display: flex;
+  gap: 2px;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--field-line);
+  border-radius: 999px;
+}
+.react-picker button { width: 44px; height: 44px; border: 0; border-radius: 50%; background: none; font-size: 22px; }
+.react-picker button[aria-pressed="true"] { background: var(--line); }
+
+/* Gaveta "Enviar para" do feed */
+.share-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.share-row {
+  width: 100%;
+  min-height: 56px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+}
+.share-row:disabled { opacity: 1; cursor: default; }
+.share-name { flex: 1; min-width: 0; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.share-state { font-size: 13px; font-weight: 700; padding: 6px 12px; border: 1px solid var(--fg); border-radius: 999px; }
+.share-state.done { border-color: var(--accent); color: var(--accent); }

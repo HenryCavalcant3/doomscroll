@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
-import { api, ApiError, type Conversation, type Message, type User } from "../api";
-import { conversationTitle, mergeMessages, shortTime, useRealtimeEvents } from "../chat";
-import { Avatar } from "../components/Avatar";
+import { api, apiUrl, ApiError, REACTIONS, type Conversation, type Message, type SharedVideo, type User } from "../api";
+import { applyReactions, conversationTitle, groupReactions, mergeMessages, shortTime, useRealtimeEvents } from "../chat";
+import { ConversationAvatar } from "../components/ConversationAvatar";
+import { Player } from "../components/Player";
 import { profileHref } from "../router";
 
 const PAGE = 50;
@@ -31,6 +32,10 @@ export function ChatScreen({ id, me, onRead }: Props) {
   /** Altura da conversa antes de carregar as antigas, para não pular de lugar. */
   const restoreFrom = useRef<number | null>(null);
   const lastRead = useRef<string | null>(null);
+  const [playing, setPlaying] = useState<SharedVideo | null>(null);
+  /** Mensagem com a escolha de reação aberta. */
+  const [pickerFor, setPickerFor] = useState<string | null>(null);
+  const closePlayer = useCallback(() => setPlaying(null), []);
 
   // Última página: na abertura e a cada reconexão (traz o que chegou com a conexão caída).
   const refresh = useCallback(
@@ -62,6 +67,8 @@ export function ChatScreen({ id, me, onRead }: Props) {
     if (e.type === "ready") refresh(false);
     else if (e.type === "message" && e.message.conversationId === id) {
       setMessages((cur) => mergeMessages(cur, [e.message]));
+    } else if (e.type === "reaction" && e.conversationId === id) {
+      setMessages((cur) => applyReactions(cur, e.messageId, e.reactions));
     }
   });
 
@@ -137,6 +144,16 @@ export function ChatScreen({ id, me, onRead }: Props) {
     );
   };
 
+  // Uma reação por pessoa: escolher a mesma de novo tira.
+  const react = (m: Message, emoji: string) => {
+    setPickerFor(null);
+    const current = m.reactions.find((r) => r.nickname === me.nickname)?.emoji;
+    api.react(id, m.id, current === emoji ? null : emoji).then(
+      (res) => setMessages((cur) => applyReactions(cur, m.id, res.reactions)),
+      (err: Error) => setError(err.message),
+    );
+  };
+
   if (notFound) {
     return (
       <main className="screen placeholder">
@@ -148,7 +165,10 @@ export function ChatScreen({ id, me, onRead }: Props) {
     );
   }
 
-  const other = conv?.members[0];
+  const other = conv?.type === "direct" ? conv.members[0] : undefined;
+  const group = conv?.type === "group";
+  // O "+ reagir" fica à vista só na última mensagem dos outros (como no wireframe); nas outras, toque no balão.
+  const lastOtherId = [...messages].reverse().find((m) => m.sender.nickname !== me.nickname)?.id;
   return (
     <main className="chat">
       <header className="chat-head">
@@ -159,10 +179,11 @@ export function ChatScreen({ id, me, onRead }: Props) {
         </a>
         {conv && (
           <a className="chat-who" href={other ? profileHref(other.nickname) : undefined}>
-            {other ? <Avatar who={other} size={40} /> : <span className="avatar" style={{ width: 40, height: 40 }} />}
+            <ConversationAvatar conversation={conv} size={40} />
             <span className="chat-who-text">
               <span className="chat-title">{conversationTitle(conv)}</span>
               {other?.isAi && <span className="chat-sub">persona de IA</span>}
+              {group && <span className="chat-sub">{conv.members.length + 1} pessoas</span>}
             </span>
           </a>
         )}
@@ -176,17 +197,81 @@ export function ChatScreen({ id, me, onRead }: Props) {
         )}
         {error && <p className="error">{error}</p>}
         {conv && messages.length === 0 && <p className="hint chat-empty">Mande a primeira mensagem.</p>}
-        {messages.map((m) => {
+        {messages.map((m, i) => {
           const mine = m.sender.nickname === me.nickname;
+          // No grupo, o apelido aparece no começo de cada sequência de mensagens da mesma pessoa.
+          const showSender = group && !mine && messages[i - 1]?.sender.nickname !== m.sender.nickname;
+          const reactions = groupReactions(m.reactions, me.nickname);
+          const label = `Reagir à mensagem de ${mine ? "você" : `@${m.sender.nickname}`}`;
           return (
-            <div key={m.id} className={`bubble${mine ? " mine" : ""}`} title={shortTime(m.createdAt)}>
-              {m.text}
-              <span className="bubble-time">{shortTime(m.createdAt)}</span>
+            <div key={m.id} className={`msg${mine ? " mine" : ""}`}>
+              {showSender && (
+                <a className="msg-sender" href={profileHref(m.sender.nickname)}>
+                  @{m.sender.nickname}
+                </a>
+              )}
+              {m.video ? (
+                <div className="msg-video-wrap">
+                  <button
+                    className="msg-video"
+                    onClick={() => setPlaying(m.video)}
+                    aria-label={`Ver vídeo: ${m.video.description ?? m.video.title ?? "vídeo compartilhado"}`}
+                  >
+                    {m.video.thumbUrl && <img src={apiUrl(m.video.thumbUrl)} alt="" loading="lazy" />}
+                    <PlayIcon />
+                  </button>
+                  <button className="msg-react-btn" onClick={() => setPickerFor(pickerFor === m.id ? null : m.id)} aria-label={label}>
+                    <span className="bubble-time">{shortTime(m.createdAt)}</span>
+                  </button>
+                </div>
+              ) : (
+                <button
+                  className={`bubble${mine ? " mine" : ""}`}
+                  onClick={() => setPickerFor(pickerFor === m.id ? null : m.id)}
+                  aria-label={`${m.text ?? ""}. ${label}`}
+                  aria-expanded={pickerFor === m.id}
+                >
+                  {m.text}
+                  <span className="bubble-time">{shortTime(m.createdAt)}</span>
+                </button>
+              )}
+              {pickerFor === m.id ? (
+                <div className="react-picker" role="group" aria-label="Escolha uma reação">
+                  {REACTIONS.map((emoji) => {
+                    const chosen = m.reactions.some((r) => r.nickname === me.nickname && r.emoji === emoji);
+                    return (
+                      <button key={emoji} aria-pressed={chosen} onClick={() => react(m, emoji)} aria-label={chosen ? `Tirar ${emoji}` : `Reagir com ${emoji}`}>
+                        {emoji}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                (reactions.length > 0 || m.id === lastOtherId) && (
+                  <div className="reactions">
+                    {reactions.map((r) => (
+                      <button
+                        key={r.emoji}
+                        className={`reaction${r.mine ? " mine" : ""}`}
+                        onClick={() => react(m, r.emoji)}
+                        title={r.who.map((n) => `@${n}`).join(", ")}
+                        aria-label={`${r.emoji} ${r.count}: ${r.who.join(", ")}${r.mine ? " (toque para tirar a sua)" : ""}`}
+                      >
+                        {r.emoji} {r.count > 1 && r.count}
+                      </button>
+                    ))}
+                    <button className="reaction reaction-add" onClick={() => setPickerFor(m.id)} aria-label={label}>
+                      {reactions.length ? "+" : "+ reagir"}
+                    </button>
+                  </div>
+                )
+              )}
             </div>
           );
         })}
       </div>
 
+      {playing && <Player video={playing} onClose={closePlayer} />}
       {sendError && <p className="error chat-send-error">{sendError}</p>}
       <form className="chat-compose" onSubmit={send}>
         <label className="sr-only" htmlFor="mensagem">
@@ -207,5 +292,13 @@ export function ChatScreen({ id, me, onRead }: Props) {
         </button>
       </form>
     </main>
+  );
+}
+
+function PlayIcon() {
+  return (
+    <svg width={40} height={40} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinejoin="round" aria-hidden="true">
+      <path d="M8 5l11 7-11 7z" />
+    </svg>
   );
 }

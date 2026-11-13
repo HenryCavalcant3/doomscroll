@@ -1,13 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { Message } from "./api";
-import { conversationTitle, mergeMessages, shortTime } from "./chat";
+import { applyReactions, conversationTitle, groupReactions, mergeMessages, shortTime } from "./chat";
 
 const msg = (id: string, createdAt: string, text = id): Message => ({
   id,
   conversationId: "c1",
   type: "text",
   text,
-  videoId: null,
+  video: null,
+  reactions: [],
   createdAt,
   sender: { nickname: "ana", avatarUrl: null, isAi: false },
 });
@@ -24,7 +25,7 @@ describe("mergeMessages", () => {
 
 describe("conversationTitle", () => {
   it("usa o nome do grupo ou o apelido do outro lado", () => {
-    const base = { id: "c1", type: "direct" as const, lastMessage: null, unread: 0 };
+    const base = { id: "c1", type: "direct" as const, bunker: false, lastMessage: null, unread: 0 };
     expect(conversationTitle({ ...base, name: null, members: [{ nickname: "bia", avatarUrl: null, isAi: false }] })).toBe("bia");
     expect(conversationTitle({ ...base, type: "group", name: "Bunker", members: [] })).toBe("Bunker");
   });
@@ -36,5 +37,30 @@ describe("shortTime", () => {
     expect(shortTime(new Date(2026, 10, 13, 9, 5).toISOString(), now)).toBe("09:05");
     expect(shortTime(new Date(2026, 10, 12, 23, 0).toISOString(), now)).toBe("ontem");
     expect(shortTime(new Date(2026, 10, 2, 8, 0).toISOString(), now)).toBe("02/11");
+  });
+});
+
+describe("reações", () => {
+  it("troca as reações de uma mensagem só", () => {
+    const a = msg("a", "2026-11-13T10:00:00.000Z");
+    const b = msg("b", "2026-11-13T10:01:00.000Z");
+    const out = applyReactions([a, b], "b", [{ emoji: "🔥", nickname: "bia" }]);
+    expect(out[0]).toBe(a);
+    expect(out[1]!.reactions).toEqual([{ emoji: "🔥", nickname: "bia" }]);
+  });
+
+  it("agrupa por emoji e marca a sua", () => {
+    const groups = groupReactions(
+      [
+        { emoji: "😂", nickname: "bia" },
+        { emoji: "🔥", nickname: "ana" },
+        { emoji: "😂", nickname: "eve" },
+      ],
+      "ana",
+    );
+    expect(groups).toEqual([
+      { emoji: "😂", count: 2, mine: false, who: ["bia", "eve"] },
+      { emoji: "🔥", count: 1, mine: true, who: ["ana"] },
+    ]);
   });
 });

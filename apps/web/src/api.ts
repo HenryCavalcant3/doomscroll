@@ -77,12 +77,30 @@ export interface Comment {
   author: Author;
 }
 
+/** Emojis de reação aceitos pela api. */
+export const REACTIONS = ["❤️", "😂", "😮", "😢", "🔥", "👍"] as const;
+
+export interface SharedVideo {
+  id: string;
+  title: string | null;
+  description: string | null;
+  videoUrl: string | null;
+  thumbUrl: string | null;
+}
+
+export interface Reaction {
+  emoji: string;
+  nickname: string;
+}
+
 export interface Message {
   id: string;
   conversationId: string;
   type: "text" | "video";
   text: string | null;
-  videoId: string | null;
+  /** Vídeo compartilhado do feed. */
+  video: SharedVideo | null;
+  reactions: Reaction[];
   createdAt: string;
   sender: Author;
 }
@@ -91,6 +109,8 @@ export interface Conversation {
   id: string;
   type: "direct" | "group";
   name: string | null;
+  /** O Grupo do Bunker, com todo mundo da rede. */
+  bunker: boolean;
   /** Os outros membros (sem você). */
   members: Author[];
   lastMessage: Message | null;
@@ -181,6 +201,16 @@ export const api = {
   messages: (id: string, before?: string) =>
     request<Message[]>(`/conversations/${id}/messages${before ? `?before=${encodeURIComponent(before)}` : ""}`),
   sendMessage: (id: string, text: string) => request<Message>(`/conversations/${id}/messages`, { method: "POST", body: { text } }),
+  shareVideo: (id: string, videoId: string) =>
+    request<Message>(`/conversations/${id}/messages`, { method: "POST", body: { videoId } }),
+  /** emoji null tira a reação. */
+  react: (id: string, messageId: string, emoji: string | null) =>
+    request<{ reactions: Reaction[] }>(`/conversations/${id}/messages/${messageId}/reaction`, {
+      method: emoji ? "PUT" : "DELETE",
+      body: emoji ? { emoji } : undefined,
+    }),
+  createGroup: (name: string, nicknames: string[]) =>
+    request<Conversation>("/groups", { method: "POST", body: { name, nicknames } }),
   markRead: (id: string, messageId: string) =>
     request<void>(`/conversations/${id}/read`, { method: "POST", body: { messageId } }),
   owner: {

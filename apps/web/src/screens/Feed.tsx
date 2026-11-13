@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
-import { api, apiUrl, type Comment, type FeedVideo } from "../api";
+import { api, apiUrl, type Comment, type Conversation, type FeedVideo } from "../api";
+import { conversationTitle } from "../chat";
 import { Avatar } from "../components/Avatar";
+import { ConversationAvatar } from "../components/ConversationAvatar";
 import { appendPage, initialFeed, needsMore, patchVideo, type FeedState } from "../feedQueue";
 import { profileHref } from "../router";
 import { ViewTracker } from "../viewTracker";
@@ -12,9 +14,11 @@ export function Feed() {
   const [muted, setMuted] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [commentsFor, setCommentsFor] = useState<FeedVideo | null>(null);
+  const [shareFor, setShareFor] = useState<FeedVideo | null>(null);
   const loading = useRef(false);
   const scroller = useRef<HTMLDivElement>(null);
   const closeComments = useCallback(() => setCommentsFor(null), []);
+  const closeShare = useCallback(() => setShareFor(null), []);
   // Estável: entra nas dependências do efeito que toca o vídeo.
   const soundBlocked = useCallback(() => setMuted(true), []);
   const onCommented = useCallback((id: string, count: number) => setFeed((f) => patchVideo(f, id, { commentCount: count })), []);
@@ -92,6 +96,7 @@ export function Feed() {
             onUnmute={() => setMuted(false)}
             onSoundBlocked={soundBlocked}
             onComments={() => setCommentsFor(entry.video)}
+            onShare={() => setShareFor(entry.video)}
             onLike={() => toggleLike(entry.video)}
           />
         ))}
@@ -111,6 +116,7 @@ export function Feed() {
         )}
       </div>
       {commentsFor && <CommentsDrawer video={commentsFor} onClose={closeComments} onCommented={onCommented} />}
+      {shareFor && <ShareDrawer video={shareFor} onClose={closeShare} />}
     </main>
   );
 }
@@ -126,10 +132,11 @@ interface ItemProps {
   /** O navegador recusou tocar com som (sem toque recente na tela): volta ao modo mudo. */
   onSoundBlocked(): void;
   onComments(): void;
+  onShare(): void;
   onLike(): void;
 }
 
-function FeedItem({ index, video, active, mounted, muted, onUnmute, onSoundBlocked, onComments, onLike }: ItemProps) {
+function FeedItem({ index, video, active, mounted, muted, onUnmute, onSoundBlocked, onComments, onShare, onLike }: ItemProps) {
   const ref = useRef<HTMLVideoElement>(null);
   const [paused, setPaused] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -271,7 +278,7 @@ function FeedItem({ index, video, active, mounted, muted, onUnmute, onSoundBlock
           <CommentIcon />
           {video.commentCount > 0 ? video.commentCount : "comentar"}
         </button>
-        <button className="feed-action" aria-disabled="true" title="Enviar no chat chega em breve">
+        <button className="feed-action" onClick={onShare} aria-label="Enviar no chat">
           <SendIcon />
           enviar
         </button>
@@ -394,6 +401,78 @@ function CommentsDrawer({ video, onClose, onCommented }: DrawerProps) {
             Enviar
           </button>
         </form>
+      </div>
+    </div>
+  );
+}
+
+/** Manda o vídeo para uma das suas conversas (SPEC 5.2: compartilhar no chat). */
+function ShareDrawer({ video, onClose }: { video: FeedVideo; onClose(): void }) {
+  const [list, setList] = useState<Conversation[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [state, setState] = useState<Record<string, "enviando" | "enviado">>({});
+  const close = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    close.current?.focus();
+    api.conversations().then(setList, (err: Error) => setError(err.message));
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const share = (c: Conversation) => {
+    if (state[c.id]) return;
+    setState((s) => ({ ...s, [c.id]: "enviando" }));
+    setError(null);
+    api.shareVideo(c.id, video.id).then(
+      () => setState((s) => ({ ...s, [c.id]: "enviado" })),
+      (err: Error) => {
+        setError(err.message);
+        setState((s) => {
+          const next = { ...s };
+          delete next[c.id];
+          return next;
+        });
+      },
+    );
+  };
+
+  return (
+    <div className="drawer-backdrop" onClick={onClose}>
+      <div className="drawer" role="dialog" aria-modal="true" aria-labelledby="share-title" onClick={(e) => e.stopPropagation()}>
+        <header>
+          <h2 id="share-title">Enviar para</h2>
+          <button ref={close} className="icon-btn" onClick={onClose} aria-label="Fechar">
+            <CloseIcon />
+          </button>
+        </header>
+        <div className="drawer-body">
+          {!list && !error && <p className="hint">Carregando…</p>}
+          {list?.length === 0 && (
+            <p className="hint">
+              Você ainda não tem conversas. Abra uma em <a href="#/mensagens">Mensagens</a>.
+            </p>
+          )}
+          <ul className="share-list">
+            {list?.map((c) => (
+              <li key={c.id}>
+                <button className="share-row" onClick={() => share(c)} disabled={Boolean(state[c.id])}>
+                  <ConversationAvatar conversation={c} size={40} />
+                  <span className="share-name">{conversationTitle(c)}</span>
+                  <span className={`share-state${state[c.id] === "enviado" ? " done" : ""}`}>
+                    {state[c.id] === "enviado" ? "Enviado" : state[c.id] === "enviando" ? "Enviando…" : "Enviar"}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+        {error && (
+          <p className="error" role="alert">
+            {error}
+          </p>
+        )}
       </div>
     </div>
   );
