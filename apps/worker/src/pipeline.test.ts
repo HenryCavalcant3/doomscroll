@@ -196,6 +196,23 @@ describe("comentário da persona", () => {
     expect(db.comments).toHaveLength(1);
   });
 
+  it("uma persona que falha não impede as outras, e o job volta para a fila", async () => {
+    db.video.status = "aprovado";
+    const RATO = { ...VALDIR, userId: "33333333-3333-4333-8333-333333333333", nickname: "rato", name: "Rato" };
+    db.personasWithoutComment = async () => [RATO, VALDIR].filter((p) => !db.comments.some((c) => c.userId === p.userId));
+    let ratoFails = true;
+    deps.comment = async (p) => {
+      if (p.nickname === "rato" && ratoFails) throw new Error("copiou o exemplo");
+      return `oi do ${p.nickname}`;
+    };
+    await expect(runStep(QUEUES.personaComment, deps, job)).rejects.toThrow("rato: copiou o exemplo");
+    expect(db.comments).toEqual([{ userId: VALDIR.userId, text: "oi do tio_valdir" }]);
+
+    ratoFails = false;
+    await runStep(QUEUES.personaComment, deps, job);
+    expect(db.comments.map((c) => c.text)).toEqual(["oi do tio_valdir", "oi do rato"]);
+  });
+
   it("PERSONA_RATE=0 desliga os comentários sem reagendar", async () => {
     db.video.status = "aprovado";
     deps.personaRate = 0;

@@ -111,6 +111,7 @@ const steps: Record<QueueName, Step> = {
     if (video?.status !== "aprovado") return;
     const random = deps.random ?? Math.random;
     // Só personas que ainda não comentaram: nova tentativa ou job repetido não duplica comentário.
+    const failed: string[] = [];
     for (const persona of await deps.db.personasWithoutComment(id)) {
       const limit = deps.personaRate ?? Infinity;
       if (limit <= 0) {
@@ -123,10 +124,17 @@ const steps: Record<QueueName, Step> = {
         deps.log?.(`[worker] limite de ${limit} ações de persona por hora: comentário adiado (${id})`);
         return;
       }
-      const text = await deps.comment(persona, video, random() < APOCALYPSE_CHANCE);
-      await deps.db.addPersonaComment(id, persona.userId, text);
-      deps.log?.(`[worker] ${persona.nickname} comentou (${id}): ${text}`);
+      try {
+        const text = await deps.comment(persona, video, random() < APOCALYPSE_CHANCE);
+        await deps.db.addPersonaComment(id, persona.userId, text);
+        deps.log?.(`[worker] ${persona.nickname} comentou (${id}): ${text}`);
+      } catch (err) {
+        // Uma persona que falha não impede as outras de comentar.
+        failed.push(`${persona.nickname}: ${err instanceof Error ? err.message : String(err)}`);
+      }
     }
+    // Com erro, o job falha e volta; quem já comentou fica de fora da nova tentativa.
+    if (failed.length) throw new Error(failed.join("; "));
   },
 };
 
