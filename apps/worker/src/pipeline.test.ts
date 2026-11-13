@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { VideoDb, VideoRecord } from "./db.js";
-import { runStep, type PipelineDeps } from "./pipeline.js";
+import { RATE_RETRY_SECONDS, runStep, type PipelineDeps } from "./pipeline.js";
 import { QUEUES } from "./queues.js";
 
 const ID = "11111111-1111-4111-8111-111111111111";
@@ -20,6 +20,7 @@ function fakeDb(): VideoDb & {
   video: VideoRecord & { stage: string; error?: string; embedding?: number[] };
   topics: string[];
   comments: { userId: string; text: string }[];
+  actionsLastHour: number;
 } {
   const video = {
     id: ID, sourceUrl: "https://youtu.be/x", status: "baixando", stage: "baixando", title: null as string | null,
@@ -50,6 +51,8 @@ function fakeDb(): VideoDb & {
       db.comments.push({ userId, text });
       return true;
     },
+    actionsLastHour: 0,
+    personaActionsLastHour: async () => db.actionsLastHour,
   };
   return db as never;
 }
@@ -176,6 +179,29 @@ describe("comentário da persona", () => {
     deps.random = () => 0.01;
     await runStep(QUEUES.personaComment, deps, job);
     expect(deps.comment).toHaveBeenCalledWith(VALDIR, expect.anything(), true);
+  });
+
+  it("com o limite por hora estourado, adia o comentário sem gastar tentativas", async () => {
+    db.video.status = "aprovado";
+    deps.personaRate = 5;
+    db.actionsLastHour = 5;
+    const delayed: unknown[] = [];
+    deps.send = async (queue, data, options) => delayed.push({ queue, data, options });
+    await runStep(QUEUES.personaComment, deps, job);
+    expect(deps.comment).not.toHaveBeenCalled();
+    expect(delayed).toEqual([{ queue: QUEUES.personaComment, data: { videoId: ID }, options: { startAfter: RATE_RETRY_SECONDS } }]);
+
+    db.actionsLastHour = 4;
+    await runStep(QUEUES.personaComment, deps, job);
+    expect(db.comments).toHaveLength(1);
+  });
+
+  it("PERSONA_RATE=0 desliga os comentários sem reagendar", async () => {
+    db.video.status = "aprovado";
+    deps.personaRate = 0;
+    await runStep(QUEUES.personaComment, deps, job);
+    expect(deps.comment).not.toHaveBeenCalled();
+    expect(sent).toEqual([]);
   });
 
   it("falha no comentário não tira o vídeo do feed nem apaga arquivos", async () => {

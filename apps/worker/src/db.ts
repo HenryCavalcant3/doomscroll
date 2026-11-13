@@ -30,6 +30,8 @@ export interface VideoDb {
   personasWithoutComment(videoId: string): Promise<PersonaProfile[]>;
   /** Grava o comentário só se a persona ainda não comentou (seguro para novas tentativas). */
   addPersonaComment(videoId: string, userId: string, text: string): Promise<boolean>;
+  /** Comentários e mensagens de personas na última hora (limite PERSONA_RATE). */
+  personaActionsLastHour(): Promise<number>;
 }
 
 export class PgVideoDb implements VideoDb {
@@ -180,5 +182,15 @@ export class PgVideoDb implements VideoDb {
       [videoId, userId, text],
     );
     return res.rowCount === 1;
+  }
+
+  async personaActionsLastHour() {
+    const res = await this.pool.query<{ n: number }>(
+      `SELECT ((SELECT count(*) FROM comments c JOIN personas p ON p.user_id = c.user_id
+                 WHERE c.created_at > now() - interval '1 hour')
+             + (SELECT count(*) FROM messages m JOIN personas p ON p.user_id = m.sender_id
+                 WHERE m.created_at > now() - interval '1 hour'))::int AS n`,
+    );
+    return res.rows[0]?.n ?? 0;
   }
 }

@@ -3,6 +3,7 @@ import pg from "pg";
 import { PgBoss } from "pg-boss";
 import { OllamaClient } from "./ai.js";
 import { readConfig } from "./config.js";
+import { LlmGate, PRIORITY } from "./gate.js";
 import { PgVideoDb } from "./db.js";
 import * as ffmpeg from "./ffmpeg.js";
 import { runStep, type PipelineDeps } from "./pipeline.js";
@@ -30,6 +31,9 @@ await mkdir(config.mediaDir, { recursive: true });
 const pool = new pg.Pool({ connectionString: config.databaseUrl });
 const ollama = new OllamaClient(config.ollamaUrl, config.llmModel, config.embedModel);
 
+// Uma chamada à IA por vez, com a ingestão na frente das personas.
+const gate = new LlmGate();
+
 const boss = new PgBoss(config.databaseUrl);
 boss.on("error", (err) => console.error("[worker] erro no pg-boss:", err));
 await boss.start();
@@ -38,16 +42,17 @@ await ensureQueues(boss);
 const deps: PipelineDeps = {
   db: new PgVideoDb(pool),
   mediaDir: config.mediaDir,
-  send: (queue, data) => boss.send(queue, data),
+  send: (queue, data, options) => boss.send(queue, data, options),
   download,
   convert: ffmpeg.convert,
   probe: ffmpeg.probe,
   thumbnail: ffmpeg.thumbnail,
   extractAudio: ffmpeg.extractAudio,
   transcribe: async (wav, outBase) => transcribe(await ensureModel(config.whisperDir, config.whisperModel), wav, outBase),
-  suggest: (video, topics) => ollama.suggest(video, topics),
-  embed: (text) => ollama.embed(text),
-  comment: (persona, video, apocalypse) => ollama.comment(persona, video, apocalypse),
+  suggest: (video, topics) => gate.run(PRIORITY.ingest, () => ollama.suggest(video, topics)),
+  embed: (text) => gate.run(PRIORITY.ingest, () => ollama.embed(text)),
+  comment: (persona, video, apocalypse) => gate.run(PRIORITY.persona, () => ollama.comment(persona, video, apocalypse)),
+  personaRate: config.personaRate,
   log: (msg) => console.log(msg),
 };
 

@@ -8,7 +8,11 @@ describe("worker", () => {
       databaseUrl: "postgres://x",
       whisperModel: "base",
       embedModel: "nomic-embed-text",
+      personaRate: 30,
     });
+    expect(readConfig({ DATABASE_URL: "x", PERSONA_RATE: "0" }).personaRate).toBe(0);
+    expect(() => readConfig({ DATABASE_URL: "x", PERSONA_RATE: "-1" })).toThrow(/PERSONA_RATE/);
+    expect(() => readConfig({ DATABASE_URL: "x", PERSONA_RATE: "muito" })).toThrow(/PERSONA_RATE/);
   });
 
   it("falha sem DATABASE_URL ou com WHISPER_MODEL estranho", () => {
