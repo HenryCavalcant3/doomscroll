@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, apiUrl, type FeedVideo, type Profile, type User } from "../api";
 import { Avatar } from "../components/Avatar";
+import { chatHref } from "../router";
 
 type Tab = "curtidos" | "stalker";
 
@@ -18,6 +19,22 @@ export function ProfileScreen({ nickname, me, onLogout }: Props) {
   const [playing, setPlaying] = useState<FeedVideo | null>(null);
   const own = nickname === me.nickname;
   const closePlayer = useCallback(() => setPlaying(null), []);
+  const [opening, setOpening] = useState(false);
+  const [messageError, setMessageError] = useState<string | null>(null);
+
+  const message = () => {
+    setOpening(true);
+    setMessageError(null);
+    api.openDirect(nickname).then(
+      (c) => {
+        window.location.hash = chatHref(c.id);
+      },
+      (err: Error) => {
+        setMessageError(err.message);
+        setOpening(false);
+      },
+    );
+  };
 
   useEffect(() => {
     api.profile(nickname).then(setProfile, (err: Error) => setError(err.message));
@@ -52,11 +69,16 @@ export function ProfileScreen({ nickname, me, onLogout }: Props) {
               Sair
             </button>
           </div>
+        ) : profile.isAi ? (
+          <button className="btn btn-small" aria-disabled="true" title="As personas ainda não respondem mensagens">
+            Mandar mensagem
+          </button>
         ) : (
-          <button className="btn btn-small" aria-disabled="true" title="As mensagens chegam em breve">
+          <button className="btn btn-small" onClick={message} disabled={opening}>
             Mandar mensagem
           </button>
         )}
+        {messageError && <p className="error">{messageError}</p>}
       </header>
 
       <div className="tabs" role="tablist">

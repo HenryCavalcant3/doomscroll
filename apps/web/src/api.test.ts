@@ -69,5 +69,9 @@ describe("rotas", () => {
     expect(parseRoute("#/adicionar")).toEqual({ name: "adicionar" });
     expect(parseRoute("#/u/tio_valdir")).toEqual({ name: "usuario", nickname: "tio_valdir" });
     expect(parseRoute("#/qualquer")).toEqual({ name: "feed" });
+    expect(parseRoute("#/mensagens")).toEqual({ name: "mensagens" });
+    const id = "6d74551a-d919-4a39-ac18-814c65be3d06";
+    expect(parseRoute(`#/chat/${id}`)).toEqual({ name: "chat", id });
+    expect(parseRoute("#/chat/nao-e-id")).toEqual({ name: "feed" });
   });
 });

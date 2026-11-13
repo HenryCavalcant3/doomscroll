@@ -8,6 +8,8 @@ export default defineConfig({
     proxy: {
       "/api": {
         target: process.env.API_URL ?? "http://localhost:3000",
+        // WebSocket dos avisos do chat (/api/ws).
+        ws: true,
         rewrite: (path) => path.replace(/^\/api/, ""),
       },
     },

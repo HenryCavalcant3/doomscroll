@@ -77,6 +77,26 @@ export interface Comment {
   author: Author;
 }
 
+export interface Message {
+  id: string;
+  conversationId: string;
+  type: "text" | "video";
+  text: string | null;
+  videoId: string | null;
+  createdAt: string;
+  sender: Author;
+}
+
+export interface Conversation {
+  id: string;
+  type: "direct" | "group";
+  name: string | null;
+  /** Os outros membros (sem você). */
+  members: Author[];
+  lastMessage: Message | null;
+  unread: number;
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -97,6 +117,8 @@ let onUnauthorized: () => void = () => {};
 /** Sessão do navegador: o token fica no localStorage (se ele existir) e vai em todo pedido. */
 export const auth = {
   hasToken: () => token !== null,
+  /** Usado para autenticar o WebSocket (que não leva cabeçalho). */
+  token: () => token,
   setToken(value: string | null) {
     token = value;
     stored.set(TOKEN_KEY, value);
@@ -152,6 +174,15 @@ export const api = {
   submitVideo: (url: string) => request<Video>("/videos", { method: "POST", body: { url } }),
   video: (id: string) => request<Video>(`/videos/${id}`),
   confirmTopics: (id: string, topics: string[]) => request<Video>(`/videos/${id}/topics`, { method: "PUT", body: { topics } }),
+  conversations: () => request<Conversation[]>("/conversations"),
+  conversation: (id: string) => request<Conversation>(`/conversations/${id}`),
+  openDirect: (nickname: string) => request<Conversation>("/conversations", { method: "POST", body: { nickname } }),
+  /** Página de mensagens antes da mensagem `before` (ou as últimas), em ordem cronológica. */
+  messages: (id: string, before?: string) =>
+    request<Message[]>(`/conversations/${id}/messages${before ? `?before=${encodeURIComponent(before)}` : ""}`),
+  sendMessage: (id: string, text: string) => request<Message>(`/conversations/${id}/messages`, { method: "POST", body: { text } }),
+  markRead: (id: string, messageId: string) =>
+    request<void>(`/conversations/${id}/read`, { method: "POST", body: { messageId } }),
   owner: {
     pending: () => request<Video[]>("/owner/videos?status=pendente"),
     approve: (id: string) => request<Video>(`/owner/videos/${id}/approve`, { method: "POST" }),

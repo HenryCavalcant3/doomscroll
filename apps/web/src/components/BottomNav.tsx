@@ -1,7 +1,7 @@
 import type { Route } from "../router";
 
-/** Mensagens chega no passo 7 do SPEC; por enquanto fica visível, mas inativo. */
-export function BottomNav({ route }: { route: Route }) {
+/** Navegação inferior fixa. A bolinha em Mensagens indica conversas com mensagens não lidas. */
+export function BottomNav({ route, unread }: { route: Route; unread: number }) {
   const active = route.name === "dono" ? "perfil" : route.name;
   return (
     <nav className="bottom-nav" aria-label="Navegação principal">
@@ -11,9 +11,14 @@ export function BottomNav({ route }: { route: Route }) {
       <a href="#/adicionar" aria-current={active === "adicionar" ? "page" : undefined}>
         Adicionar
       </a>
-      <span aria-disabled="true" title="As mensagens chegam em breve">
+      <a href="#/mensagens" aria-current={active === "mensagens" ? "page" : undefined}>
         Mensagens
-      </span>
+        {unread > 0 && (
+          <span className="nav-dot" aria-label={`${unread} não ${unread === 1 ? "lida" : "lidas"}`}>
+            {unread > 99 ? "99+" : unread}
+          </span>
+        )}
+      </a>
       <a href="#/perfil" aria-current={active === "perfil" ? "page" : undefined}>
         Perfil
       </a>
