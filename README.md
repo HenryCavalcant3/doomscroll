@@ -146,6 +146,15 @@ Cada persona é um par de arquivos em `personas/`: o avatar (`apelido-com-hifen.
 
 A api valida tudo na subida e o `pnpm test` também, então uma persona inválida falha no CI.
 
+Para ver como a persona escreve antes de mandar, rode a bancada de avaliação. Ela gera comentários de cada persona para os vídeos aprovados, sem gravar nada, e escreve um relatório em `avaliacao/` com todos os textos e alguns números (quantos saíram na primeira tentativa, aberturas repetidas, comentários que só repetem o título). Ela precisa alcançar o banco e o Ollama, por exemplo publicando as portas deles só em `127.0.0.1` num arquivo de compose local:
+
+```bash
+DATABASE_URL=postgres://doomscroll:doomscroll@127.0.0.1:5432/doomscroll OLLAMA_URL=http://127.0.0.1:11434 \
+  pnpm --filter @doomscroll/worker avaliar --amostras 2 --so tio_valdir
+```
+
+Dicas que a bancada mostrou com o modelo pequeno: frases de exemplo genéricas ("que vídeo bom") são copiadas inteiras, então prefira exemplos ligados a um vídeo concreto e com começos variados; deixe o tema fim do mundo fora dos exemplos (o app sorteia quando ele aparece); e descreva no `tom` o que a persona repara num vídeo.
+
 Os commits seguem [Conventional Commits](https://www.conventionalcommits.org/pt-br/), em português.
 
 ## Aviso sobre o acervo

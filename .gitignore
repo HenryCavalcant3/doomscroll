@@ -27,3 +27,6 @@ Thumbs.db
 .vscode/
 .idea/
 *.log
+
+# relatórios da bancada de avaliação das personas
+avaliacao/
