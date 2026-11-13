@@ -1,13 +1,13 @@
 import type { Route } from "../router";
 
-/** Feed e Mensagens chegam nos passos 3 e 7 do SPEC; por enquanto ficam visíveis, mas inativos. */
+/** Mensagens chega no passo 7 do SPEC; por enquanto fica visível, mas inativo. */
 export function BottomNav({ route }: { route: Route }) {
   const active = route === "dono" ? "perfil" : route;
   return (
     <nav className="bottom-nav" aria-label="Navegação principal">
-      <span aria-disabled="true" title="O feed chega em breve">
+      <a href="#/feed" aria-current={active === "feed" ? "page" : undefined}>
         Feed
-      </span>
+      </a>
       <a href="#/adicionar" aria-current={active === "adicionar" ? "page" : undefined}>
         Adicionar
       </a>

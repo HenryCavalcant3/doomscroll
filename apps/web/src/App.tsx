@@ -1,12 +1,14 @@
 import { BottomNav } from "./components/BottomNav";
 import { useRoute } from "./router";
 import { AddVideo } from "./screens/AddVideo";
+import { Feed } from "./screens/Feed";
 import { OwnerPanel } from "./screens/OwnerPanel";
 
 export function App() {
   const route = useRoute();
   return (
     <div className="app">
+      {route === "feed" && <Feed />}
       {route === "adicionar" && <AddVideo />}
       {route === "dono" && <OwnerPanel />}
       {route === "perfil" && (

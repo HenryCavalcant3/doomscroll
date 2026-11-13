@@ -1,14 +1,14 @@
 import { useEffect, useState } from "react";
 
-export type Route = "adicionar" | "perfil" | "dono";
-const ROUTES: Route[] = ["adicionar", "perfil", "dono"];
+export type Route = "feed" | "adicionar" | "perfil" | "dono";
+const ROUTES: Route[] = ["feed", "adicionar", "perfil", "dono"];
 
 function current(): Route {
   const name = window.location.hash.replace(/^#\/?/, "");
-  return (ROUTES as string[]).includes(name) ? (name as Route) : "adicionar";
+  return (ROUTES as string[]).includes(name) ? (name as Route) : "feed";
 }
 
-/** Rotas por hash (#/adicionar, #/perfil, #/dono): simples e funciona servido por qualquer servidor estático. */
+/** Rotas por hash (#/feed, #/adicionar, #/perfil, #/dono): simples e funciona servido por qualquer servidor estático. */
 export function useRoute(): Route {
   const [route, setRoute] = useState(current);
   useEffect(() => {

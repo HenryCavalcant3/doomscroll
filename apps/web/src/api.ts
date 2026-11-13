@@ -29,6 +29,23 @@ export interface Video {
   createdAt: string;
 }
 
+export interface FeedVideo extends Video {
+  commentCount: number;
+}
+
+export interface FeedPage {
+  videos: FeedVideo[];
+  /** Todos os vídeos já tinham sido vistos: o feed recomeçou. */
+  restarted: boolean;
+}
+
+export interface Comment {
+  id: string;
+  text: string;
+  createdAt: string;
+  author: { nickname: string; avatarUrl: string | null; isAi: boolean };
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -66,6 +83,8 @@ export async function request<T>(
 
 export const api = {
   topics: () => request<Topic[]>("/topics"),
+  feed: (exclude: string[]) => request<FeedPage>("/feed", { method: "POST", body: { exclude } }),
+  comments: (videoId: string) => request<Comment[]>(`/videos/${videoId}/comments`),
   submitVideo: (url: string) => request<Video>("/videos", { method: "POST", body: { url } }),
   video: (id: string) => request<Video>(`/videos/${id}`),
   confirmTopics: (id: string, topics: string[]) => request<Video>(`/videos/${id}/topics`, { method: "PUT", body: { topics } }),
