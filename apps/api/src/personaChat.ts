@@ -352,7 +352,8 @@ export async function generateReply(
       continue;
     }
     const text = cleanReply(raw, persona);
-    const problem = replyProblem(text, persona.examples, history) ?? (opts.strictEcho && echoes(text, history) ? "eco" : null);
+    // Eco primeiro: é grave, então uma fala que ecoa nunca sai como "a menos pior" (problema leve).
+    const problem = (opts.strictEcho && echoes(text, history) ? "eco" : null) ?? replyProblem(text, persona.examples, history);
     if (!problem) return { text, rejected };
     if (SOFT.has(problem)) fallback = text;
     rejected.push(text.slice(0, 200));
