@@ -30,6 +30,7 @@ describe("decisões no painel do dono", () => {
     const tick = { ...base, trigger: "tique" as const, action: "enviar_video", score: 0.8, video: "Speedrun de Mario", reasons: { atividade: 0.9, relacao: true, para: "rato" } };
     expect(decisionText(tick)).toBe("puxou conversa: mandou “Speedrun de Mario” para @rato");
     expect(reasonsText(tick)).toBe("atividade 0,9 · se conhecem sim · nota 0,8");
+    expect(reasonsText({ ...base, trigger: "mensagem" as const, reasons: { acao: "comentar", ritmo: 0.6, cansaco: -0.08, nivel: 1 } })).toBe("ritmo da hora 0,6 · cansaço -0,08 · nível da cadeia 1");
     expect(decisionText({ ...tick, reasons: { para: "Grupo do Bunker" } })).toBe("puxou conversa: mandou “Speedrun de Mario” para Grupo do Bunker");
     const talk = { ...base, trigger: "mensagem" as const, video: null, reasons: { mensagens: 4, chance: 0.5 } };
     expect(decisionText({ ...talk, action: "ignorar" })).toBe("deixou a conversa morrer");

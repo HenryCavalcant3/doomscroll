@@ -53,6 +53,7 @@ const LABELS: Record<string, string> = {
   nivel: "nível da cadeia",
   teto_da_conversa: "teto da conversa",
   resposta_garantida: "resposta garantida",
+  cansaco: "cansaço",
 };
 
 const fmt = (v: unknown) =>
