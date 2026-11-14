@@ -42,16 +42,28 @@ self.addEventListener("activate", (event) => {
   );
 });
 
-/** Abertura do app: rede primeiro. Sem rede, ou com erro 5xx do proxy (bunker caído), a casca guardada. */
+/** Quanto a abertura do app espera a rede antes de usar a casca guardada. */
+const NETWORK_WAIT_MS = 3000;
+
+/**
+ * Abertura do app: rede primeiro, mas por pouco tempo. Sem rede, sem resposta em 3 s (pela rede um
+ * bunker desligado pode deixar a conexão pendurada) ou com erro 5xx do proxy, a casca guardada.
+ */
 async function openApp(event) {
-  try {
-    const res = await fetch(event.request);
+  const network = fetch(event.request).then((res) => {
     if (res.status >= 500) throw new Error(`bunker respondeu ${res.status}`);
     // Mantém a casca em dia depois de uma atualização do app.
     event.waitUntil(cacheShell().catch(() => {}));
     return res;
+  });
+  const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("sem resposta")), NETWORK_WAIT_MS));
+  try {
+    return await Promise.race([network, timeout]);
   } catch {
-    return (await caches.match(SHELL)) ?? Response.error();
+    network.catch(() => {});
+    const shell = await caches.match(SHELL);
+    // Sem casca guardada (primeira abertura), resta esperar a rede.
+    return shell ?? network;
   }
 }
 

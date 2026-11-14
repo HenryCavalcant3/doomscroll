@@ -9,14 +9,17 @@ export function Enter({ onEnter }: { onEnter(user: User): void }) {
   const [pin, setPin] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  // O selo "Bunker no ar" só aparece quando a api respondeu de verdade.
-  const [online, setOnline] = useState(false);
+  // Selo do bunker: conferido ao abrir e a cada 10 s (null enquanto a primeira resposta não chega).
+  const [online, setOnline] = useState<boolean | null>(null);
 
   useEffect(() => {
     let alive = true;
-    api.health().then((ok) => alive && setOnline(ok));
+    const check = () => api.health().then((ok) => alive && setOnline(ok));
+    check();
+    const timer = setInterval(check, 10_000);
     return () => {
       alive = false;
+      clearInterval(timer);
     };
   }, []);
 
@@ -42,10 +45,10 @@ export function Enter({ onEnter }: { onEnter(user: User): void }) {
         <Barata size={112} className="entrada-barata" />
         <div className="entrada-marca">doomscroll</div>
         <p className="entrada-slogan">Vídeos curtos para o fim do mundo.</p>
-        {online && (
-          <div className="entrada-selo">
-            <span className="entrada-luz pisca" aria-hidden="true" />
-            Bunker no ar
+        {online !== null && (
+          <div className="entrada-selo" role="status">
+            <span className={online ? "entrada-luz pisca" : "entrada-luz apagada"} aria-hidden="true" />
+            {online ? "Bunker no ar" : "Sem sinal do bunker"}
           </div>
         )}
         <form className="entrada-porta" onSubmit={submit}>

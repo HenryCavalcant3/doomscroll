@@ -372,6 +372,7 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
   font-size: 13px;
 }
 .entrada-luz { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+.entrada-luz.apagada { background: var(--field-line); }
 .entrada-porta {
   position: relative;
   align-self: stretch;

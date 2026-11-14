@@ -171,7 +171,7 @@ export const auth = {
 
 export async function request<T>(
   path: string,
-  opts: { method?: string; body?: unknown; keepalive?: boolean } = {},
+  opts: { method?: string; body?: unknown; keepalive?: boolean; timeoutMs?: number } = {},
   fetchImpl: typeof fetch = fetch,
 ): Promise<T> {
   const headers: Record<string, string> = {};
@@ -182,6 +182,8 @@ export async function request<T>(
     headers,
     body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
     keepalive: opts.keepalive,
+    // Pela rede, um bunker desligado pode não recusar a conexão: sem prazo, a tela ficaria esperando para sempre.
+    signal: opts.timeoutMs ? AbortSignal.timeout(opts.timeoutMs) : undefined,
   });
   const text = await res.text();
   const data = text ? (JSON.parse(text) as Record<string, unknown>) : {};
@@ -199,9 +201,10 @@ export async function request<T>(
 
 export const api = {
   /** A api respondeu? (o selo "Bunker no ar" da entrada). */
-  health: () => request<{ status: string }>("/health").then(() => true, () => false),
+  health: () => request<{ status: string }>("/health", { timeoutMs: 5000 }).then(() => true, () => false),
   enter: (nickname: string, pin: string) => request<Login>("/auth/entrar", { method: "POST", body: { nickname, pin } }),
-  me: () => request<User>("/auth/eu"),
+  /** Conferência da sessão ao abrir o app: sem resposta em 8 s, o app mostra "Sem sinal do bunker". */
+  me: () => request<User>("/auth/eu", { timeoutMs: 8000 }),
   logout: () => request<void>("/auth/sair", { method: "POST" }),
   topics: () => request<Topic[]>("/topics"),
   feed: (exclude: string[]) => request<FeedPage>("/feed", { method: "POST", body: { exclude } }),
