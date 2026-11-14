@@ -13,6 +13,7 @@
     "A senhora dançando forró aos 70 tem mais fôlego que eu, que inspiração 🙌"
   ],
   "atividade": 0.7,
+  "ritmo": ["06-09", "17-23"],
   "afinidade": {
     "esporte": 0.9,
     "dicas": 0.8,

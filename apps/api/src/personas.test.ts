@@ -26,6 +26,14 @@ describe("personas", () => {
     }
   });
 
+  it("ritmo é opcional e, quando vem, são faixas de hora HH-HH", () => {
+    expect(validatePersona({ ...valid, ritmo: ["05-09", "22-02"] }, "tio-valdir.json", avatars)).toEqual([]);
+    const bad = ['ritmo: de 1 a 4 faixas de hora como "06-12" ou "22-03"'];
+    expect(validatePersona({ ...valid, ritmo: ["5-9"] }, "tio-valdir.json", avatars)).toEqual(bad);
+    expect(validatePersona({ ...valid, ritmo: [] }, "tio-valdir.json", avatars)).toEqual(bad);
+    expect(validatePersona({ ...valid, ritmo: "05-09" }, "tio-valdir.json", avatars)).toEqual(bad);
+  });
+
   it("relações só apontam para outras personas", () => {
     const rato = { ...valid, apelido: "rato", relacoes: { tio_valdir: "implica", rato: "eu", kelly: "?" } };
     expect(crossCheck([valid, rato])).toEqual([

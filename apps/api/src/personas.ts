@@ -2,6 +2,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Pool } from "pg";
+import { validRange } from "./ritmo.js";
 
 /** Formato de personas/<apelido>.json (SPEC 7.3). Qualquer pessoa pode mandar uma persona por pull request. */
 export interface Persona {
@@ -17,6 +18,8 @@ export interface Persona {
   afinidade: Record<string, number>;
   /** apelido de outra persona -> como ela vê essa persona (opcional). */
   relacoes?: Record<string, string>;
+  /** Faixas de hora em que costuma estar ativa ("06-12", "22-03"); fora delas a atividade cai (opcional). */
+  ritmo?: string[];
 }
 
 /** Pasta personas/ na raiz do repositório (em dev e na imagem, onde fica em /app/personas). */
@@ -30,7 +33,7 @@ const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "obj
 export function validatePersona(data: unknown, fileName: string, avatarFiles: Set<string>): string[] {
   if (!isObject(data)) return ["o arquivo precisa ser um objeto JSON"];
   const errors: string[] = [];
-  const { apelido, nome, avatar, bio, tom, exemplos, atividade, afinidade, relacoes } = data;
+  const { apelido, nome, avatar, bio, tom, exemplos, atividade, afinidade, relacoes, ritmo } = data;
   if (typeof apelido !== "string" || !/^[a-z0-9_]{3,30}$/.test(apelido)) {
     errors.push("apelido: de 3 a 30 letras minúsculas, números ou _");
   } else if (fileName !== `${apelido.replace(/_/g, "-")}.json`) {
@@ -53,6 +56,9 @@ export function validatePersona(data: unknown, fileName: string, avatarFiles: Se
   }
   if (relacoes !== undefined && (!isObject(relacoes) || !Object.values(relacoes).every((v) => text(v, 2, 200)))) {
     errors.push("relacoes: objeto { apelido: frase curta }");
+  }
+  if (ritmo !== undefined && (!Array.isArray(ritmo) || ritmo.length < 1 || ritmo.length > 4 || !ritmo.every((r) => typeof r === "string" && validRange(r)))) {
+    errors.push('ritmo: de 1 a 4 faixas de hora como "06-12" ou "22-03"');
   }
   return errors;
 }
@@ -110,7 +116,7 @@ export async function syncPersonas(pool: Pool, personas: Persona[], log: (msg: s
       log(`O apelido ${p.apelido} já é de um morador; a persona foi ignorada.`);
       continue;
     }
-    const config = { nome: p.nome, afinidade: p.afinidade, relacoes: p.relacoes ?? {} };
+    const config = { nome: p.nome, afinidade: p.afinidade, relacoes: p.relacoes ?? {}, ritmo: p.ritmo ?? [] };
     await pool.query(
       `INSERT INTO personas (user_id, bio, tone, examples, activity_level, config) VALUES ($1, $2, $3, $4, $5, $6)
        ON CONFLICT (user_id) DO UPDATE SET bio = EXCLUDED.bio, tone = EXCLUDED.tone, examples = EXCLUDED.examples,

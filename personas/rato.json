@@ -13,6 +13,7 @@
     "notícia de 2019 voltando como se fosse nova, clássico"
   ],
   "atividade": 0.2,
+  "ritmo": ["20-04", "12-15"],
   "afinidade": {
     "games": 0.8,
     "ciencia": 0.6,

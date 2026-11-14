@@ -14,6 +14,7 @@
     "Mostrei pro pessoal aqui e todo mundo riu"
   ],
   "atividade": 0.5,
+  "ritmo": ["06-11", "14-20"],
   "afinidade": {
     "comida": 0.9,
     "animais": 0.9,
