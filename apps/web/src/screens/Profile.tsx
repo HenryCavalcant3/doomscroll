@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, apiUrl, type FeedVideo, type Profile, type User } from "../api";
 import { Avatar } from "../components/Avatar";
-import { Player } from "../components/Player";
+import { LikedViewer } from "./LikedViewer";
 import { chatHref } from "../router";
 import { StalkerList } from "./Stalker";
 
@@ -18,9 +18,18 @@ export function ProfileScreen({ nickname, me, onLogout }: Props) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("curtidos");
-  const [playing, setPlaying] = useState<FeedVideo | null>(null);
+  /** Posição na grade do curtido aberto em tela cheia. */
+  const [playing, setPlaying] = useState<number | null>(null);
   const own = nickname === me.nickname;
-  const closePlayer = useCallback(() => setPlaying(null), []);
+  const patchLiked = useCallback((id: string, change: Partial<FeedVideo>) => {
+    setProfile((p) => p && { ...p, liked: p.liked.map((v) => (v.id === id ? { ...v, ...change } : v)) });
+  }, []);
+  // Os descurtidos saem da grade só ao fechar. No perfil de outra pessoa a curtida é de quem está
+  // vendo, e a lista dela não muda.
+  const closePlayer = useCallback(() => {
+    setPlaying(null);
+    if (own) setProfile((p) => p && { ...p, liked: p.liked.filter((v) => v.liked) });
+  }, [own]);
   const [opening, setOpening] = useState(false);
   const [messageError, setMessageError] = useState<string | null>(null);
 
@@ -108,9 +117,9 @@ export function ProfileScreen({ nickname, me, onLogout }: Props) {
         </p>
       ) : (
         <ul className="liked-grid">
-          {profile.liked.map((v) => (
+          {profile.liked.map((v, i) => (
             <li key={v.id}>
-              <button onClick={() => setPlaying(v)} aria-label={v.description ?? v.title ?? "Vídeo"}>
+              <button onClick={() => setPlaying(i)} aria-label={v.description ?? v.title ?? "Vídeo"}>
                 {v.thumbUrl ? <img src={apiUrl(v.thumbUrl)} alt="" loading="lazy" /> : <span />}
               </button>
             </li>
@@ -118,7 +127,15 @@ export function ProfileScreen({ nickname, me, onLogout }: Props) {
         </ul>
       )}
 
-      {playing && <Player video={playing} onClose={closePlayer} />}
+      {playing !== null && (
+        <LikedViewer
+          videos={profile.liked}
+          start={playing}
+          title={own ? "Curtidos" : `Curtidos de ${title}`}
+          onPatch={patchLiked}
+          onClose={closePlayer}
+        />
+      )}
     </main>
   );
 }

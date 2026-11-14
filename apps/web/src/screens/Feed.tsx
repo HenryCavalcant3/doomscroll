@@ -24,16 +24,7 @@ export function Feed() {
   const soundBlocked = useCallback(() => setMuted(true), []);
   const onCommented = useCallback((id: string, count: number) => setFeed((f) => patchVideo(f, id, { commentCount: count })), []);
 
-  // Curtida otimista: muda na hora e corrige com a resposta (ou desfaz se der erro).
-  const toggleLike = (video: FeedVideo) => {
-    const liked = !video.liked;
-    const before = { liked: video.liked, likeCount: video.likeCount };
-    setFeed((f) => patchVideo(f, video.id, { liked, likeCount: video.likeCount + (liked ? 1 : -1) }));
-    api.like(video.id, liked).then(
-      (res) => setFeed((f) => patchVideo(f, video.id, res)),
-      () => setFeed((f) => patchVideo(f, video.id, before)),
-    );
-  };
+  const toggleLike = (video: FeedVideo) => likeVideo(video, (id, patch) => setFeed((f) => patchVideo(f, id, patch)));
 
   // Busca mais vídeos quando o usuário chega perto do fim da lista.
   useEffect(() => {
@@ -129,6 +120,19 @@ export function Feed() {
   );
 }
 
+type LikePatch = Pick<FeedVideo, "liked" | "likeCount">;
+
+/** Curtida otimista: muda na hora e corrige com a resposta (ou desfaz se der erro). */
+export function likeVideo(video: FeedVideo, patch: (id: string, change: LikePatch) => void) {
+  const liked = !video.liked;
+  const before = { liked: video.liked, likeCount: video.likeCount };
+  patch(video.id, { liked, likeCount: video.likeCount + (liked ? 1 : -1) });
+  api.like(video.id, liked).then(
+    (res) => patch(video.id, res),
+    () => patch(video.id, before),
+  );
+}
+
 interface ItemProps {
   index: number;
   video: FeedVideo;
@@ -144,7 +148,7 @@ interface ItemProps {
   onLike(): void;
 }
 
-function FeedItem({ index, video, active, mounted, muted, onUnmute, onSoundBlocked, onComments, onShare, onLike }: ItemProps) {
+export function FeedItem({ index, video, active, mounted, muted, onUnmute, onSoundBlocked, onComments, onShare, onLike }: ItemProps) {
   const ref = useRef<HTMLVideoElement>(null);
   const [paused, setPaused] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -323,7 +327,7 @@ interface DrawerProps {
   onCommented(videoId: string, count: number): void;
 }
 
-function CommentsDrawer({ video, onClose, onCommented }: DrawerProps) {
+export function CommentsDrawer({ video, onClose, onCommented }: DrawerProps) {
   const [comments, setComments] = useState<Comment[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [text, setText] = useState("");
@@ -415,7 +419,7 @@ function CommentsDrawer({ video, onClose, onCommented }: DrawerProps) {
 }
 
 /** Manda o vídeo para uma das suas conversas (SPEC 5.2: compartilhar no chat). */
-function ShareDrawer({ video, onClose }: { video: FeedVideo; onClose(): void }) {
+export function ShareDrawer({ video, onClose }: { video: FeedVideo; onClose(): void }) {
   const [list, setList] = useState<Conversation[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [state, setState] = useState<Record<string, "enviando" | "enviado">>({});
@@ -524,7 +528,7 @@ function SoundOffIcon() {
     </svg>
   );
 }
-function CloseIcon() {
+export function CloseIcon() {
   return (
     <svg {...icon} width={24} height={24} strokeLinecap="round">
       <path d="M6 6l12 12M18 6L6 18" />

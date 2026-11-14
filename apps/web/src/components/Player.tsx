@@ -6,7 +6,7 @@ interface Props {
   onClose(): void;
 }
 
-/** Vídeo em tela cheia, com os controles do navegador (curtidos do perfil e vídeos do chat). */
+/** Vídeo em tela cheia, com os controles do navegador (vídeos do chat e do modo stalker). */
 export function Player({ video, onClose }: Props) {
   const close = useRef<HTMLButtonElement>(null);
 
