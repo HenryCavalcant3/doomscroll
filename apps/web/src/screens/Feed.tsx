@@ -294,7 +294,9 @@ export function FeedItem({ index, video, active, mounted, muted, onUnmute, onSta
         <video
           ref={ref}
           poster={video.thumbUrl ? apiUrl(video.thumbUrl) : undefined}
-          preload="auto"
+          // O próximo só pede o começo (índice e primeiros quadros). No iPhone o vídeo pré-carregado
+          // inteiro era baixado de novo ao tocar, e as duas cópias disputavam a rede com o vídeo da vez.
+          preload={active ? "auto" : "metadata"}
           muted
           loop
           playsInline
