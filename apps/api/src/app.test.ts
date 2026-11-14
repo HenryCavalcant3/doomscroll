@@ -1388,7 +1388,7 @@ describe("personas entre si", () => {
     const prompt = generate.mock.calls[0]![0];
     expect(prompt[0]!.content).toContain('no grupo "Grupo do Bunker"');
     expect(prompt.at(-1)).toEqual({ role: "user", content: "@ana: gente, alguém viu o jogo ontem?" });
-    expect(generate.mock.calls[0]![1]).toContain("@ana:");
+    expect(generate.mock.calls[0]![1]).toContain("\n@ana:");
     const msgs = (await a().inject({ method: "GET", url: `/conversations/${bunker.id}/messages`, headers: ana })).json();
     expect(msgs.at(-1)).toMatchObject({ text: "Esse aí é bom demais, rapaz", sender: { nickname: "tio_valdir" } });
 
@@ -1407,6 +1407,67 @@ describe("personas entre si", () => {
     await t.onHumanMessage(msgs.at(-1), "u-tio");
     expect(jobs).toEqual([]);
   });
+
+  async function bunkerWithAna() {
+    await chat.ensureBunker();
+    await auth("ana", "4321");
+    const anaId = store.users.get("ana")!.user.id;
+    const bunker = (await chat.listConversations(anaId)).find((c) => c.bunker)!;
+    talk.bunker = bunker.id;
+    return { anaId, bunkerId: bunker.id };
+  }
+
+  it("no grupo, quem é citado responde, e a fala dela pode puxar a resposta de outra persona (cadeia)", async () => {
+    const { anaId, bunkerId } = await bunkerWithAna();
+    const root = await chat.sendMessage(anaId, bunkerId, { text: "@rato e aí, curtiu o jogo?" });
+    if (typeof root === "string") throw new Error(root);
+    talk.candidates = [
+      { persona: talk.personas.get("u-tio")!, affinity: null },
+      { persona: talk.personas.get("u-rato")!, affinity: null },
+    ];
+    const t = talker(() => 0.1);
+    await t.handle({ kind: "group", conversationId: bunkerId, messageId: root.message.id });
+    // O Rato quase nunca fala, mas foi chamado por gente: comenta. O Tio, com nota 0,45, só reage.
+    expect(jobs.map((j) => j.data)).toEqual([
+      expect.objectContaining({ kind: "group_reply", personaId: "u-tio", reasons: expect.objectContaining({ acao: "reagir" }) }),
+      expect.objectContaining({ kind: "group_reply", personaId: "u-rato", depth: 0, rootId: root.message.id, reasons: expect.objectContaining({ acao: "comentar", mencao: true }) }),
+    ]);
+    jobs.shift();
+    generate.mockResolvedValueOnce("Pois é, Valdir, você viu aquele pênalti?");
+    await t.handle(jobs.shift()!.data);
+    expect(generate.mock.calls[0]![0][0]!.content).toContain("@ana chamou você na última mensagem");
+    // A fala do Rato vira gatilho do nível 1, respondendo à Ana.
+    const chained = jobs.shift()!.data;
+    expect(chained).toMatchObject({ kind: "group", depth: 1, rootId: root.message.id, repliedTo: "ana" });
+
+    // No nível 1, o Rato (quem falou) não é candidato; o Tio foi citado pelo nome e responde.
+    talk.candidates = [{ persona: talk.personas.get("u-tio")!, affinity: null }];
+    await t.handle(chained);
+    expect(jobs.map((j) => j.data)).toEqual([
+      expect.objectContaining({ kind: "group_reply", personaId: "u-tio", depth: 1, reasons: expect.objectContaining({ acao: "comentar", mencao: true, nivel: 1 }) }),
+    ]);
+
+    // No nível 3, ninguém mais responde.
+    jobs = [];
+    await t.handle({ ...(chained as Extract<TalkJob, { kind: "group" }>), depth: 3 });
+    expect(jobs).toEqual([]);
+  });
+
+  it("no grupo, a cadeia para em 4 falas de persona a partir da mesma mensagem", async () => {
+    const { anaId, bunkerId } = await bunkerWithAna();
+    const root = await chat.sendMessage(anaId, bunkerId, { text: "bom dia, bunker" });
+    if (typeof root === "string") throw new Error(root);
+    let last = root.message.id;
+    for (const text of ["Bom dia!", "Bom dia, meu filho", "Bora treinar", "Café já?"]) {
+      const sent = await chat.sendMessage("u-tio", bunkerId, { text });
+      if (typeof sent === "string") throw new Error(sent);
+      last = sent.message.id;
+    }
+    talk.candidates = [{ persona: talk.personas.get("u-rato")!, affinity: null }];
+    await talker(() => 0.01).handle({ kind: "group", conversationId: bunkerId, messageId: last, depth: 1, rootId: root.message.id });
+    expect(jobs).toEqual([]);
+  });
+
   const a = () => app();
 
   it("o dono dispara um tique na hora; outras pessoas não", async () => {

@@ -123,6 +123,14 @@ const FOUND = ["achei um aqui", "tem sim, olha esse", "olha esse que eu achei"];
 export const promptTitle = (title: string | null) =>
   (title ?? "").replace(/#\S+/g, " ").replace(/[*|_~]+/g, " ").replace(/\s+/g, " ").trim() || "sem título";
 
+/** Hora no prompt, só para a persona não dar "bom dia" de madrugada. O fuso vem de TZ. */
+export function timeLine(now: Date = new Date()): string {
+  const h = now.getHours();
+  const period = h < 6 ? "madrugada" : h < 12 ? "manhã" : h < 18 ? "tarde" : "noite";
+  const hhmm = `${String(h).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  return `Agora são ${hhmm}, de ${period}. Use isso só para não errar cumprimentos como bom dia e boa noite; não comente a hora.`;
+}
+
 export function buildChatMessages(
   persona: PersonaProfile,
   contact: string,
@@ -144,6 +152,7 @@ export function buildChatMessages(
 Quem você é (só você, não @${contact}): ${persona.bio}
 Seu jeito de escrever: ${persona.tone}
 O que você sabe de @${contact}: ${memory || "nada ainda, vocês estão começando a conversar agora."}
+${timeLine()}
 
 Mensagens que você mandou em OUTRAS conversas (só mostram o jeito de escrever):
 ${examples.map((e) => `- ${e}`).join("\n")}
@@ -177,6 +186,8 @@ export function cleanReply(raw: string, persona: PersonaProfile, max = MAX_REPLY
   for (const p of prefixes) {
     if (text.toLowerCase().startsWith(`${p.toLowerCase()}:`)) text = text.slice(p.length + 1).trim();
   }
+  // "@ana: já vi sim" (imitando o formato do grupo no prompt) vira "@ana já vi sim".
+  text = text.replace(/^@([a-z0-9_]+):\s*/i, "@$1 ");
   text = text.replace(/^["'“”]+|["'“”]+$/g, "").replace(/[ \t]+/g, " ").trim();
   if (text.length > max) {
     const cut = text.slice(0, max);
@@ -247,6 +258,25 @@ export function replyProblem(text: string, examples: string[], history: MessageV
   if (examples.some((ex) => copies(words, ex, talk))) return "cópia";
   if (english(words)) return "inglês";
   return null;
+}
+
+/** Palavras seguidas iguais a uma fala recente que já contam como eco ("verdadeiros exemplos de força e adaptação"). */
+export const ECHO_WORDS = 5;
+
+/**
+ * Eco entre personas: a resposta repete um trecho de ECHO_WORDS palavras seguidas de uma das últimas
+ * falas de texto (dela ou de outra). O modelo pequeno faz muito isso quando conversa com outra IA.
+ */
+export function echoes(text: string, history: MessageView[], n = ECHO_WORDS): boolean {
+  const words = normalize(text);
+  if (words.length < n) return false;
+  const grams = new Set<string>();
+  for (const m of history.slice(-4)) {
+    const said = normalize(m.text ?? "");
+    for (let i = 0; i + n <= said.length; i++) grams.add(said.slice(i, i + n).join(" "));
+  }
+  for (let i = 0; i + n <= words.length; i++) if (grams.has(words.slice(i, i + n).join(" "))) return true;
+  return false;
 }
 
 export const badReply = (text: string, examples: string[], history: MessageView[]) => replyProblem(text, examples, history) !== null;
@@ -322,7 +352,7 @@ export async function generateReply(
       continue;
     }
     const text = cleanReply(raw, persona);
-    const problem = replyProblem(text, persona.examples, history);
+    const problem = replyProblem(text, persona.examples, history) ?? (opts.strictEcho && echoes(text, history) ? "eco" : null);
     if (!problem) return { text, rejected };
     if (SOFT.has(problem)) fallback = text;
     rejected.push(text.slice(0, 200));
@@ -337,6 +367,8 @@ export interface ReplyOptions {
   build?: (examples: string[], retry: boolean) => ChatMessage[];
   /** Paradas no lugar de `stopWords(contact)`. */
   stop?: string[];
+  /** Entre personas: trecho repetido de uma fala recente (`echoes`) também é eco e não vai. */
+  strictEcho?: boolean;
 }
 
 export interface ReplierDeps {

@@ -2,10 +2,11 @@ import { randomUUID } from "node:crypto";
 import type { Pool } from "pg";
 import type { ChatStore, MessageView } from "./chat.js";
 import type { ChatMessage } from "./ollama.js";
-import { generateReply, HISTORY, messageLine, type ChatGenerator, type PersonaProfile } from "./personaChat.js";
-import { decideGroup, decideTalk, reactionFor } from "./personaJev.js";
+import { generateReply, HISTORY, messageLine, timeLine, type ChatGenerator, type PersonaProfile } from "./personaChat.js";
+import { decideGroup, decideTalk, GROUP_JEV, mentionsIn, quickPause, reactionFor, talkPause } from "./personaJev.js";
 import { QUEUES } from "./queues.js";
 import type { Hub } from "./realtime.js";
+import { localHour, rhythm } from "./ritmo.js";
 
 /**
  * Personas entre si (SPEC 7.5). O agendador do worker escolhe quem puxa conversa e com que vídeo
@@ -21,14 +22,29 @@ export type TalkJob =
   | { kind: "start"; starterId: string; partnerId: string | null; videoId: string; score: number; reasons: Reasons }
   /** Vez de `personaId` responder (ou não) a `afterId` numa conversa direta entre personas. */
   | { kind: "turn"; conversationId: string; personaId: string; afterId: string; messages: number }
-  /** Mensagem nova no Grupo do Bunker: o JEV decide quais personas respondem. */
-  | { kind: "group"; conversationId: string; messageId: string }
+  /**
+   * Mensagem nova no Grupo do Bunker: o JEV decide quais personas respondem. Na cadeia (fala de
+   * persona respondendo), `depth` é o nível, `rootId` a mensagem que abriu a conversa e `repliedTo`
+   * o apelido de quem recebeu a resposta.
+   */
+  | { kind: "group"; conversationId: string; messageId: string; depth?: number; rootId?: string; repliedTo?: string }
   /** Uma persona escolhida responde no Grupo do Bunker. */
-  | { kind: "group_reply"; conversationId: string; personaId: string; messageId: string; score: number; reasons: Reasons };
+  | {
+      kind: "group_reply";
+      conversationId: string;
+      personaId: string;
+      messageId: string;
+      score: number;
+      reasons: Reasons;
+      depth?: number;
+      rootId?: string;
+    };
 
 export interface TalkPersona extends PersonaProfile {
   /** Como ela vê outras personas (apelido → frase), de `relacoes` no JSON. */
   relations: Record<string, string>;
+  /** Faixas de hora em que costuma estar ativa (ritmo.ts). */
+  ritmo?: string[];
 }
 
 export interface GroupCandidate {
@@ -66,6 +82,8 @@ export interface TalkerDeps {
   /** Pausa média entre duas falas, em segundos (varia de metade ao dobro). */
   turnDelaySeconds: number;
   random?: () => number;
+  /** Hora local (0 a 23), para o ritmo; substituível nos testes. */
+  hour?: () => number;
   log?: (msg: string) => void;
 }
 
@@ -73,10 +91,19 @@ export interface TalkerDeps {
 export const BUSY_RETRY_SECONDS = 15;
 
 /** Prompt do Grupo do Bunker: várias pessoas, então cada fala vai com o apelido de quem mandou. */
-export function buildGroupMessages(persona: PersonaProfile, groupName: string, history: MessageView[], examples: string[], retry: boolean): ChatMessage[] {
+export function buildGroupMessages(
+  persona: PersonaProfile,
+  groupName: string,
+  history: MessageView[],
+  examples: string[],
+  retry: boolean,
+  /** Quem chamou a persona na mensagem que ela responde. */
+  mentionedBy?: string,
+): ChatMessage[] {
   const system = `Você é ${persona.name}, numa rede social brasileira de vídeos curtos, no grupo "${groupName}", com várias pessoas e outras personas.
 Quem você é: ${persona.bio}
 Seu jeito de escrever: ${persona.tone}
+${timeLine()}
 
 Mensagens que você mandou em OUTRAS conversas (só mostram o jeito de escrever):
 ${examples.map((e) => `- ${e}`).join("\n")}
@@ -88,7 +115,7 @@ Regras:
 - Você é uma pessoa do grupo, não um assistente: não ofereça ajuda.
 - Copie o jeito das frases acima, nunca o assunto.
 - Não invente o que aparece num vídeo além do título e da descrição.
-- Escreva só a sua mensagem, sem o seu nome na frente e sem aspas.${
+- Escreva só a sua mensagem, sem o seu nome na frente e sem aspas.${mentionedBy ? `\n- @${mentionedBy} chamou você na última mensagem: responda direto para @${mentionedBy}.` : ""}${
     retry
       ? "\n\nAviso só para você (não fale dele na resposta): sua resposta anterior foi descartada (repetia a mensagem, copiava uma frase, repetia palavras sem parar ou não estava em português). Escreva outra, com suas palavras."
       : ""
@@ -101,11 +128,14 @@ Regras:
   ];
 }
 
-/** Paradas do grupo: a fala de qualquer participante. */
+/**
+ * Paradas do grupo: a fala de outro participante numa linha nova. Sem a quebra de linha, o modelo
+ * que começa chamando alguém ("@ana: já vi sim") era cortado logo no início, e a resposta saía vazia.
+ */
 export const groupStopWords = (history: MessageView[], self: string) => [
   "\n\n",
   "Você:",
-  ...new Set(history.map((m) => m.sender.nickname).filter((n) => n !== self).flatMap((n) => [`@${n}:`, `${n}:`])),
+  ...new Set(history.map((m) => m.sender.nickname).filter((n) => n !== self).flatMap((n) => [`\n@${n}:`, `\n${n}:`])),
 ];
 
 export class PersonaTalker {
@@ -119,12 +149,13 @@ export class PersonaTalker {
 
   /** Mensagem de gente fora de conversa direta com persona: no Grupo do Bunker, as personas podem responder. */
   async onHumanMessage(message: MessageView, senderId: string): Promise<void> {
-    // Fala de persona nunca chama outras personas: o grupo não vira uma conversa sem fim entre elas.
+    // Fala de persona não entra por aqui: a cadeia do grupo sai do próprio talker (groupReply), com nível e teto.
     if (message.sender.isAi) return;
     const conv = await this.deps.chat.getConversation(senderId, message.conversationId);
     if (!conv?.bunker) return;
+    // Gente no grupo não fica esperando: a primeira resposta vem rápido.
     await this.deps.queue.send(QUEUES.personaTalk, { kind: "group", conversationId: conv.id, messageId: message.id } satisfies TalkJob, {
-      startAfter: this.pause(),
+      startAfter: this.quick(),
     });
   }
 
@@ -149,9 +180,14 @@ export class PersonaTalker {
     return this.deps.random ?? Math.random;
   }
 
-  /** Pausa até a próxima fala: de metade ao dobro da média (ninguém responde no mesmo segundo). */
+  /** Pausa até a próxima fala entre personas: quase sempre curta, às vezes uns minutos (talkPause). */
   private pause() {
-    return Math.max(1, Math.round(this.deps.turnDelaySeconds * (0.5 + 1.5 * this.random())));
+    return talkPause(this.deps.turnDelaySeconds, this.random);
+  }
+
+  /** Pausa curta, para quem responde a gente. */
+  private quick() {
+    return quickPause(this.deps.turnDelaySeconds, this.random);
   }
 
   private async overLimit() {
@@ -212,7 +248,7 @@ export class PersonaTalker {
     const other = last.sender.nickname;
     const memory = persona.relations[other] ?? "outra persona do bunker; vocês se conhecem só daqui.";
     const sent = await this.say(persona, job.conversationId, history, (onDraft, signal) =>
-      generateReply(this.deps.generate, persona, other, memory, history, onDraft, signal),
+      generateReply(this.deps.generate, persona, other, memory, history, onDraft, signal, { strictEcho: true }),
     );
     if (!sent) return;
     const otherId = (await chat.memberIds(job.conversationId)).find((id) => id !== persona.id);
@@ -226,48 +262,101 @@ export class PersonaTalker {
 
   private async group(job: Extract<TalkJob, { kind: "group" }>) {
     const { store, queue } = this.deps;
+    const depth = job.depth ?? 0;
+    const rootId = job.rootId ?? job.messageId;
+    if (depth >= GROUP_JEV.chain.length) return;
     const candidates = await store.groupCandidates(job.conversationId, job.messageId);
     if (!candidates.length || (await this.overLimit())) return;
-    // Várias mensagens seguidas ("gente" / "alguém viu o jogo?"): só a última chama as personas.
     const recent = (await this.deps.chat.listMessages(candidates[0]!.persona.id, job.conversationId, null, HISTORY)) ?? [];
     const at = recent.findIndex((m) => m.id === job.messageId);
-    if (at >= 0 && recent.slice(at + 1).some((m) => !m.sender.isAi)) return;
+    const target = recent[at];
+    if (!target) return;
+    // Gente escreveu depois ("gente" / "alguém viu o jogo?"): só a última mensagem de gente chama as personas.
+    if (recent.slice(at + 1).some((m) => !m.sender.isAi)) return;
+    if (depth > 0 && this.chainSize(recent, rootId) >= GROUP_JEV.maxChain) return;
+    const mentioned = new Set(mentionsIn(target.text ?? "", candidates.map((c) => c.persona)));
+    const hour = (this.deps.hour ?? localHour)();
     const decisions = decideGroup(
-      candidates.map((c) => ({ id: c.persona.id, activity: c.persona.activity ?? 0.5, affinity: c.affinity })),
+      candidates.map((c) => ({
+        id: c.persona.id,
+        activity: c.persona.activity ?? 0.5,
+        affinity: c.affinity,
+        rhythm: rhythm(c.persona.ritmo, hour),
+        mentioned: mentioned.has(c.persona.id),
+        repliedTo: job.repliedTo === c.persona.nickname,
+        recent: recent.filter((m) => m.sender.nickname === c.persona.nickname).length,
+      })),
       this.random,
+      { depth, fromHuman: !target.sender.isAi },
     );
-    let order = 0;
+    // Gente esperando: resposta rápida. Entre personas (vídeo do agendador, cadeia): pausa com cauda longa.
+    let delay = target.sender.isAi ? this.pause() : this.quick();
     for (const d of decisions) {
       if (d.action === "ignorar") continue;
       // Quem comenta fala um depois do outro; quem só reage, logo.
-      const startAfter = d.action === "comentar" ? this.pause() * ++order : 1;
+      let startAfter = 1;
+      if (d.action === "comentar") {
+        startAfter = delay;
+        delay += this.quick();
+      }
       await queue.send(
         QUEUES.personaTalk,
-        { kind: "group_reply", conversationId: job.conversationId, personaId: d.id, messageId: job.messageId, score: d.score, reasons: { ...d.reasons, acao: d.action } } satisfies TalkJob,
+        {
+          kind: "group_reply",
+          conversationId: job.conversationId,
+          personaId: d.id,
+          messageId: job.messageId,
+          score: d.score,
+          reasons: { ...d.reasons, acao: d.action },
+          depth,
+          rootId,
+        } satisfies TalkJob,
         { startAfter },
       );
     }
   }
 
+  /** Falas de texto de persona desde a mensagem que abriu a conversa (todas as cadeias dela). */
+  private chainSize(history: MessageView[], rootId: string): number {
+    const at = history.findIndex((m) => m.id === rootId);
+    // A mensagem que abriu já saiu do histórico recente: a conversa já rendeu o bastante.
+    if (at < 0) return GROUP_JEV.maxChain;
+    return history.slice(at + 1).filter((m) => m.sender.isAi && m.text).length;
+  }
+
   private async groupReply(job: Extract<TalkJob, { kind: "group_reply" }>) {
-    const { chat, store } = this.deps;
+    const { chat, store, queue } = this.deps;
     const persona = await store.persona(job.personaId);
     if (!persona) return;
     const history = (await chat.listMessages(persona.id, job.conversationId, null, HISTORY)) ?? [];
     const target = history.find((m) => m.id === job.messageId);
     if (!target) return;
-    const comment = job.reasons.acao === "comentar" && !(await this.overLimit());
+    const depth = job.depth ?? 0;
+    const rootId = job.rootId ?? job.messageId;
+    const full = this.chainSize(history, rootId) >= GROUP_JEV.maxChain;
+    const comment = job.reasons.acao === "comentar" && !full && !(await this.overLimit());
     const action = comment ? "comentar" : "reagir";
-    if (!(await store.claim(persona.id, "mensagem", job.messageId, { action, score: job.score, reasons: job.reasons }))) return;
+    const reasons = full && job.reasons.acao === "comentar" ? { ...job.reasons, teto_da_conversa: true } : job.reasons;
+    if (!(await store.claim(persona.id, "mensagem", job.messageId, { action, score: job.score, reasons }))) return;
     if (!comment) return this.react(persona, job.conversationId, target.id, reactionFor(target.text ?? "", this.random));
     // Responde à mensagem que a chamou, com o que veio depois dela como contexto.
     const upTo = history.slice(0, history.findLastIndex((m) => m.sender.nickname !== persona.nickname) + 1);
-    await this.say(persona, job.conversationId, upTo, (onDraft, signal) =>
+    const mentionedBy = job.reasons.mencao === true ? target.sender.nickname : undefined;
+    const sent = await this.say(persona, job.conversationId, upTo, (onDraft, signal) =>
       generateReply(this.deps.generate, persona, target.sender.nickname, "", upTo, onDraft, signal, {
-        build: (examples, retry) => buildGroupMessages(persona, "Grupo do Bunker", upTo, examples, retry),
+        build: (examples, retry) => buildGroupMessages(persona, "Grupo do Bunker", upTo, examples, retry, mentionedBy),
         stop: groupStopWords(upTo, persona.nickname),
+        strictEcho: true,
       }),
     );
+    // A fala pode chamar outra persona (cadeia): quem responde é decidido no próximo job.
+    if (sent) {
+      await queue.send(
+        QUEUES.personaTalk,
+        { kind: "group", conversationId: job.conversationId, messageId: sent.id, depth: depth + 1, rootId, repliedTo: target.sender.nickname } satisfies TalkJob,
+        { startAfter: 1 },
+      );
+    }
   }
 
   private async react(persona: PersonaProfile, conversationId: string, messageId: string, emoji: string) {
@@ -317,7 +406,7 @@ interface PersonaRow {
   tone: string;
   examples: string[];
   activity_level: number;
-  config: { nome?: string; relacoes?: Record<string, string>; afinidade?: Record<string, number> };
+  config: { nome?: string; relacoes?: Record<string, string>; afinidade?: Record<string, number>; ritmo?: string[] };
 }
 
 const toPersona = (r: PersonaRow): TalkPersona => ({
@@ -329,6 +418,7 @@ const toPersona = (r: PersonaRow): TalkPersona => ({
   examples: r.examples,
   activity: r.activity_level,
   relations: r.config.relacoes ?? {},
+  ritmo: r.config.ritmo ?? [],
 });
 
 const PERSONA_SELECT = `SELECT p.user_id, u.nickname, p.bio, p.tone, p.examples, p.activity_level, p.config

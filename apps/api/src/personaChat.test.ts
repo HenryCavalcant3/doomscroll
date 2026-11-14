@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { MessageView } from "./chat.js";
 import { OllamaError, chatStream } from "./ollama.js";
-import { LOOPED, badReply, replyProblem, buildChatMessages, cleanReply, generateReply, type ChatGenerator, messageLine, pickExamples, stopWords } from "./personaChat.js";
+import { LOOPED, badReply, echoes, replyProblem, buildChatMessages, timeLine, cleanReply, generateReply, type ChatGenerator, messageLine, pickExamples, stopWords } from "./personaChat.js";
 
 const tio = { id: "u-tio", nickname: "tio_valdir", name: "Tio Valdir", bio: "Tio do bunker.", tone: "Animado.", examples: ["Bom dia!", "KKKK", "Que coisa linda", "Repassem!"] };
 const msg = (nickname: string, text: string | null, video: MessageView["video"] = null): MessageView => ({
@@ -19,6 +19,8 @@ describe("chat com persona", () => {
   it("limpa nome na frente, aspas e corta resposta longa numa frase", () => {
     expect(cleanReply('Tio Valdir: "Bom dia!"', tio)).toBe("Bom dia!");
     expect(cleanReply("@tio_valdir: oi", tio)).toBe("oi");
+    // Começar chamando alguém no formato do grupo não apaga a resposta.
+    expect(cleanReply("@ana: já vi sim, que jogo!", tio)).toBe("@ana já vi sim, que jogo!");
     const long = `${"Frase curta aqui. ".repeat(30)}fim`;
     const cut = cleanReply(long, tio, 100);
     expect(cut.length).toBeLessThanOrEqual(100);
@@ -136,5 +138,21 @@ describe("streaming do Ollama", () => {
     const full = await chatStream({ baseUrl: "http://x", model: "m", messages: [], timeoutMs: 1000, fetchImpl }, (t) => seen.push(t));
     expect(full).toBe("Bom dia!");
     expect(seen).toEqual(["Bom ", "Bom dia!"]);
+  });
+});
+
+describe("entre personas", () => {
+  it("eco: repetir 5 palavras seguidas de uma fala recente não vale", () => {
+    const history = [msg("kelly", "Esses animais são verdadeiros exemplos de força e adaptação 💪")];
+    expect(echoes("Pois é, verdadeiros exemplos de força e adaptação mesmo", history)).toBe(true);
+    expect(echoes("Força eles têm, mas eu ficava longe", history)).toBe(false);
+    // Título de vídeo não conta: só falas de texto.
+    expect(echoes("Bolo de cenoura com cobertura de chocolate", [msg("tio_valdir", null, { id: "v", title: "Bolo de cenoura com cobertura de chocolate" } as MessageView["video"])])).toBe(false);
+  });
+
+  it("o prompt diz a hora para a persona não dar bom dia de madrugada", () => {
+    expect(timeLine(new Date(2026, 10, 14, 3, 5))).toContain("Agora são 03:05, de madrugada.");
+    expect(timeLine(new Date(2026, 10, 14, 20, 0))).toContain("de noite");
+    expect(buildChatMessages(tio, "ana", "", [msg("ana", "oi")])[0]!.content).toContain("Agora são");
   });
 });

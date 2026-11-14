@@ -155,14 +155,54 @@ export function decideTalk(activity: number, messages: number, lastText: string,
   };
 }
 
-/** No Grupo do Bunker, no máximo isto de personas responde a cada mensagem de gente. */
-export const GROUP_JEV = { maxReplies: 2, commentAt: 0.6, reactAt: 0.45, chance: 0.3, unknownAffinity: 0.3 };
+/**
+ * Grupo do Bunker. Uma mensagem de gente (ou o vídeo que uma persona mandou) chama até duas personas;
+ * a fala de uma persona pode chamar outra (cadeia), com chance menor a cada nível, e a conversa
+ * sempre acaba: no nível 3 ninguém responde e, a partir de uma mensagem, no máximo `maxChain` falas.
+ */
+export const GROUP_JEV = {
+  maxReplies: 2,
+  commentAt: 0.6,
+  reactAt: 0.45,
+  chance: 0.3,
+  unknownAffinity: 0.3,
+  /** Chance de a cadeia seguir, por nível: resposta à mensagem, à persona, à resposta; depois, ninguém. */
+  chain: [1, 0.5, 0.2],
+  /** Falas de persona, no máximo, a partir da mesma mensagem (contando todos os níveis). */
+  maxChain: 4,
+  /** Quem foi citado (@apelido ou pelo nome) ganha isto na nota. */
+  mentionBonus: 0.35,
+  /** Chance mínima de a cadeia seguir quando a fala cita alguém. */
+  mentionChain: 0.7,
+  /** Quem acabou de receber a resposta ganha isto na nota (ida e volta). */
+  replyBonus: 0.15,
+  /** Cansaço: cada fala recente da persona no grupo tira isto da nota, até o teto. */
+  recentPenalty: 0.08,
+  maxRecentPenalty: 0.24,
+  /** Sorteio pesado de quem responde: peso = nota elevada a isto (nota alta sai mais, sem monopólio). */
+  lotteryPower: 2,
+};
 
 export interface GroupCandidateTaste {
   id: string;
   activity: number;
   /** Afinidade com os tópicos do vídeo mandado; null quando a mensagem é texto. */
   affinity: number | null;
+  /** Multiplicador do ritmo na hora atual (ritmo.ts); 1 quando falta. */
+  rhythm?: number;
+  /** A mensagem cita esta persona. */
+  mentioned?: boolean;
+  /** A mensagem é uma resposta a esta persona. */
+  repliedTo?: boolean;
+  /** Falas dela entre as mensagens recentes do grupo (cansaço). */
+  recent?: number;
+}
+
+export interface GroupContext {
+  /** 0: mensagem que abriu a conversa; 1: fala de persona respondendo a ela; e assim por diante. */
+  depth: number;
+  /** A mensagem é de gente (quem foi citado responde quase sempre). */
+  fromHuman: boolean;
 }
 
 export interface GroupDecision {
@@ -173,27 +213,119 @@ export interface GroupDecision {
 }
 
 /**
- * Quem responde a uma mensagem de gente no Grupo do Bunker: nota = 0,5 × atividade + 0,4 ×
- * afinidade + acaso (±0,15). Comenta a partir de 0,6 (só as duas maiores notas), reage a partir de 0,45.
+ * Quem responde no Grupo do Bunker. Nota = (0,5 × atividade + 0,4 × afinidade) × ritmo + acaso
+ * (±0,15) + bônus de citação e de ida e volta − cansaço. Reage a partir de 0,45.
+ * - Mensagem que abre a conversa: comentam as duas maiores notas a partir de 0,6; quem gente citou
+ *   comenta mesmo com nota baixa. Se é de gente e ninguém chegou, uma persona responde mesmo assim,
+ *   sorteada pela nota (ninguém fala sozinho no grupo; o ritmo decide quem aparece).
+ * - Cadeia: um sorteio com a chance do nível decide se alguém ainda fala; se sim, uma persona,
+ *   sorteada pela nota.
  */
-export function decideGroup(candidates: GroupCandidateTaste[], random: () => number = Math.random): GroupDecision[] {
+export function decideGroup(
+  candidates: GroupCandidateTaste[],
+  random: () => number = Math.random,
+  ctx: GroupContext = { depth: 0, fromHuman: true },
+): GroupDecision[] {
   const scored = candidates.map((c) => {
     const affinity = c.affinity ?? GROUP_JEV.unknownAffinity;
+    const rhythm = c.rhythm ?? 1;
     const acaso = round((random() - 0.5) * GROUP_JEV.chance);
-    const score = round(0.5 * c.activity + 0.4 * affinity + acaso);
-    return { c, score, reasons: { atividade: c.activity, afinidade: round(affinity), acaso } };
+    const bonus = (c.mentioned ? GROUP_JEV.mentionBonus : 0) + (c.repliedTo ? GROUP_JEV.replyBonus : 0);
+    const tired = Math.min(GROUP_JEV.maxRecentPenalty, (c.recent ?? 0) * GROUP_JEV.recentPenalty);
+    const score = round((0.5 * c.activity + 0.4 * affinity) * rhythm + acaso + bonus - tired);
+    const reasons: GroupDecision["reasons"] = { atividade: c.activity, afinidade: round(affinity), acaso };
+    if (rhythm !== 1) reasons.ritmo = rhythm;
+    if (c.mentioned) reasons.mencao = true;
+    if (c.repliedTo) reasons.resposta = true;
+    if (tired) reasons.cansaco = round(-tired);
+    if (ctx.depth > 0) reasons.nivel = ctx.depth;
+    return { c, score, reasons };
   });
-  const commenters = new Set(
+  type Scored = (typeof scored)[number];
+  /** Uma persona sorteada com peso pela nota (quem tem nota maior sai mais). */
+  const lottery = (pool: Scored[]): Scored | null => {
+    const weight = (s: Scored) => Math.max(0.01, s.score) ** GROUP_JEV.lotteryPower;
+    let roll = random() * pool.reduce((sum, s) => sum + weight(s), 0);
+    for (const s of pool) {
+      roll -= weight(s);
+      if (roll < 0) return s;
+    }
+    return pool.at(-1) ?? null;
+  };
+  const commenters = new Set<string>();
+  if (ctx.depth === 0) {
+    const forced = (s: Scored) => ctx.fromHuman && s.c.mentioned === true;
     scored
-      .filter((s) => s.score >= GROUP_JEV.commentAt)
-      .sort((a, b) => b.score - a.score)
+      .filter((s) => forced(s) || s.score >= GROUP_JEV.commentAt)
+      .sort((a, b) => Number(forced(b)) - Number(forced(a)) || b.score - a.score)
       .slice(0, GROUP_JEV.maxReplies)
-      .map((s) => s.c.id),
-  );
+      .forEach((s) => commenters.add(s.c.id));
+    if (ctx.fromHuman && commenters.size === 0) {
+      const picked = lottery(scored);
+      if (picked) {
+        commenters.add(picked.c.id);
+        picked.reasons.resposta_garantida = true;
+      }
+    }
+  } else {
+    // Cadeia: quanto mais funda, menor a chance de alguém ainda responder (citar alguém ajuda).
+    const base = GROUP_JEV.chain[ctx.depth] ?? 0;
+    const chance = base > 0 && candidates.some((c) => c.mentioned) ? Math.max(base, GROUP_JEV.mentionChain) : base;
+    if (chance > 0 && random() < chance) {
+      const picked = lottery(scored);
+      if (picked) commenters.add(picked.c.id);
+    }
+  }
   return scored.map(({ c, score, reasons }) => ({
     id: c.id,
     action: commenters.has(c.id) ? "comentar" : score >= GROUP_JEV.reactAt ? "reagir" : "ignorar",
     score,
     reasons,
   }));
+}
+
+const foldText = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+
+/** Palavras do nome que não identificam ninguém ("Dona Neide" → só "neide"). */
+const TITLES = new Set(["dona", "tio", "tia", "seu", "senhor", "senhora"]);
+
+/**
+ * Personas citadas no texto: pelo @apelido, pelo apelido ou por uma palavra do nome ("Neide",
+ * "Capitão", "Valdir"). Devolve os ids.
+ */
+export function mentionsIn(text: string, personas: { id: string; nickname: string; name: string }[]): string[] {
+  const folded = foldText(text);
+  const words = new Set(folded.match(/[a-z0-9_]+/g) ?? []);
+  return personas
+    .filter((p) => {
+      const nick = foldText(p.nickname);
+      if (words.has(nick) || words.has(nick.replace(/_/g, ""))) return true;
+      return (foldText(p.name).match(/[a-z0-9]+/g) ?? []).some((w) => w.length >= 4 && !TITLES.has(w) && words.has(w));
+    })
+    .map((p) => p.id);
+}
+
+/**
+ * Pausa até a próxima fala entre personas, com cauda longa e teto baixo: quase sempre de 1/4 da
+ * média até a média (10 a 40 s com PERSONA_TALK_DELAY=40); às vezes de 1 a 3 min; raramente de 3 a
+ * 5 min. Nunca horas: o legal é ver as conversas acontecendo.
+ */
+export const PAUSE = {
+  bands: [
+    { upTo: 0.8, from: 0.25, to: 1 },
+    { upTo: 0.95, from: 1.5, to: 4.5 },
+    { upTo: 1, from: 4.5, to: 7.5 },
+  ],
+};
+
+export function talkPause(base: number, random: () => number = Math.random): number {
+  const roll = random();
+  const band = PAUSE.bands.find((b) => roll < b.upTo) ?? PAUSE.bands.at(-1)!;
+  return Math.max(1, Math.round(base * (band.from + (band.to - band.from) * random())));
+}
+
+/** Pausa curta (faixa rápida), para quem responde a gente no grupo: ninguém fica esperando. */
+export function quickPause(base: number, random: () => number = Math.random): number {
+  const band = PAUSE.bands[0]!;
+  return Math.max(1, Math.round(base * (band.from + (band.to - band.from) * random())));
 }
