@@ -62,3 +62,115 @@ export function decideVideo(taste: PersonaTaste, video: VideoContext, random: ()
     reasons: { afinidade: round(affinity), atividade: taste.activity, acaso: round(chance), recencia: round(-recency) },
   };
 }
+
+/**
+ * Agendador das personas (SPEC 7.4, "tique do agendador"; 7.5): de tempos em tempos, uma persona
+ * puxa conversa mandando um vídeo que ela curtiu para outra persona (ou, às vezes, para o Grupo do
+ * Bunker). Quem puxa sai por sorteio pesado pela atividade; o par pela relação entre elas; o vídeo
+ * pelo gosto de quem recebe. A conversa que segue (respostas e silêncio) é decidida na api.
+ */
+export interface TickPersona extends PersonaTaste {
+  id: string;
+  nickname: string;
+  /** Apelidos de quem ela cita em `relacoes`. */
+  relations: string[];
+}
+
+export interface TickVideo {
+  id: string;
+  topics: string[];
+  /** Personas que curtiram ou comentaram (só manda vídeo de que gostou). */
+  likedBy: string[];
+}
+
+export interface TickCandidates {
+  personas: TickPersona[];
+  videos: TickVideo[];
+  /** Vídeos já mandados em cada conversa entre duas personas (chave `pairKey`). */
+  sentInPair: Map<string, Set<string>>;
+  /** Pares que conversaram há pouco (chave `pairKey`): ficam quietos um tempo. */
+  coolingPairs: Set<string>;
+  /** Vídeos já mandados no Grupo do Bunker. */
+  bunkerVideos: Set<string>;
+}
+
+export interface TickPlan {
+  starterId: string;
+  /** null: manda no Grupo do Bunker. */
+  partnerId: string | null;
+  videoId: string;
+  score: number;
+  reasons: Record<string, number | string | boolean>;
+}
+
+export const TICK = {
+  /** Chance de o vídeo ir para o Grupo do Bunker em vez de outra persona. */
+  bunkerChance: 0.15,
+  /** Peso a mais no sorteio do par quando uma cita a outra em `relacoes`. */
+  relationBonus: 2,
+  /** Horas que um par fica sem puxar conversa nova depois de conversar. */
+  pairCooldownHours: 6,
+};
+
+export const pairKey = (a: string, b: string) => [a, b].sort().join(":");
+
+/** Sorteio pesado (pesos ≤ 0 nunca saem). */
+function weighted<T>(items: T[], weight: (t: T) => number, random: () => number): T | null {
+  const total = items.reduce((s, t) => s + Math.max(0, weight(t)), 0);
+  if (total <= 0) return null;
+  let roll = random() * total;
+  for (const t of items) {
+    roll -= Math.max(0, weight(t));
+    if (roll < 0) return t;
+  }
+  return items.at(-1) ?? null;
+}
+
+export function planTick(c: TickCandidates, random: () => number = Math.random): TickPlan | null {
+  const liked = (p: TickPersona) => c.videos.filter((v) => v.likedBy.includes(p.id));
+  const starter = weighted(
+    c.personas.filter((p) => liked(p).length > 0),
+    (p) => p.activity,
+    random,
+  );
+  if (!starter) return null;
+  if (random() < TICK.bunkerChance) {
+    const video = weighted(
+      liked(starter).filter((v) => !c.bunkerVideos.has(v.id)),
+      (v) => topicAffinity(starter, v.topics) ** 2,
+      random,
+    );
+    if (!video) return null;
+    return {
+      starterId: starter.id,
+      partnerId: null,
+      videoId: video.id,
+      score: round(topicAffinity(starter, video.topics)),
+      reasons: { atividade: starter.activity, afinidade: round(topicAffinity(starter, video.topics)), grupo: true },
+    };
+  }
+  const related = (p: TickPersona) => starter.relations.includes(p.nickname) || p.relations.includes(starter.nickname);
+  const partner = weighted(
+    c.personas.filter((p) => p.id !== starter.id && !c.coolingPairs.has(pairKey(starter.id, p.id))),
+    (p) => 1 + (related(p) ? TICK.relationBonus : 0),
+    random,
+  );
+  if (!partner) return null;
+  // Nem o que já foi nesse par, nem o que ela já mandou para outra persona (mesmo vídeo para todo mundo cansa).
+  const sent = new Set([...c.sentInPair].filter(([key]) => key.split(":").includes(starter.id)).flatMap(([, ids]) => [...ids]));
+  // Quem manda escolhe pelo gosto de quem recebe ("isso é a cara do Rato").
+  const video = weighted(
+    liked(starter).filter((v) => !sent.has(v.id)),
+    (v) => topicAffinity(partner, v.topics) ** 2,
+    random,
+  );
+  if (!video) return null;
+  const affinity = round(topicAffinity(partner, video.topics));
+  return {
+    starterId: starter.id,
+    partnerId: partner.id,
+    videoId: video.id,
+    score: affinity,
+    reasons: { atividade: starter.activity, afinidade_de_quem_recebe: affinity, relacao: related(partner) },
+  };
+}

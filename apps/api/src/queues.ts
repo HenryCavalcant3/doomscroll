@@ -10,6 +10,10 @@ export const QUEUES = {
   personaComment: "persona.comment",
   /** Atualiza o resumo que a persona guarda de um contato (persona_memory). */
   personaMemory: "persona.memory",
+  /** Agendador das personas (worker, de tempos em tempos): escolhe quem puxa conversa e com que vídeo. */
+  personaTick: "persona.tick",
+  /** Uma fala de persona com outra persona ou no Grupo do Bunker (api). */
+  personaTalk: "persona.talk",
 } as const;
 
 export type QueueName = (typeof QUEUES)[keyof typeof QUEUES];

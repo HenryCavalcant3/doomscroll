@@ -13,6 +13,10 @@ describe("worker", () => {
     expect(readConfig({ DATABASE_URL: "x", PERSONA_RATE: "0" }).personaRate).toBe(0);
     expect(() => readConfig({ DATABASE_URL: "x", PERSONA_RATE: "-1" })).toThrow(/PERSONA_RATE/);
     expect(() => readConfig({ DATABASE_URL: "x", PERSONA_RATE: "muito" })).toThrow(/PERSONA_RATE/);
+    expect(readConfig({ DATABASE_URL: "x" }).personaTick).toBe("*/30 * * * *");
+    expect(readConfig({ DATABASE_URL: "x", PERSONA_TICK: "*/5 * * * *" }).personaTick).toBe("*/5 * * * *");
+    expect(readConfig({ DATABASE_URL: "x", PERSONA_TICK: "off" }).personaTick).toBeNull();
+    expect(() => readConfig({ DATABASE_URL: "x", PERSONA_TICK: "toda hora" })).toThrow(/PERSONA_TICK/);
   });
 
   it("falha sem DATABASE_URL ou com WHISPER_MODEL estranho", () => {

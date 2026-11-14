@@ -52,6 +52,7 @@ services:
       EMBED_MODEL: ${EMBED_MODEL:-nomic-embed-text}
       OWNER_PIN: ${OWNER_PIN:-}
       PERSONA_RATE: ${PERSONA_RATE:-30}
+      PERSONA_TALK_DELAY: ${PERSONA_TALK_DELAY:-40}
       MEDIA_DIR: /data/media
     volumes:
       - media:/data/media
@@ -83,6 +84,7 @@ services:
       EMBED_MODEL: ${EMBED_MODEL:-nomic-embed-text}
       WHISPER_MODEL: ${WHISPER_MODEL:-base}
       PERSONA_RATE: ${PERSONA_RATE:-30}
+      PERSONA_TICK: ${PERSONA_TICK:-*/30 * * * *}
       MEDIA_DIR: /data/media
       WHISPER_DIR: /data/whisper
     volumes:

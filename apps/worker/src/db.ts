@@ -1,6 +1,6 @@
 import type { Pool } from "pg";
 import type { MemoryLine, PersonaProfile, TopicOption, VideoForComment } from "./ai.js";
-import type { Decision, PersonaTaste } from "./jev.js";
+import { TICK, type Decision, type PersonaTaste, type TickCandidates } from "./jev.js";
 
 export interface VideoRecord {
   id: string;
@@ -292,5 +292,68 @@ export class PgMemoryDb implements MemoryDb {
        ON CONFLICT (persona_user_id, contact_user_id) DO UPDATE SET summary = EXCLUDED.summary, updated_at = now()`,
       [personaId, contactId, summary],
     );
+  }
+}
+
+/** O que o agendador das personas olha para decidir quem puxa conversa (SPEC 7.5). */
+export interface TickDb {
+  tickCandidates(): Promise<TickCandidates>;
+  personaActionsLastHour(): Promise<number>;
+}
+
+export class PgTickDb implements TickDb {
+  constructor(private readonly pool: Pool) {}
+
+  async tickCandidates(): Promise<TickCandidates> {
+    const personas = await this.pool.query<{
+      id: string;
+      nickname: string;
+      activity_level: number;
+      config: { afinidade?: Record<string, number>; relacoes?: Record<string, string> };
+    }>(`SELECT p.user_id AS id, u.nickname, p.activity_level, p.config FROM personas p JOIN users u ON u.id = p.user_id`);
+    const videos = await this.pool.query<{ id: string; topics: string[]; liked_by: string[] }>(
+      `SELECT v.id,
+              COALESCE(array_agg(DISTINCT t.slug) FILTER (WHERE t.slug IS NOT NULL), '{}') AS topics,
+              array_agg(DISTINCT d.persona_user_id) AS liked_by
+         FROM videos v
+         JOIN persona_decisions d ON d.trigger = 'video' AND d.target_id = v.id AND d.action IN ('curtir', 'comentar')
+         LEFT JOIN video_topics vt ON vt.video_id = v.id
+         LEFT JOIN topics t ON t.id = vt.topic_id
+        WHERE v.status = 'aprovado' AND v.file_path IS NOT NULL
+        GROUP BY v.id`,
+    );
+    // Conversas diretas só entre personas: a chave direta já é o par em ordem.
+    const pairs = await this.pool.query<{ direct_key: string; cooling: boolean; videos: string[] }>(
+      `SELECT c.direct_key,
+              COALESCE(c.last_message_at > now() - make_interval(hours => $1), false) AS cooling,
+              COALESCE(array_agg(DISTINCT m.video_id) FILTER (WHERE m.video_id IS NOT NULL), '{}') AS videos
+         FROM conversations c
+         LEFT JOIN messages m ON m.conversation_id = c.id
+        WHERE c.type = 'direct'
+          AND NOT EXISTS (SELECT 1 FROM conversation_members cm JOIN users u ON u.id = cm.user_id
+                           WHERE cm.conversation_id = c.id AND NOT u.is_ai)
+        GROUP BY c.id`,
+      [TICK.pairCooldownHours],
+    );
+    const bunker = await this.pool.query<{ video_id: string }>(
+      `SELECT DISTINCT m.video_id FROM messages m JOIN conversations c ON c.id = m.conversation_id AND c.bunker WHERE m.video_id IS NOT NULL`,
+    );
+    return {
+      personas: personas.rows.map((p) => ({
+        id: p.id,
+        nickname: p.nickname,
+        activity: p.activity_level,
+        affinity: p.config.afinidade ?? {},
+        relations: Object.keys(p.config.relacoes ?? {}),
+      })),
+      videos: videos.rows.map((v) => ({ id: v.id, topics: v.topics, likedBy: v.liked_by })),
+      sentInPair: new Map(pairs.rows.map((r) => [r.direct_key, new Set(r.videos)])),
+      coolingPairs: new Set(pairs.rows.filter((r) => r.cooling).map((r) => r.direct_key)),
+      bunkerVideos: new Set(bunker.rows.map((r) => r.video_id)),
+    };
+  }
+
+  async personaActionsLastHour() {
+    return new PgVideoDb(this.pool).personaActionsLastHour();
   }
 }

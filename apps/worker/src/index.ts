@@ -4,11 +4,12 @@ import { PgBoss } from "pg-boss";
 import { OllamaClient } from "./ai.js";
 import { readConfig } from "./config.js";
 import { LlmGate, PRIORITY } from "./gate.js";
-import { PgMemoryDb, PgVideoDb } from "./db.js";
+import { PgMemoryDb, PgTickDb, PgVideoDb } from "./db.js";
 import * as ffmpeg from "./ffmpeg.js";
 import { runStep, type JobData, type PipelineDeps } from "./pipeline.js";
 import { updateMemory } from "./memory.js";
 import { ensureQueues, QUEUES, VIDEO_QUEUES } from "./queues.js";
+import { runTick } from "./tick.js";
 import { run, toolVersion } from "./tools.js";
 import { ensureModel, transcribe } from "./whisper.js";
 import { download } from "./ytdlp.js";
@@ -75,6 +76,19 @@ await boss.work<{ personaId: string; contactId: string }>(QUEUES.personaMemory, 
     job.data,
   );
 });
+// Agendador das personas: o tique só decide; as falas são escritas pela api (fila persona.talk).
+const tickDb = new PgTickDb(pool);
+await boss.work(QUEUES.personaTick, { batchSize: 1, pollingIntervalSeconds: 5 }, async ([job]) => {
+  if (!job) return;
+  await runTick({ db: tickDb, send: (queue, data) => boss.send(queue, data), personaRate: config.personaRate, log: (msg) => console.log(msg) });
+});
+if (config.personaTick) {
+  await boss.schedule(QUEUES.personaTick, config.personaTick);
+  console.log(`[worker] agendador das personas: ${config.personaTick}`);
+} else {
+  await boss.unschedule(QUEUES.personaTick);
+  console.log("[worker] agendador das personas desligado (PERSONA_TICK=off)");
+}
 console.log(`[worker] ouvindo as filas: ${Object.values(QUEUES).join(", ")}`);
 
 const shutdown = async () => {
