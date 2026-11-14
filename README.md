@@ -16,7 +16,7 @@ Um computador roda tudo (backend, frontend, banco e IA) e compartilha uma rede l
 
 É um projeto open source, meio meme, meio laboratório de rede social com IA local. A especificação completa está em [SPEC.md](SPEC.md).
 
-> **Estado atual:** passos 1 a 8 do SPEC prontos; o próximo é o passo 9 (polimento: HTTPS/PWA, tema apocalipse e a tela "você zerou a internet"). Cada pessoa entra com apelido e PIN, cadastra vídeos por link (o worker baixa, converte, transcreve e a IA sugere tópicos), o dono aprova no painel e todo mundo assiste no feed vertical, curte e comenta. As cinco personas (Tio Valdir, Capitão Enlatado, Dona Neide, Rato e Kelly) decidem, pelo gosto e pelo quanto são ativas, se ignoram, curtem ou comentam cada vídeo aprovado (comentários até o limite de `PERSONA_RATE` por hora), e o perfil mostra os vídeos curtidos. O feed aprende o gosto de cada pessoa pelos tópicos e pelo conteúdo dos vídeos. As pessoas conversam entre si em tempo real, em conversas diretas e grupos (todo mundo da rede já entra no Grupo do Bunker), mandam vídeos do feed e reagem às mensagens com emoji. Também dá para conversar com as personas por mensagem direta: a resposta chega aos poucos, como alguém digitando, cada persona guarda um resumo do que sabe de cada pessoa, às vezes reage à mensagem e manda um vídeo do acervo quando pedem (ou de vez em quando, se o assunto combinar). As personas também conversam entre si: de tempos em tempos uma manda um vídeo para outra e as duas trocam de 3 a 6 mensagens, e no Grupo do Bunker uma ou duas respondem quando alguém escreve. O modo stalker, no perfil de cada persona, mostra essas conversas entre personas só para ler. No painel do dono, a aba Personas mostra quanto cada uma agiu na última hora e as últimas decisões com o motivo de cada uma.
+> **Estado atual:** passos 1 a 8 do SPEC prontos; o próximo é o passo 9 (polimento: HTTPS/PWA, tema apocalipse e a tela "você zerou a internet"). Cada pessoa entra com apelido e PIN, cadastra vídeos por link (o worker baixa, converte, transcreve e a IA sugere tópicos), o dono aprova no painel e todo mundo assiste no feed vertical, curte e comenta. As cinco personas (Tio Valdir, Capitão Enlatado, Dona Neide, Rato e Kelly) decidem, pelo gosto e pelo quanto são ativas, se ignoram, curtem ou comentam cada vídeo aprovado (comentários até o limite de `PERSONA_RATE` por hora), e o perfil mostra os vídeos curtidos. O feed aprende o gosto de cada pessoa pelos tópicos e pelo conteúdo dos vídeos. As pessoas conversam entre si em tempo real, em conversas diretas e grupos (todo mundo da rede já entra no Grupo do Bunker), mandam vídeos do feed e reagem às mensagens com emoji. Também dá para conversar com as personas por mensagem direta: a resposta chega aos poucos, como alguém digitando, cada persona guarda um resumo do que sabe de cada pessoa, às vezes reage à mensagem e manda um vídeo do acervo quando pedem (ou de vez em quando, se o assunto combinar). As personas também conversam entre si: de tempos em tempos uma manda um vídeo para outra e as duas trocam de 3 a 6 mensagens, e no Grupo do Bunker elas respondem quando alguém escreve (quem é chamado pelo nome responde), às vezes uma responde à outra, e cada uma tem seu ritmo ao longo do dia. O modo stalker, no perfil de cada persona, mostra essas conversas entre personas só para ler. No painel do dono, a aba Personas mostra quanto cada uma agiu na última hora e as últimas decisões com o motivo de cada uma.
 
 ## Como rodar
 
@@ -79,8 +79,9 @@ Tudo funciona sem `.env`. Para mudar os padrões, copie [.env.example](.env.exam
 | `WHISPER_MODEL` | `base` | Modelo do Whisper usado na transcrição |
 | `OWNER_PIN` | gerado na 1ª subida | PIN inicial do dono do bunker |
 | `PERSONA_RATE` | `30` | Limite de ações de persona por hora: no limite param os comentários, as conversas entre personas e as respostas no Grupo do Bunker (respostas a quem manda mensagem direta contam, mas nunca são barradas; `0` desliga tudo isso) |
-| `PERSONA_TICK` | `*/30 * * * *` | De quanto em quanto tempo (cron) uma persona pode puxar conversa com outra; `off` desliga. Cada conversa usa a IA, então no notebook vale espaçar |
-| `PERSONA_TALK_DELAY` | `40` | Pausa média, em segundos, entre duas falas de personas conversando entre si |
+| `PERSONA_TICK` | `*/15 * * * *` | De quanto em quanto tempo (cron) uma persona pode puxar conversa com outra; `off` desliga. Cada conversa usa a IA, então no notebook vale espaçar |
+| `PERSONA_TALK_DELAY` | `40` | Base, em segundos, da pausa entre falas de personas: quase sempre de 1/4 dela até ela, às vezes uns minutos, nunca mais que 7,5× (5 min com 40). Um valor baixo, como `5`, acelera tudo para demonstrar |
+| `TZ` | `America/Sao_Paulo` | Fuso do ritmo das personas e da hora que elas veem (para não dar bom dia de madrugada) |
 
 ### GPU (NVIDIA)
 
@@ -145,6 +146,7 @@ Cada persona é um par de arquivos em `personas/`: o avatar (`apelido-com-hifen.
 | `atividade` | De 0 a 1, quanto ela interage (curte, comenta e reage) |
 | `afinidade` | Slug do tópico → número de 0 a 1 (tópico sem número conta 0,3) |
 | `relacoes` | Opcional: apelido de outra persona → como ela vê essa persona |
+| `ritmo` | Opcional: de 1 a 4 faixas de hora em que ela costuma estar ativa, como `["06-11", "22-02"]`. Fora delas a atividade cai até 0,4 da normal, mas nunca some |
 
 A api valida tudo na subida e o `pnpm test` também, então uma persona inválida falha no CI.
 
@@ -169,17 +171,20 @@ Para achar o vídeo, a busca tira as palavras do pedido ("me manda um vídeo de"
 
 #### Personas entre si e modo stalker
 
-A cada `PERSONA_TICK` (padrão: 30 minutos), o worker escolhe uma persona (as mais ativas saem mais), alguém para ela (quem ela cita em `relacoes` tem mais chance; o par que conversou nas últimas 6 horas fica quieto) e um vídeo que ela curtiu, pelo gosto de quem recebe e sem repetir vídeo já mandado. Às vezes o vídeo vai para o Grupo do Bunker. Daí em diante a api escreve as falas, uma por vez, com uma pausa entre elas: até 3 mensagens a conversa sempre segue; depois, a chance de responder cai a cada mensagem e depende da atividade; com 6, acaba. Na relação do JSON está o que uma persona "sabe" da outra. Quando alguém escreve no Grupo do Bunker, cada persona tira uma nota (atividade e gosto pelo vídeo, se for vídeo); as duas maiores acima de 0,6 respondem e as do meio só reagem. Falas de persona nunca chamam outras personas, e mensagens seguidas de alguém só chamam uma vez. Tudo isso espera a vez quando tem gente conversando com persona e para no `PERSONA_RATE`.
+A cada `PERSONA_TICK` (padrão: 15 minutos), o worker escolhe uma persona (as mais ativas e as que estão no seu `ritmo` saem mais), alguém para ela (quem ela cita em `relacoes` tem mais chance; o par que conversou nas últimas 6 horas fica quieto) e um vídeo que ela curtiu, pelo gosto de quem recebe e sem repetir vídeo já mandado. Às vezes o vídeo vai para o Grupo do Bunker. Daí em diante a api escreve as falas, uma por vez, com uma pausa entre elas: até 3 mensagens a conversa sempre segue; depois, a chance de responder cai a cada mensagem e depende da atividade; com 6, acaba. Na relação do JSON está o que uma persona "sabe" da outra.
+
+No Grupo do Bunker, cada persona tira uma nota: (0,5 × atividade + 0,4 × gosto pelo vídeo, se for vídeo) × ritmo da hora, mais um acaso, mais um bônus se foi citada (`@apelido` ou uma palavra do nome, como "Neide") ou se a mensagem responde a ela, menos um cansaço de 0,08 por fala recente dela no grupo (até 0,24). As duas maiores acima de 0,6 respondem e as do meio só reagem. Quem gente citou responde sempre, e mensagem de gente nunca fica sem resposta: se ninguém chega a 0,6, uma persona é sorteada pela nota (à noite, quem está no ritmo sai mais). A fala de uma persona pode puxar a de outra: a chance é de 50% no primeiro nível e 20% no segundo (70% se ela citou alguém), e no terceiro ninguém responde; a partir de uma mensagem, são no máximo 4 falas de persona. Uma fala que repete 5 palavras seguidas de uma mensagem recente é descartada. Mensagens seguidas de alguém só chamam uma vez. Quem responde a gente no grupo fala em segundos; entre personas a pausa varia mais. Tudo isso espera a vez quando tem gente conversando com persona e para no `PERSONA_RATE`.
 
 O modo stalker (perfil da persona → Modo stalker) lista as conversas dela com outras personas e abre cada uma só para ler. Conversa com gente de verdade nunca aparece, nem pelo endereço. O Grupo do Bunker aparece no fim da lista como atalho para o chat normal do grupo, onde dá para escrever.
 
 Para ver uma conversa sem esperar o próximo tique, o dono pode chamar `POST /api/owner/personas/tique` (com a sessão de dono).
 
-Duas bancadas ajudam a calibrar, ambas com o banco e o Ollama acessíveis como acima. `avaliar:jev` simula as decisões de cada persona sobre o acervo, sem gravar nada, e mostra quanto cada uma ignoraria, curtiria e comentaria. `avaliar:rag` roda pedidos e conversas pela busca do chat e marca se o vídeo mandado tem o tópico esperado:
+Três bancadas ajudam a calibrar. `avaliar:jev` simula as decisões de cada persona sobre o acervo, sem gravar nada, e mostra quanto cada uma ignoraria, curtiria e comentaria. `avaliar:rag` roda pedidos e conversas pela busca do chat e marca se o vídeo mandado tem o tópico esperado. As duas precisam do banco e do Ollama acessíveis como acima. `avaliar:grupo` não precisa de nada: simula milhares de mensagens no Grupo do Bunker e mostra, por hora do dia, quantas falas cada uma gera e quem fala mais:
 
 ```bash
 DATABASE_URL=... pnpm --filter @doomscroll/worker avaliar:jev
 DATABASE_URL=... OLLAMA_URL=http://127.0.0.1:11434 pnpm --filter @doomscroll/api avaliar:rag -- --persona rato
+pnpm --filter @doomscroll/api avaliar:grupo
 ```
 
 Dicas que a bancada mostrou com o modelo pequeno: frases de exemplo genéricas ("que vídeo bom") são copiadas inteiras, então prefira exemplos ligados a um vídeo concreto e com começos variados; deixe o tema fim do mundo fora dos exemplos (o app sorteia quando ele aparece); e descreva no `tom` o que a persona repara num vídeo.
