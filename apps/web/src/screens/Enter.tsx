@@ -3,8 +3,9 @@ import { api, auth, ApiError, type User } from "../api";
 import { Barata } from "../components/Barata";
 import { PIN_LENGTH, PinBoxes } from "../components/PinBoxes";
 
-/** Tela 1 do SPEC (Entrada): apelido + PIN de 6 números. Apelido novo cria a conta (docs/acabamento/telas/entrada.html). */
-export function Enter({ onEnter }: { onEnter(user: User): void }) {
+/** Tela 1 do SPEC (Entrada): apelido + PIN de 6 números. Apelido novo cria a conta (docs/acabamento/telas/entrada.html).
+ * Com a conta recém-criada (created), o próximo passo é escolher a foto de perfil. */
+export function Enter({ onEnter }: { onEnter(user: User, created: boolean): void }) {
   const [nickname, setNickname] = useState("");
   const [pin, setPin] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -28,9 +29,9 @@ export function Enter({ onEnter }: { onEnter(user: User): void }) {
     setBusy(true);
     setError(null);
     try {
-      const { token, user } = await api.enter(nickname, pin);
+      const { token, user, created } = await api.enter(nickname, pin);
       auth.setToken(token);
-      onEnter(user);
+      onEnter(user, created);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "O bunker não respondeu. Confira se este aparelho está na rede dele e tente de novo.");
       setPin("");

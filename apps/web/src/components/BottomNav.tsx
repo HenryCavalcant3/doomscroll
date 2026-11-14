@@ -3,7 +3,7 @@ import type { Route } from "../router";
 /** Navegação inferior fixa. A bolinha em Mensagens indica conversas com mensagens não lidas. */
 export function BottomNav({ route, unread }: { route: Route; unread: number }) {
   // A busca abre pela lupa do feed; o painel do dono, pelo perfil.
-  const active = route.name === "dono" ? "perfil" : route.name === "buscar" ? "feed" : route.name;
+  const active = route.name === "dono" || route.name === "foto" ? "perfil" : route.name === "buscar" ? "feed" : route.name;
   return (
     <nav className="bottom-nav" aria-label="Navegação principal">
       <a href="#/feed" aria-current={active === "feed" ? "page" : undefined}>

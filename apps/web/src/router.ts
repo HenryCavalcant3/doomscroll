@@ -4,6 +4,8 @@ export type Route =
   | { name: "feed" | "adicionar" | "mensagens" | "perfil" | "dono" | "buscar" }
   /** Passo a passo do certificado HTTPS, aberto sem entrar: #/certificado. */
   | { name: "certificado" }
+  /** Troca da foto de perfil: #/perfil/foto. */
+  | { name: "foto" }
   /** Conversa: #/chat/<id>. */
   | { name: "chat"; id: string }
   /** Perfil de outra pessoa ou persona: #/u/<apelido>. */
@@ -15,6 +17,7 @@ const SIMPLE = ["feed", "adicionar", "mensagens", "perfil", "dono", "buscar", "c
 
 export function parseRoute(hash: string): Route {
   const path = hash.replace(/^#\/?/, "");
+  if (path === "perfil/foto") return { name: "foto" };
   const user = /^u\/([^/]+)$/.exec(path);
   if (user) return { name: "usuario", nickname: decodeURIComponent(user[1]!) };
   const spy = /^espiar\/([^/]+)\/([0-9a-f-]{36})$/i.exec(path);

@@ -81,6 +81,9 @@ export function ProfileScreen({ nickname, me, onLogout }: Props) {
         {profile.bio && <p className="profile-bio">{profile.bio}</p>}
         {own ? (
           <div className="profile-actions">
+            <a className="btn btn-small btn-link" href="#/perfil/foto">
+              Trocar foto
+            </a>
             {me.role === "owner" && (
               <a className="btn btn-small btn-link" href="#/dono">
                 Painel do dono

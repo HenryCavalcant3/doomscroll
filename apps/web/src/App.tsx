@@ -7,6 +7,7 @@ import { SemSinal } from "./components/SemSinal";
 import { Realtime, wsUrl } from "./realtime";
 import { useRoute } from "./router";
 import { AddVideo } from "./screens/AddVideo";
+import { AvatarPicker } from "./screens/AvatarPicker";
 import { Certificado } from "./screens/Certificado";
 import { ChatScreen } from "./screens/Chat";
 import { Enter } from "./screens/Enter";
@@ -17,7 +18,13 @@ import { ProfileScreen } from "./screens/Profile";
 import { SearchScreen } from "./screens/Search";
 import { StalkerChat } from "./screens/Stalker";
 
-type Session = { state: "checking" } | { state: "offline" } | { state: "out" } | { state: "in"; user: User };
+type Session =
+  | { state: "checking" }
+  | { state: "offline" }
+  | { state: "out" }
+  /** Conta recém-criada: segundo passo, a foto de perfil, antes de entrar. */
+  | { state: "foto"; user: User }
+  | { state: "in"; user: User };
 
 export function App() {
   const route = useRoute();
@@ -125,7 +132,21 @@ export function App() {
   if (session.state === "out") {
     return (
       <div className="app">
-        <Enter onEnter={(user) => setSession({ state: "in", user })} />
+        <Enter onEnter={(user, created) => setSession(created ? { state: "foto", user } : { state: "in", user })} />
+      </div>
+    );
+  }
+  if (session.state === "foto") {
+    return (
+      <div className="app">
+        <AvatarPicker
+          me={session.user}
+          submitLabel="Entrar no bunker"
+          onSaved={(user) => {
+            window.location.hash = "#/feed";
+            setSession({ state: "in", user });
+          }}
+        />
       </div>
     );
   }
@@ -140,13 +161,24 @@ export function App() {
         {route.name === "mensagens" && <Messages me={me} />}
         {route.name === "chat" && <ChatScreen key={route.id} id={route.id} me={me} onRead={refreshUnread} />}
         {route.name === "dono" && <OwnerPanel me={me} />}
+        {route.name === "foto" && (
+          <AvatarPicker
+            me={me}
+            submitLabel="Salvar"
+            backHref="#/perfil"
+            onSaved={(user) => {
+              setSession({ state: "in", user });
+              window.location.hash = "#/perfil";
+            }}
+          />
+        )}
         {route.name === "perfil" && <ProfileScreen key={me.nickname} nickname={me.nickname} me={me} onLogout={logout} />}
         {route.name === "usuario" && (
           <ProfileScreen key={route.nickname} nickname={route.nickname} me={me} onLogout={logout} />
         )}
         {route.name === "espiar" && <StalkerChat key={route.id} nickname={route.nickname} id={route.id} />}
         {/* A conversa ocupa a tela toda, com o campo de mensagem no lugar da navegação. */}
-        {route.name !== "chat" && route.name !== "espiar" && <BottomNav route={route} unread={unread} />}
+        {route.name !== "chat" && route.name !== "espiar" && route.name !== "foto" && <BottomNav route={route} unread={unread} />}
       </div>
     </RealtimeContext.Provider>
   );
