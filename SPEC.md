@@ -75,7 +75,7 @@ Status do vídeo: `baixando`, `processando`, `pendente`, `aprovado`, `rejeitado`
 - Um vídeo por tela, rolagem vertical, autoplay, pré-carregamento do próximo.
 - Ações: curtir, comentar, compartilhar no chat.
 - Não existe galeria do acervo. O usuário só vê o que o feed entrega, e no perfil vê os que curtiu.
-- A busca (quando entrar, ver 7.6) acha vídeos específicos, mas não lista o acervo: poucos resultados por busca, só os realmente parecidos, e nada com o campo vazio.
+- A busca (lupa no canto do feed) acha vídeos específicos, mas não lista o acervo: no máximo 10 resultados por busca, só os que têm as palavras ou se destacam no significado, e nada com o campo vazio.
 - Quando o acervo acaba: tela "você zerou a internet", e os vídeos mais antigos voltam a circular.
 
 ### 5.3 Chat
@@ -153,9 +153,9 @@ Regras para a conversa não degenerar:
 
 ### 7.6 Ideias futuras
 
-Para a versão 1.0, ainda a elaborar:
-- **Busca semântica** ("aquele vídeo do gato caindo"), no estilo da busca do TikTok: campo de busca, grade de miniaturas e o vídeo abrindo em tela cheia. Junta texto (título, descrição, tópicos e transcrição) e significado (embedding da frase comparado com os vídeos no pgvector). Com limite, para não virar galeria (5.2): uns 10 resultados por busca, só acima de uma nota mínima de semelhança.
-- **Resumo do dia** no bunker, gerado pela IA.
+Para a versão 1.0:
+- **Busca semântica** ("aquele vídeo do gato caindo"), feita: no estilo da busca do TikTok, com campo de busca, grade de miniaturas e o vídeo abrindo em tela cheia. Primeiro vêm os vídeos com as palavras buscadas, sem acento (título, descrições, hashtags, transcrição e tópicos); depois os que se destacam no significado (embedding da frase comparado com os vídeos no pgvector, com destaque z de 2,4 ou mais em relação ao acervo). No máximo 10 resultados (5.2). Sem a IA, busca só pelas palavras. As buscas não ficam salvas.
+- **Resumo do dia** no bunker, gerado pela IA. Ainda a elaborar.
 
 Depois da versão 1.0, num formato novo que ainda vai ser definido:
 - Painel visual das decisões do JEV (por que a persona fez o que fez).
@@ -181,7 +181,8 @@ Depois da versão 1.0, num formato novo que ainda vai ser definido:
 ## 9. Telas
 
 1. **Entrada:** apelido + PIN.
-2. **Feed:** vídeo em tela cheia, ações na lateral, comentários em gaveta.
+2. **Feed:** vídeo em tela cheia, ações na lateral, comentários em gaveta, lupa da busca no canto superior.
+   - **Busca:** campo e botão Buscar, grade de miniaturas dos resultados, vídeo em tela cheia como no feed.
 3. **Cadastrar vídeo:** campo de link, status do processamento, tópicos sugeridos.
 4. **Caixa de entrada:** lista de conversas (pessoas, personas, grupo).
 5. **Chat:** mensagens, vídeos compartilhados, reações.
