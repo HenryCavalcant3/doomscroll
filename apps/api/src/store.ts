@@ -1,5 +1,6 @@
 import type { Pool, PoolClient } from "pg";
 import { COMMENT_DELTA, LIKE_DELTA, SCORE_MAX, SCORE_MIN, SHARE_DELTA, viewDelta, type ViewInput } from "./affinity.js";
+import { DEFAULT_AVATAR } from "./avatars.js";
 import { pickFeed, type Candidate, type Rng } from "./recommend.js";
 import type { SearchCandidate } from "./search.js";
 import { fromPgVector, TASTE_VIDEOS, tasteVector, toPgVector } from "./taste.js";
@@ -35,11 +36,16 @@ export interface VideoView {
   createdAt: string;
 }
 
-/** Quem aparece como autor de um vídeo ou comentário. */
+/** Quem aparece como autor de um vídeo, comentário ou mensagem. */
 export interface AuthorView {
   nickname: string;
+  /** SVG da persona (disco preto, símbolo amarelo), servido pela api. Null para moradores. */
   avatarUrl: string | null;
+  /** Item escolhido pelo morador (avatars.ts), desenhado pelo web. Null para personas. */
+  avatar: string | null;
   isAi: boolean;
+  /** Dono do bunker: o web põe a moldura em volta do avatar. */
+  owner: boolean;
 }
 
 export interface UserView extends AuthorView {
@@ -96,6 +102,8 @@ export interface Store {
   createUser(nickname: string, pinHash: string): Promise<UserView | null>;
   createSession(userId: string, tokenHash: string): Promise<void>;
   sessionUser(tokenHash: string): Promise<UserView | null>;
+  /** Troca a foto de perfil do morador (nome de um item de avatars.ts). */
+  setAvatar(userId: string, avatar: string): Promise<UserView | null>;
   deleteSession(tokenHash: string): Promise<void>;
   statusOf(ids: string[]): Promise<Map<string, string>>;
   /** Vídeos aprovados e com arquivo, escolhidos pela afinidade (recommend.ts), fora os já entregues e os em quarentena. */
@@ -124,8 +132,25 @@ export interface Store {
   videosWithoutPersonaDecisions(): Promise<{ id: string; likesOnly: boolean }[]>;
 }
 
-/** Avatares de usuários e personas são servidos pela api em /avatars. */
+/** Avatares das personas são servidos pela api em /avatars. */
 export const avatarUrl = (file: string | null) => (file ? `/avatars/${file}` : null);
+
+/** Colunas de users que viram AuthorView. */
+export interface AuthorRow {
+  nickname: string;
+  avatar: string | null;
+  is_ai: boolean;
+  role: string;
+}
+
+/** Persona: arquivo da pasta personas. Morador: o nome do item, ou a escotilha se ainda não escolheu. */
+export const authorView = (r: AuthorRow): AuthorView => ({
+  nickname: r.nickname,
+  avatarUrl: r.is_ai ? avatarUrl(r.avatar) : null,
+  avatar: r.is_ai ? null : (r.avatar ?? DEFAULT_AVATAR),
+  isAi: r.is_ai,
+  owner: r.role === "owner",
+});
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const isUuid = (s: string) => UUID.test(s);
@@ -185,28 +210,19 @@ interface UserRow {
 
 const USER_COLUMNS = "id, nickname, avatar, role, is_ai";
 
-const toUser = (r: UserRow): UserView => ({
-  id: r.id,
-  nickname: r.nickname,
-  avatarUrl: avatarUrl(r.avatar),
-  role: r.role,
-  isAi: r.is_ai,
-});
+const toUser = (r: UserRow): UserView => ({ ...authorView(r), id: r.id, role: r.role });
 
-interface CommentRow {
+interface CommentRow extends AuthorRow {
   id: string;
   text: string;
   created_at: Date;
-  nickname: string;
-  avatar: string | null;
-  is_ai: boolean;
 }
 
 const toComment = (r: CommentRow): CommentView => ({
   id: r.id,
   text: r.text,
   createdAt: r.created_at.toISOString(),
-  author: { nickname: r.nickname, avatarUrl: avatarUrl(r.avatar), isAi: r.is_ai },
+  author: authorView(r),
 });
 
 interface FeedRow extends VideoRow {
@@ -216,12 +232,13 @@ interface FeedRow extends VideoRow {
   author_nickname: string | null;
   author_avatar: string | null;
   author_is_ai: boolean | null;
+  author_role: string | null;
 }
 
 /** Vídeo com contagens, curtida de quem pede ($1) e autor. Quem usa completa com WHERE e ORDER BY. */
 const FEED_SELECT = `
   SELECT v.*, c.comment_count, l.like_count, l.liked,
-         u.nickname AS author_nickname, u.avatar AS author_avatar, u.is_ai AS author_is_ai
+         u.nickname AS author_nickname, u.avatar AS author_avatar, u.is_ai AS author_is_ai, u.role AS author_role
     FROM (${VIDEO_SELECT}) v
     LEFT JOIN users u ON u.id = v.submitted_by
     CROSS JOIN LATERAL (SELECT count(*)::int AS comment_count FROM comments c WHERE c.video_id = v.id) c
@@ -234,7 +251,7 @@ const toFeedVideo = (r: FeedRow): FeedVideo => ({
   likeCount: r.like_count,
   liked: r.liked,
   author: r.author_nickname
-    ? { nickname: r.author_nickname, avatarUrl: avatarUrl(r.author_avatar), isAi: Boolean(r.author_is_ai) }
+    ? authorView({ nickname: r.author_nickname, avatar: r.author_avatar, is_ai: Boolean(r.author_is_ai), role: r.author_role ?? "resident" })
     : null,
 });
 
@@ -406,6 +423,14 @@ export class PgStore implements Store {
     return res.rows[0] ? toUser(res.rows[0]) : null;
   }
 
+  async setAvatar(userId: string, avatar: string) {
+    const res = await this.pool.query<UserRow>(
+      `UPDATE users SET avatar = $2 WHERE id = $1 AND NOT is_ai RETURNING ${USER_COLUMNS}`,
+      [userId, avatar],
+    );
+    return res.rows[0] ? toUser(res.rows[0]) : null;
+  }
+
   async deleteSession(tokenHash: string) {
     await this.pool.query("DELETE FROM sessions WHERE token_hash = $1", [tokenHash]);
   }
@@ -503,7 +528,7 @@ export class PgStore implements Store {
          INSERT INTO comments (video_id, user_id, text)
          SELECT $1::uuid, $2::uuid, $3 WHERE EXISTS (SELECT 1 FROM videos WHERE id = $1 AND status = 'aprovado')
          RETURNING id, text, created_at, user_id)
-       SELECT ins.id, ins.text, ins.created_at, u.nickname, u.avatar, u.is_ai FROM ins JOIN users u ON u.id = ins.user_id`,
+       SELECT ins.id, ins.text, ins.created_at, u.nickname, u.avatar, u.is_ai, u.role FROM ins JOIN users u ON u.id = ins.user_id`,
       [videoId, userId, text],
     );
     const row = res.rows[0];
@@ -587,7 +612,7 @@ export class PgStore implements Store {
     const video = await this.pool.query("SELECT 1 FROM videos WHERE id = $1 AND status = 'aprovado'", [videoId]);
     if (!video.rowCount) return null;
     const res = await this.pool.query<CommentRow>(
-      `SELECT c.id, c.text, c.created_at, u.nickname, u.avatar, u.is_ai
+      `SELECT c.id, c.text, c.created_at, u.nickname, u.avatar, u.is_ai, u.role
          FROM comments c JOIN users u ON u.id = c.user_id
         WHERE c.video_id = $1 ORDER BY c.created_at`,
       [videoId],

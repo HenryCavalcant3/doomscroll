@@ -12,7 +12,7 @@ const msg = (nickname: string, text: string | null, video: MessageView["video"] 
   video,
   reactions: [],
   createdAt: "",
-  sender: { nickname, avatarUrl: null, isAi: nickname === "tio_valdir" },
+  sender: { nickname, avatarUrl: null, avatar: null, isAi: nickname === "tio_valdir", owner: false },
 });
 
 describe("chat com persona", () => {

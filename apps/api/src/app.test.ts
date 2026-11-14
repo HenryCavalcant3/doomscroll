@@ -27,6 +27,9 @@ import type { AuthorView, CommentView, ConfirmResult, FeedVideo, Store, Topic, U
 
 const config = { ...readConfig({}), ollamaUrl: "http://ollama:11434", llmModel: "modelo-teste" };
 
+/** Como o PgStore monta o autor a partir do usuário. */
+const authorOf = (u: UserView): AuthorView => ({ nickname: u.nickname, avatarUrl: u.avatarUrl, avatar: u.avatar, isAi: u.isAi, owner: u.owner });
+
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 }
@@ -128,7 +131,7 @@ class MemoryStore implements Store {
   }
   async createUser(nickname: string, pinHash: string) {
     if (this.users.has(nickname)) return null;
-    const user: UserView = { id: `u-${nickname}`, nickname, avatarUrl: null, role: "resident", isAi: false };
+    const user: UserView = { id: `u-${nickname}`, nickname, avatarUrl: null, avatar: "padrao", role: "resident", isAi: false, owner: false };
     this.users.set(nickname, { user, pinHash });
     return user;
   }
@@ -141,6 +144,12 @@ class MemoryStore implements Store {
   }
   async deleteSession(tokenHash: string) {
     this.sessions.delete(tokenHash);
+  }
+  async setAvatar(userId: string, avatar: string) {
+    const entry = [...this.users.values()].find((u) => u.user.id === userId && !u.user.isAi);
+    if (!entry) return null;
+    entry.user = { ...entry.user, avatar };
+    return entry.user;
   }
   async statusOf(ids: string[]) {
     return new Map(ids.filter((id) => this.videos.has(id)).map((id) => [id, this.videos.get(id)!.status as string]));
@@ -156,7 +165,7 @@ class MemoryStore implements Store {
       commentCount: this.comments.get(v.id)?.length ?? 0,
       likeCount: likes.size,
       liked: likes.has(userId),
-      author: author ? { nickname: author.nickname, avatarUrl: author.avatarUrl, isAi: author.isAi } : null,
+      author: author ? authorOf(author) : null,
     };
   }
   /** Mesma nota por vídeo do PgStore: visualizações, curtida, primeiro comentário e compartilhamento. */
@@ -205,7 +214,7 @@ class MemoryStore implements Store {
   async addComment(userId: string, videoId: string, text: string) {
     if (this.videos.get(videoId)?.status !== "aprovado") return null;
     const user = [...this.users.values()].find((u) => u.user.id === userId)!.user;
-    const comment = { id: `c${++this.seq}`, text, createdAt: new Date(0).toISOString(), author: { nickname: user.nickname, avatarUrl: null, isAi: false } };
+    const comment = { id: `c${++this.seq}`, text, createdAt: new Date(0).toISOString(), author: authorOf(user) };
     const list = [...(this.comments.get(videoId) ?? []), comment];
     this.comments.set(videoId, list);
     if (list.filter((c) => c.author.nickname === user.nickname).length === 1) this.bump(userId, videoId, COMMENT_DELTA);
@@ -279,7 +288,7 @@ class MemoryChatStore implements ChatStore {
   }
   private author(id: string): AuthorView {
     const u = this.user(id);
-    return { nickname: u.nickname, avatarUrl: u.avatarUrl, isAi: u.isAi };
+    return authorOf(u);
   }
   private member(userId: string, conversationId: string) {
     return this.members.find((m) => m.userId === userId && m.conversationId === conversationId);
@@ -432,11 +441,11 @@ beforeEach(async () => {
   chat = new MemoryChatStore(() => store.users, () => store.videos);
   hub = new Hub();
   store.users.set("dono", {
-    user: { id: "u-dono", nickname: "dono", avatarUrl: null, role: "owner", isAi: false },
+    user: { id: "u-dono", nickname: "dono", avatarUrl: null, avatar: "padrao", role: "owner", isAi: false, owner: true },
     pinHash: await hashPin("123412"),
   });
   store.users.set("tio_valdir", {
-    user: { id: "u-tio", nickname: "tio_valdir", avatarUrl: "/avatars/tio-valdir.svg", role: "resident", isAi: true },
+    user: { id: "u-tio", nickname: "tio_valdir", avatarUrl: "/avatars/tio-valdir.svg", avatar: null, role: "resident", isAi: true, owner: false },
     pinHash: null,
   });
   queue = { send: vi.fn(async () => "job-1") };
@@ -708,7 +717,7 @@ describe("feed", () => {
     const headers = await auth();
     const [id] = await approved(1);
     store.comments.set(id!, [
-      { id: "c1", text: "Bom dia, sobreviventes!", createdAt: new Date(0).toISOString(), author: { nickname: "tio_valdir", avatarUrl: "/avatars/tio-valdir.svg", isAi: true } },
+      { id: "c1", text: "Bom dia, sobreviventes!", createdAt: new Date(0).toISOString(), author: { nickname: "tio_valdir", avatarUrl: "/avatars/tio-valdir.svg", avatar: null, isAi: true, owner: false } },
     ]);
     const res = await app().inject({ method: "GET", url: `/videos/${id}/comments`, headers });
     expect(res.json()).toEqual([expect.objectContaining({ text: "Bom dia, sobreviventes!" })]);
@@ -894,6 +903,35 @@ describe("perfil", () => {
     const res = await app().inject({ method: "GET", url: "/users/Morador", headers });
     expect(res.json()).toMatchObject({ nickname: "morador", isAi: false, liked: [{ id, liked: true }] });
     expect((await app().inject({ method: "GET", url: "/users/ninguem", headers })).statusCode).toBe(404);
+  });
+
+  it("conta nova começa com a escotilha e troca a foto por um item da lista", async () => {
+    const first = await enter("morador", "111111");
+    expect(first.json().user).toMatchObject({ avatar: "padrao", avatarUrl: null, owner: false });
+    const headers = { authorization: `Bearer ${first.json().token}` };
+
+    const res = await app().inject({ method: "PUT", url: "/auth/eu/avatar", headers, payload: { avatar: "lanterna" } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ nickname: "morador", avatar: "lanterna" });
+    expect((await app().inject({ method: "GET", url: "/auth/eu", headers })).json().avatar).toBe("lanterna");
+  });
+
+  it("recusa item fora da lista, arquivo de persona e pedido sem sessão", async () => {
+    const headers = await auth("morador", "111111");
+    for (const avatar of ["tio-valdir.svg", "../dono", "Lanterna", ""]) {
+      const res = await app().inject({ method: "PUT", url: "/auth/eu/avatar", headers, payload: { avatar } });
+      expect(res.statusCode).toBe(400);
+    }
+    expect((await app().inject({ method: "PUT", url: "/auth/eu/avatar", payload: { avatar: "vela" } })).statusCode).toBe(401);
+    expect(store.users.get("morador")!.user.avatar).toBe("padrao");
+  });
+
+  it("marca o dono do bunker como autor", async () => {
+    const headers = await auth();
+    const id = await store.createVideo("https://youtu.be/a", "youtube", "u-dono");
+    Object.assign(store.videos.get(id)!, { status: "aprovado", videoUrl: "/media/a.mp4" });
+    const res = await app().inject({ method: "POST", url: `/videos/${id}/comments`, headers, payload: { text: "oi" } });
+    expect(res.json().author).toMatchObject({ nickname: "dono", owner: true, avatar: "padrao" });
   });
 });
 
@@ -1317,7 +1355,7 @@ describe("chat com personas", () => {
 describe("modo stalker", () => {
   it("mostra só as conversas diretas entre personas, e nunca as de gente de verdade", async () => {
     for (const [nickname, id] of [["rato", "u-rato"], ["kelly", "u-kelly"]] as const) {
-      store.users.set(nickname, { user: { id, nickname, avatarUrl: null, role: "resident", isAi: true }, pinHash: null });
+      store.users.set(nickname, { user: { id, nickname, avatarUrl: null, avatar: null, role: "resident", isAi: true, owner: false }, pinHash: null });
     }
     const headers = await auth("ana", "432143");
     const anaId = store.users.get("ana")!.user.id;
@@ -1385,7 +1423,7 @@ describe("personas entre si", () => {
     });
 
   beforeEach(async () => {
-    store.users.set("rato", { user: { id: "u-rato", nickname: "rato", avatarUrl: null, role: "resident", isAi: true }, pinHash: null });
+    store.users.set("rato", { user: { id: "u-rato", nickname: "rato", avatarUrl: null, avatar: null, role: "resident", isAi: true, owner: false }, pinHash: null });
     talk = new MemoryTalkStore();
     talk.personas.set("u-tio", persona("u-tio", "tio_valdir", 0.9, { rato: "o sobrinho rabugento que nunca ri das piadas" }));
     talk.personas.set("u-rato", persona("u-rato", "rato", 0.2));

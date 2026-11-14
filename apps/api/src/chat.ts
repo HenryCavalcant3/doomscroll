@@ -1,5 +1,5 @@
 import type { Pool, PoolClient } from "pg";
-import { avatarUrl, isUuid, type AuthorView } from "./store.js";
+import { authorView, isUuid, type AuthorRow, type AuthorView } from "./store.js";
 
 /** Chat entre usuários (SPEC 5.3 e passo 7). */
 
@@ -97,13 +97,9 @@ export interface ChatStore {
 /** Chave da conversa direta: os dois ids em ordem. */
 export const directKey = (a: string, b: string) => [a, b].sort().join(":");
 
-interface AuthorJson {
-  nickname: string;
-  avatar: string | null;
-  is_ai: boolean;
-}
+type AuthorJson = AuthorRow;
 
-const toAuthor = (a: AuthorJson): AuthorView => ({ nickname: a.nickname, avatarUrl: avatarUrl(a.avatar), isAi: a.is_ai });
+const toAuthor = (a: AuthorJson): AuthorView => authorView(a);
 
 interface MessageRow {
   id: string;
@@ -142,7 +138,7 @@ const REACTIONS_OF = (messageId: string) => `
 
 const MESSAGE_SELECT = `
   SELECT m.id, m.conversation_id, m.type, m.text, m.created_at,
-         json_build_object('nickname', u.nickname, 'avatar', u.avatar, 'is_ai', u.is_ai) AS sender,
+         json_build_object('nickname', u.nickname, 'avatar', u.avatar, 'is_ai', u.is_ai, 'role', u.role) AS sender,
          CASE WHEN v.id IS NULL THEN NULL
               ELSE json_build_object('id', v.id, 'title', v.title, 'description', v.description,
                                      'file_path', v.file_path, 'thumb_path', v.thumb_path) END AS video,
@@ -164,7 +160,7 @@ interface ConversationRow {
 /** Conversas de quem pede ($1), com os outros membros, a última mensagem e as não lidas. */
 const CONVERSATION_SELECT = `
   SELECT c.id, c.type, c.name, c.bunker,
-         COALESCE((SELECT json_agg(json_build_object('nickname', u.nickname, 'avatar', u.avatar, 'is_ai', u.is_ai)
+         COALESCE((SELECT json_agg(json_build_object('nickname', u.nickname, 'avatar', u.avatar, 'is_ai', u.is_ai, 'role', u.role)
                                    ORDER BY u.nickname)
                      FROM conversation_members om JOIN users u ON u.id = om.user_id
                     WHERE om.conversation_id = c.id AND om.user_id <> $1), '[]'::json) AS members,

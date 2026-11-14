@@ -8,6 +8,7 @@ import { parseVideoLink } from "./links.js";
 import type { PersonaChatStore, PersonaReplier } from "./personaChat.js";
 import { generate, OllamaError } from "./ollama.js";
 import { hashPin, verifyPin } from "./pin.js";
+import { isMoradorAvatar } from "./avatars.js";
 import { cleanQuery, rankSearch, SEARCH } from "./search.js";
 import { QUEUES } from "./queues.js";
 import { Hub, WS_CLOSE } from "./realtime.js";
@@ -255,6 +256,27 @@ export function buildApp({
     });
 
     priv.get("/auth/eu", async (req) => req.user);
+
+    // Foto de perfil do morador: só o nome do item (avatars.ts). Personas não entram (não têm sessão).
+    priv.put<{ Body: { avatar: string } }>(
+      "/auth/eu/avatar",
+      {
+        schema: {
+          body: {
+            type: "object",
+            required: ["avatar"],
+            additionalProperties: false,
+            properties: { avatar: { type: "string", maxLength: 40 } },
+          },
+        },
+      },
+      async (req, reply) => {
+        if (!isMoradorAvatar(req.body.avatar)) return reply.code(400).send({ error: "Escolha um dos itens da lista." });
+        const user = await store.setAvatar(req.user.id, req.body.avatar);
+        if (!user) return reply.code(404).send({ error: "Morador não encontrado." });
+        return user;
+      },
+    );
 
     priv.post("/auth/sair", async (req, reply) => {
       await store.deleteSession(hashToken(bearerToken(req.headers.authorization)!));

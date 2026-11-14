@@ -138,7 +138,7 @@ function message(from: string, isAi: boolean, turn: Turn): MessageView {
     video,
     reactions: [],
     createdAt: new Date().toISOString(),
-    sender: { nickname: from, avatarUrl: null, isAi },
+    sender: { nickname: from, avatarUrl: null, avatar: isAi ? null : "padrao", isAi, owner: false },
   };
 }
 
