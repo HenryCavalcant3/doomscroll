@@ -16,7 +16,7 @@ Um computador roda tudo (backend, frontend, banco e IA) e compartilha uma rede l
 
 É um projeto open source, meio meme, meio laboratório de rede social com IA local. A especificação completa está em [SPEC.md](SPEC.md).
 
-> **Estado atual:** passos 1 a 8 do SPEC prontos; o próximo é o passo 9 (polimento: HTTPS/PWA, tema apocalipse e a tela "você zerou a internet"). Cada pessoa entra com apelido e PIN, cadastra vídeos por link (o worker baixa, converte, transcreve e a IA sugere tópicos), o dono aprova no painel e todo mundo assiste no feed vertical, curte e comenta. As cinco personas (Tio Valdir, Capitão Enlatado, Dona Neide, Rato e Kelly) decidem, pelo gosto e pelo quanto são ativas, se ignoram, curtem ou comentam cada vídeo aprovado (comentários até o limite de `PERSONA_RATE` por hora), e o perfil mostra os vídeos curtidos. O feed aprende o gosto de cada pessoa pelos tópicos e pelo conteúdo dos vídeos. As pessoas conversam entre si em tempo real, em conversas diretas e grupos (todo mundo da rede já entra no Grupo do Bunker), mandam vídeos do feed e reagem às mensagens com emoji. Também dá para conversar com as personas por mensagem direta: a resposta chega aos poucos, como alguém digitando, cada persona guarda um resumo do que sabe de cada pessoa, às vezes reage à mensagem e manda um vídeo do acervo quando pedem (ou de vez em quando, se o assunto combinar). As personas também conversam entre si: de tempos em tempos uma manda um vídeo para outra e as duas trocam de 3 a 6 mensagens, e no Grupo do Bunker elas respondem quando alguém escreve (quem é chamado pelo nome responde), às vezes uma responde à outra, e cada uma tem seu ritmo ao longo do dia. O modo stalker, no perfil de cada persona, mostra essas conversas entre personas só para ler. No painel do dono, a aba Personas mostra quanto cada uma agiu na última hora e as últimas decisões com o motivo de cada uma.
+> **Estado atual:** passos 1 a 9 do SPEC prontos (falta conferir a instalação do app num celular de verdade). Cada pessoa entra com apelido e PIN, cadastra vídeos por link (o worker baixa, converte, transcreve e a IA sugere tópicos), o dono aprova no painel e todo mundo assiste no feed vertical, curte e comenta. As cinco personas (Tio Valdir, Capitão Enlatado, Dona Neide, Rato e Kelly) decidem, pelo gosto e pelo quanto são ativas, se ignoram, curtem ou comentam cada vídeo aprovado (comentários até o limite de `PERSONA_RATE` por hora), e o perfil mostra os vídeos curtidos. O feed aprende o gosto de cada pessoa pelos tópicos e pelo conteúdo dos vídeos. As pessoas conversam entre si em tempo real, em conversas diretas e grupos (todo mundo da rede já entra no Grupo do Bunker), mandam vídeos do feed e reagem às mensagens com emoji. Também dá para conversar com as personas por mensagem direta: a resposta chega aos poucos, como alguém digitando, cada persona guarda um resumo do que sabe de cada pessoa, às vezes reage à mensagem e manda um vídeo do acervo quando pedem (ou de vez em quando, se o assunto combinar). As personas também conversam entre si: de tempos em tempos uma manda um vídeo para outra e as duas trocam de 3 a 6 mensagens, e no Grupo do Bunker elas respondem quando alguém escreve (quem é chamado pelo nome responde), às vezes uma responde à outra, e cada uma tem seu ritmo ao longo do dia. O modo stalker, no perfil de cada persona, mostra essas conversas entre personas só para ler. No painel do dono, a aba Personas mostra quanto cada uma agiu na última hora e as últimas decisões com o motivo de cada uma. Quando o acervo acaba, o feed mostra "Você zerou a internet" e os vídeos voltam a circular. Com o certificado do bunker instalado, o app abre em HTTPS e pode ir para a tela inicial do celular; sem servidor, o app instalado mostra "Sem sinal do bunker".
 
 ## Como rodar
 
@@ -34,7 +34,7 @@ docker compose logs -f ollama
 
 Quando o `ollama` aparecer como `healthy` em `docker compose ps`:
 
-- Frontend: <http://localhost:8080>
+- Frontend: <http://localhost:8080> (ou <https://localhost:8443>, veja [HTTPS e instalar como app](#https-e-instalar-como-app))
 - API: <http://localhost:3000/health>
 - Teste da IA:
 
@@ -81,6 +81,9 @@ Tudo funciona sem `.env`. Para mudar os padrões, copie [.env.example](.env.exam
 | `PERSONA_RATE` | `30` | Limite de ações de persona por hora: no limite param os comentários, as conversas entre personas e as respostas no Grupo do Bunker (respostas a quem manda mensagem direta contam, mas nunca são barradas; `0` desliga tudo isso) |
 | `PERSONA_TICK` | `*/15 * * * *` | De quanto em quanto tempo (cron) uma persona pode puxar conversa com outra; `off` desliga. Cada conversa usa a IA, então no notebook vale espaçar |
 | `PERSONA_TALK_DELAY` | `40` | Base, em segundos, da pausa entre falas de personas: quase sempre de 1/4 dela até ela, às vezes uns minutos, nunca mais que 7,5× (5 min com 40). Um valor baixo, como `5`, acelera tudo para demonstrar |
+| `WEB_PORT` | `8080` | Porta do app em HTTP |
+| `HTTPS_PORT` | `8443` | Porta do app em HTTPS (certificado local do bunker) |
+| `SITE_HOST` | `192.168.137.1` | IP do computador na rede do bunker; o certificado HTTPS vale para ele e para `localhost` |
 | `TZ` | `America/Sao_Paulo` | Fuso do ritmo das personas e da hora que elas veem (para não dar bom dia de madrugada) |
 
 ### GPU (NVIDIA)
@@ -99,15 +102,25 @@ Funciona no hotspot do computador ou numa rede Wi-Fi de casa, desde que o celula
 
 1. Descubra o IP do computador na rede (`ipconfig`, adaptador do hotspot, Wi-Fi ou Ethernet; algo como `192.168.x.x`).
 2. Deixe a rede como **privada** (Configurações > Rede e Internet > propriedades da conexão > Perfil de rede). Numa rede pública o Windows bloqueia quem chega de fora.
-3. Libere a porta do app no firewall com um PowerShell de administrador. Só a 8080 precisa ficar aberta, porque o app fala com a api pelo próprio servidor web:
+3. Libere as portas do app no firewall com um PowerShell de administrador. Só a 8080 (HTTP) e a 8443 (HTTPS) precisam ficar abertas, porque o app fala com a api pelo próprio servidor web:
 
 ```powershell
-New-NetFirewallRule -DisplayName "Doomscroll" -Direction Inbound -Protocol TCP -LocalPort 8080 -Profile Private -Action Allow
+New-NetFirewallRule -DisplayName "Doomscroll" -Direction Inbound -Protocol TCP -LocalPort 8080,8443 -Profile Private -Action Allow
 ```
 
 4. No celular, acesse `http://<ip-do-computador>:8080`.
 
 Se não abrir, confira se o celular não está nos dados móveis e se o roteador não isola os aparelhos (opção "isolamento de cliente" ou "rede de convidados").
+
+### HTTPS e instalar como app
+
+Pelo HTTP o app funciona normalmente no navegador. Para instalar na tela inicial do celular (PWA) e ter a tela "Sem sinal do bunker" com o servidor desligado, o navegador exige HTTPS. Como o bunker é offline, o Caddy (serviço `caddy`) cria uma autoridade de certificação local, e cada aparelho instala o certificado dela uma vez.
+
+1. No `.env`, ponha em `SITE_HOST` o IP do computador na rede do bunker (o padrão `192.168.137.1` é o do hotspot do Windows) e suba de novo (`docker compose up -d`). O certificado HTTPS só vale para esse IP e para `localhost`.
+2. No celular, abra `http://<ip-do-computador>:8080/#/certificado`. A página tem o botão **Baixar certificado** e o passo a passo para Android e iPhone. No iPhone, use o Safari e não esqueça de ativar o certificado em Ajustes > Geral > Sobre > Ajustes de Confiança de Certificados.
+3. Abra `https://<ip-do-computador>:8443` (botão **Abrir o bunker em HTTPS** da mesma página) e adicione o app à tela inicial pelo menu do navegador.
+
+O HTTPS é outro endereço para o navegador, então é preciso entrar de novo com apelido e PIN. A autoridade de certificação fica no volume `caddy-data`: enquanto ele existir, o certificado instalado continua valendo. Apagar o volume cria uma autoridade nova, e aí cada aparelho precisa instalar o certificado de novo. Os nomes dos menus de certificado mudam conforme a marca e a versão do sistema.
 
 ## Desenvolvimento
 
@@ -127,7 +140,7 @@ Estrutura:
 apps/api      Fastify (HTTP + WebSocket)
 apps/worker   fila pg-boss, com yt-dlp, ffmpeg, whisper.cpp e IA
 apps/web      React + Vite
-docker/       scripts de inicialização do banco e do Ollama
+docker/       scripts de inicialização do banco e do Ollama, e o Caddyfile (HTTPS)
 personas/     JSON e avatar SVG de cada persona
 ```
 
