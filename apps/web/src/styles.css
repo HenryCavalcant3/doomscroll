@@ -323,6 +323,19 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
   transform-origin: left;
   transition: transform 0.25s linear;
 }
+/* Miniatura por cima do vídeo até ele mostrar imagem (o toque passa para o vídeo) */
+.feed-cover { pointer-events: none; }
+/* Vídeo da vez carregando: um trecho da barra vai e volta no lugar do progresso */
+.feed-progress.carregando div {
+  width: 30%;
+  transform: none !important;
+  transition: none;
+  animation: carrega 0.9s ease-in-out infinite alternate;
+}
+@keyframes carrega { from { margin-left: 0; } to { margin-left: 70%; } }
+@media (prefers-reduced-motion: reduce) {
+  .feed-progress.carregando div { animation: none; }
+}
 
 /* Gaveta de comentários */
 .drawer-backdrop {

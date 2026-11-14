@@ -21,7 +21,7 @@ interface Props {
 export function LikedViewer({ videos, start, title, onPatch, onClose }: Props) {
   const [active, setActive] = useState(start);
   // Tocar na miniatura conta como toque na tela: dá para começar com som (se o navegador recusar,
-  // o FeedItem volta ao modo mudo).
+  // aquele vídeo toca mudo, com o aviso "toque para ouvir").
   const [muted, setMuted] = useState(false);
   const [nextReady, onStarted] = usePrefetchNext(active);
   const [commentsFor, setCommentsFor] = useState<FeedVideo | null>(null);
@@ -34,7 +34,6 @@ export function LikedViewer({ videos, start, title, onPatch, onClose }: Props) {
   }, [commentsFor, shareFor]);
   const closeComments = useCallback(() => setCommentsFor(null), []);
   const closeShare = useCallback(() => setShareFor(null), []);
-  const soundBlocked = useCallback(() => setMuted(true), []);
   const onCommented = useCallback((id: string, count: number) => onPatch(id, { commentCount: count }), [onPatch]);
 
   // Abre já no vídeo tocado, sem animação de rolagem.
@@ -84,7 +83,6 @@ export function LikedViewer({ videos, start, title, onPatch, onClose }: Props) {
             mounted={i === active || (i === active + 1 && nextReady)}
             muted={muted}
             onUnmute={() => setMuted(false)}
-            onSoundBlocked={soundBlocked}
             onStarted={onStarted}
             onComments={() => setCommentsFor(video)}
             onShare={() => setShareFor(video)}

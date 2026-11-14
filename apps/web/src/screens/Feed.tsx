@@ -20,8 +20,6 @@ export function Feed() {
   const scroller = useRef<HTMLDivElement>(null);
   const closeComments = useCallback(() => setCommentsFor(null), []);
   const closeShare = useCallback(() => setShareFor(null), []);
-  // Estável: entra nas dependências do efeito que toca o vídeo.
-  const soundBlocked = useCallback(() => setMuted(true), []);
   const onCommented = useCallback((id: string, count: number) => setFeed((f) => patchVideo(f, id, { commentCount: count })), []);
 
   const [nextReady, onStarted] = usePrefetchNext(active);
@@ -93,7 +91,6 @@ export function Feed() {
               mounted={i === active || (i === active + 1 && nextReady)}
               muted={muted}
               onUnmute={() => setMuted(false)}
-              onSoundBlocked={soundBlocked}
               onStarted={onStarted}
               onComments={() => setCommentsFor(entry.video)}
               onShare={() => setShareFor(entry.video)}
@@ -162,8 +159,6 @@ interface ItemProps {
   mounted: boolean;
   muted: boolean;
   onUnmute(): void;
-  /** O navegador recusou tocar com som (sem toque recente na tela): volta ao modo mudo. */
-  onSoundBlocked(): void;
   /** O vídeo ativo começou a tocar: libera o próximo para carregar. */
   onStarted(): void;
   onComments(): void;
@@ -171,10 +166,22 @@ interface ItemProps {
   onLike(): void;
 }
 
-export function FeedItem({ index, video, active, mounted, muted, onUnmute, onSoundBlocked, onStarted, onComments, onShare, onLike }: ItemProps) {
+export function FeedItem({ index, video, active, mounted, muted, onUnmute, onStarted, onComments, onShare, onLike }: ItemProps) {
   const ref = useRef<HTMLVideoElement>(null);
   const [paused, setPaused] = useState(false);
   const [progress, setProgress] = useState(0);
+  // O vídeo já mostrou imagem nesta vez como ativo. Até lá a miniatura fica por cima: o iPhone tira
+  // o poster assim que o vídeo é mandado tocar e mostra preto enquanto ele carrega.
+  const [shown, setShown] = useState(false);
+  // O navegador recusou som só para este vídeo (sem toque recente na tela): ele toca mudo, com o
+  // aviso "toque para ouvir", e o próximo tenta com som de novo.
+  const [soundBlocked, setSoundBlocked] = useState(false);
+  const [wasActive, setWasActive] = useState(active);
+  if (active !== wasActive) {
+    setWasActive(active);
+    setShown(false);
+    setSoundBlocked(false);
+  }
   const [tracker] = useState(() => new ViewTracker());
   // Atualizado antes da limpeza do efeito abaixo: false lá quer dizer que a pessoa rolou para outro
   // vídeo; true, que a tela do feed fechou com este vídeo ativo.
@@ -196,12 +203,35 @@ export function FeedItem({ index, video, active, mounted, muted, onUnmute, onSou
         if (!activeNow.current || userPaused.current || !el.paused) return;
         if (err instanceof DOMException && err.name === "NotAllowedError") {
           // Com som o navegador exige um toque recente; sem som deve tocar. Se nem assim, mostra o play.
-          if (!el.muted) onSoundBlocked();
-          else setPaused(true);
+          if (el.muted) {
+            setPaused(true);
+            return;
+          }
+          el.muted = true;
+          setSoundBlocked(true);
+          el.play().then(
+            () => setPaused(false),
+            () => setPaused(true),
+          );
         }
       },
     );
-  }, [onSoundBlocked]);
+  }, []);
+
+  // O arquivo entra e sai por aqui, não pelo JSX. Ao desmontar ele é solto: só tirar o <video> da
+  // página não para o download no iPhone, e rolando rápido os downloads abandonados tiravam a rede
+  // do vídeo da vez.
+  const src = video.videoUrl ? apiUrl(video.videoUrl) : null;
+  useEffect(() => {
+    const el = ref.current;
+    if (!mounted || !el || !src) return;
+    if (el.getAttribute("src") !== src) el.src = src;
+    return () => {
+      el.pause();
+      el.removeAttribute("src");
+      el.load();
+    };
+  }, [mounted, src]);
 
   // Sinais para a recomendação: uma medição por vez que o vídeo fica ativo, mandada quando ele
   // deixa de ser o ativo, quando a tela do feed fecha ou quando a aba é escondida.
@@ -225,7 +255,7 @@ export function FeedItem({ index, video, active, mounted, muted, onUnmute, onSou
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    el.muted = muted;
+    el.muted = muted || soundBlocked;
     if (active) {
       tryPlay();
     } else {
@@ -233,15 +263,17 @@ export function FeedItem({ index, video, active, mounted, muted, onUnmute, onSou
       el.pause();
       el.currentTime = 0;
     }
-  }, [active, muted, mounted, tryPlay]);
+  }, [active, muted, soundBlocked, mounted, tryPlay]);
 
+  const silent = muted || soundBlocked;
   const onTap = () => {
     const el = ref.current;
     if (!el) return;
-    if (muted) {
+    if (silent) {
       // Liga o som e toca ainda dentro do toque: alguns navegadores (iPhone) só aceitam assim.
       userPaused.current = false;
       el.muted = false;
+      setSoundBlocked(false);
       onUnmute();
       if (el.paused) tryPlay();
       return;
@@ -258,10 +290,9 @@ export function FeedItem({ index, video, active, mounted, muted, onUnmute, onSou
 
   return (
     <section className="feed-item" data-index={index} aria-label={video.description ?? video.title ?? "Vídeo"}>
-      {mounted && video.videoUrl ? (
+      {mounted && src ? (
         <video
           ref={ref}
-          src={apiUrl(video.videoUrl)}
           poster={video.thumbUrl ? apiUrl(video.thumbUrl) : undefined}
           preload="auto"
           muted
@@ -272,7 +303,10 @@ export function FeedItem({ index, video, active, mounted, muted, onUnmute, onSou
           onCanPlay={() => ref.current?.paused && tryPlay()}
           onPlaying={() => {
             setPaused(false);
-            if (active) onStarted();
+            if (active) {
+              setShown(true);
+              onStarted();
+            }
             if (active && !document.hidden) tracker.play();
           }}
           onPause={() => tracker.pause()}
@@ -282,14 +316,15 @@ export function FeedItem({ index, video, active, mounted, muted, onUnmute, onSou
             if (active && !document.hidden) tracker.time(el.currentTime, el.duration);
           }}
         />
-      ) : (
-        video.thumbUrl && <img className="feed-poster" src={apiUrl(video.thumbUrl)} alt="" />
+      ) : null}
+      {video.thumbUrl && !(mounted && active && shown) && (
+        <img className="feed-poster feed-cover" src={apiUrl(video.thumbUrl)} alt="" />
       )}
 
-      {active && (muted || paused) && (
-        <button className="feed-center" onClick={onTap} aria-label={muted ? "Ligar o som" : "Continuar o vídeo"}>
-          {muted ? <SoundOffIcon /> : <PlayIcon />}
-          <span>{muted ? "toque para ouvir" : "pausado"}</span>
+      {active && (silent || paused) && (
+        <button className="feed-center" onClick={onTap} aria-label={silent ? "Ligar o som" : "Continuar o vídeo"}>
+          {silent ? <SoundOffIcon /> : <PlayIcon />}
+          <span>{silent ? "toque para ouvir" : "pausado"}</span>
         </button>
       )}
 
@@ -338,7 +373,7 @@ export function FeedItem({ index, video, active, mounted, muted, onUnmute, onSou
         )}
       </div>
 
-      <div className="feed-progress" aria-hidden="true">
+      <div className={active && mounted && !shown ? "feed-progress carregando" : "feed-progress"} aria-hidden="true">
         <div style={{ transform: `scaleX(${active ? progress : 0})` }} />
       </div>
     </section>
