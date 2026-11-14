@@ -8,7 +8,8 @@
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "avaliar": "tsx src/avaliar-personas.ts"
+    "avaliar": "tsx src/avaliar-personas.ts",
+    "avaliar:jev": "tsx src/avaliar-jev.ts"
   },
   "dependencies": {
     "pg": "^8.23.1",

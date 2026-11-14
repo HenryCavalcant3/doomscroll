@@ -14,12 +14,21 @@ const VALDIR = {
   bio: "Tio do bunker.",
   tone: "Animado.",
   examples: ["Bom dia!"],
+  // Gosto alto: o JEV manda comentar (com o acaso no meio, random 0.5).
+  activity: 1,
+  affinity: { humor: 1 },
+  commented: false,
+  recentWithAuthor: 0,
 };
+const RATO = { ...VALDIR, userId: "33333333-3333-4333-8333-333333333333", nickname: "rato", name: "Rato" };
 
 function fakeDb(): VideoDb & {
   video: VideoRecord & { stage: string; error?: string; embedding?: number[] };
   topics: string[];
   comments: { userId: string; text: string }[];
+  likes: string[];
+  decisions: { userId: string; action: string; reasons: Record<string, unknown> }[];
+  personas: (typeof VALDIR)[];
   actionsLastHour: number;
 } {
   const video = {
@@ -43,9 +52,17 @@ function fakeDb(): VideoDb & {
     fail: async (_: string, error: string, keep: boolean) => Object.assign(db.video, { error, status: keep ? video.status : "falhou" }),
     listTopics: async () => [{ slug: "humor", name: "Humor" }],
     comments: [] as { userId: string; text: string }[],
-    videoForComment: async () => ({ status: video.status, title: video.title, description: video.description, topics: ["Humor"] }),
-    personasWithoutComment: async () =>
-      [VALDIR].filter((p) => !db.comments.some((c) => c.userId === p.userId)),
+    likes: [] as string[],
+    decisions: [] as { userId: string; action: string; reasons: Record<string, unknown> }[],
+    personas: [VALDIR],
+    videoForComment: async () => ({ status: video.status, title: video.title, description: video.description, topics: ["Humor"], topicSlugs: ["humor"] }),
+    personasToDecide: async () => db.personas.filter((p) => !db.decisions.some((d) => d.userId === p.userId)),
+    addPersonaLike: async (_: string, userId: string) => {
+      if (!db.likes.includes(userId)) db.likes.push(userId);
+    },
+    saveDecision: async (userId: string, _: string, d: { action: string; reasons: Record<string, unknown> }) => {
+      db.decisions.push({ userId, action: d.action, reasons: d.reasons });
+    },
     addPersonaComment: async (_: string, userId: string, text: string) => {
       if (db.comments.some((c) => c.userId === userId)) return false;
       db.comments.push({ userId, text });
@@ -161,8 +178,8 @@ describe("pipeline de ingestão", () => {
   });
 });
 
-describe("comentário da persona", () => {
-  it("só comenta vídeo aprovado, uma vez por persona", async () => {
+describe("JEV no vídeo aprovado", () => {
+  it("só decide sobre vídeo aprovado, uma vez por persona; comentar também curte", async () => {
     await runStep(QUEUES.personaComment, deps, job);
     expect(deps.comment).not.toHaveBeenCalled();
 
@@ -172,6 +189,35 @@ describe("comentário da persona", () => {
     expect(deps.comment).toHaveBeenCalledTimes(1);
     expect(deps.comment).toHaveBeenCalledWith(VALDIR, expect.objectContaining({ topics: ["Humor"] }), false);
     expect(db.comments).toEqual([{ userId: VALDIR.userId, text: "Bom dia, sobreviventes!" }]);
+    expect(db.likes).toEqual([VALDIR.userId]);
+    expect(db.decisions).toEqual([{ userId: VALDIR.userId, action: "comentar", reasons: expect.objectContaining({ afinidade: 1, atividade: 1 }) }]);
+  });
+
+  it("persona sem afinidade com o vídeo ignora: nem curte nem comenta", async () => {
+    db.video.status = "aprovado";
+    db.personas = [{ ...RATO, activity: 0.1, affinity: { humor: 0 } }];
+    await runStep(QUEUES.personaComment, deps, job);
+    expect(deps.comment).not.toHaveBeenCalled();
+    expect(db.likes).toEqual([]);
+    expect(db.decisions.map((d) => d.action)).toEqual(["ignorar"]);
+  });
+
+  it("no acervo antigo e para quem já comentou, no máximo curte", async () => {
+    db.video.status = "aprovado";
+    db.personas = [VALDIR, { ...RATO, commented: true }];
+    await runStep(QUEUES.personaComment, deps, { ...job, data: { videoId: ID, likesOnly: true } });
+    expect(deps.comment).not.toHaveBeenCalled();
+    expect(db.likes).toEqual([VALDIR.userId, RATO.userId]);
+    expect(db.decisions.map((d) => [d.action, d.reasons.so_curtida])).toEqual([
+      ["curtir", "acervo"],
+      ["curtir", "acervo"],
+    ]);
+
+    db.decisions = [];
+    db.likes = [];
+    db.personas = [{ ...RATO, commented: true }];
+    await runStep(QUEUES.personaComment, deps, job);
+    expect(db.decisions.map((d) => [d.action, d.reasons.so_curtida])).toEqual([["curtir", "ja_comentou"]]);
   });
 
   it("às vezes pede a brincadeira com o fim do mundo", async () => {
@@ -198,8 +244,7 @@ describe("comentário da persona", () => {
 
   it("uma persona que falha não impede as outras, e o job volta para a fila", async () => {
     db.video.status = "aprovado";
-    const RATO = { ...VALDIR, userId: "33333333-3333-4333-8333-333333333333", nickname: "rato", name: "Rato" };
-    db.personasWithoutComment = async () => [RATO, VALDIR].filter((p) => !db.comments.some((c) => c.userId === p.userId));
+    db.personas = [RATO, VALDIR];
     let ratoFails = true;
     deps.comment = async (p) => {
       if (p.nickname === "rato" && ratoFails) throw new Error("copiou o exemplo");
@@ -213,12 +258,14 @@ describe("comentário da persona", () => {
     expect(db.comments.map((c) => c.text)).toEqual(["oi do tio_valdir", "oi do rato"]);
   });
 
-  it("PERSONA_RATE=0 desliga os comentários sem reagendar", async () => {
+  it("PERSONA_RATE=0 desliga os comentários sem reagendar, mas a curtida continua", async () => {
     db.video.status = "aprovado";
     deps.personaRate = 0;
     await runStep(QUEUES.personaComment, deps, job);
     expect(deps.comment).not.toHaveBeenCalled();
     expect(sent).toEqual([]);
+    expect(db.likes).toEqual([VALDIR.userId]);
+    expect(db.decisions[0]!.reasons.so_curtida).toBe("persona_rate_0");
   });
 
   it("falha no comentário não tira o vídeo do feed nem apaga arquivos", async () => {

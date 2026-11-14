@@ -6,7 +6,7 @@ import { readConfig } from "./config.js";
 import { LlmGate, PRIORITY } from "./gate.js";
 import { PgMemoryDb, PgVideoDb } from "./db.js";
 import * as ffmpeg from "./ffmpeg.js";
-import { runStep, type PipelineDeps } from "./pipeline.js";
+import { runStep, type JobData, type PipelineDeps } from "./pipeline.js";
 import { updateMemory } from "./memory.js";
 import { ensureQueues, QUEUES, VIDEO_QUEUES } from "./queues.js";
 import { run, toolVersion } from "./tools.js";
@@ -59,7 +59,7 @@ const deps: PipelineDeps = {
 
 // Um job por vez em cada fila: ffmpeg e Whisper já usam vários núcleos.
 for (const queue of VIDEO_QUEUES) {
-  await boss.work<{ videoId: string }>(queue, { batchSize: 1, pollingIntervalSeconds: 2 }, async ([job]) => {
+  await boss.work<JobData>(queue, { batchSize: 1, pollingIntervalSeconds: 2 }, async ([job]) => {
     if (job) await runStep(queue, deps, job);
   });
 }

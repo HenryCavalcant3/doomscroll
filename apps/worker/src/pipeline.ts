@@ -6,12 +6,13 @@ import type { VideoDb } from "./db.js";
 import type { Probe } from "./ffmpeg.js";
 import { cleanTranscript } from "./text.js";
 import type { DownloadResult } from "./ytdlp.js";
+import { decideVideo, type Decision, type VideoAction } from "./jev.js";
 import { QUEUE_OPTIONS, QUEUES, type VideoQueue } from "./queues.js";
 
 export interface PipelineDeps {
   db: VideoDb;
   mediaDir: string;
-  send(queue: VideoQueue, data: { videoId: string }, options?: { startAfter: number }): Promise<unknown>;
+  send(queue: VideoQueue, data: JobData, options?: { startAfter: number }): Promise<unknown>;
   download(url: string, dir: string): Promise<DownloadResult>;
   convert(input: string, output: string): Promise<void>;
   probe(file: string): Promise<Probe>;
@@ -37,12 +38,18 @@ export const RATE_RETRY_SECONDS = 600;
 /** Filas que rodam depois da aprovação: uma falha nelas não tira o vídeo do feed. */
 const AFTER_APPROVAL: ReadonlySet<VideoQueue> = new Set([QUEUES.embed, QUEUES.personaComment]);
 
+export interface JobData {
+  videoId: string;
+  /** Só curtidas, sem comentário: vídeos do acervo de antes do JEV (a api manda na subida). */
+  likesOnly?: boolean;
+}
+
 export interface JobInfo {
-  data: { videoId: string };
+  data: JobData;
   retryCount: number;
 }
 
-type Step = (deps: PipelineDeps, videoId: string) => Promise<void>;
+type Step = (deps: PipelineDeps, videoId: string, data: JobData) => Promise<void>;
 
 async function requireVideo(deps: PipelineDeps, id: string) {
   const video = await deps.db.get(id);
@@ -106,34 +113,40 @@ const steps: Record<VideoQueue, Step> = {
     await deps.db.saveEmbedding(id, await deps.embed(embeddingText(video)));
   },
 
-  async [QUEUES.personaComment](deps, id) {
+  // Vídeo aprovado: cada persona passa pelo JEV e ignora, curte ou comenta (SPEC 7.4).
+  async [QUEUES.personaComment](deps, id, data) {
     const video = await deps.db.videoForComment(id);
     if (video?.status !== "aprovado") return;
     const random = deps.random ?? Math.random;
-    // Só personas que ainda não comentaram: nova tentativa ou job repetido não duplica comentário.
+    const limit = deps.personaRate ?? Infinity;
+    // Só personas sem decisão sobre o vídeo: nova tentativa ou job repetido não decide de novo.
     const failed: string[] = [];
-    for (const persona of await deps.db.personasWithoutComment(id)) {
-      const limit = deps.personaRate ?? Infinity;
-      if (limit <= 0) {
-        deps.log?.(`[worker] PERSONA_RATE=0: personas não comentam (${id})`);
-        return;
+    for (const persona of await deps.db.personasToDecide(id)) {
+      let decision: Decision<VideoAction> = decideVideo(persona, { topics: video.topicSlugs, recentWithAuthor: persona.recentWithAuthor }, random);
+      // Acervo antigo, persona que já comentou ou comentários desligados: no máximo curte.
+      const onlyLike = data.likesOnly ? "acervo" : persona.commented ? "ja_comentou" : limit <= 0 ? "persona_rate_0" : null;
+      if (decision.action === "comentar" && onlyLike) decision = { ...decision, action: "curtir", reasons: { ...decision.reasons, so_curtida: onlyLike } };
+      if (decision.action === "comentar") {
+        // Sem lançar erro: falha gastaria as tentativas e o comentário só voltaria na próxima subida.
+        if ((await deps.db.personaActionsLastHour()) >= limit) {
+          await deps.send(QUEUES.personaComment, data, { startAfter: RATE_RETRY_SECONDS });
+          deps.log?.(`[worker] limite de ${limit} ações de persona por hora: comentário adiado (${id})`);
+          return;
+        }
+        try {
+          const text = await deps.comment(persona, video, random() < APOCALYPSE_CHANCE);
+          await deps.db.addPersonaComment(id, persona.userId, text);
+          deps.log?.(`[worker] ${persona.nickname} comentou (${id}): ${text}`);
+        } catch (err) {
+          // Uma persona que falha não impede as outras; sem decisão gravada, ela decide de novo na nova tentativa.
+          failed.push(`${persona.nickname}: ${err instanceof Error ? err.message : String(err)}`);
+          continue;
+        }
       }
-      // Sem lançar erro: falha gastaria as tentativas e o comentário só voltaria na próxima subida.
-      if ((await deps.db.personaActionsLastHour()) >= limit) {
-        await deps.send(QUEUES.personaComment, { videoId: id }, { startAfter: RATE_RETRY_SECONDS });
-        deps.log?.(`[worker] limite de ${limit} ações de persona por hora: comentário adiado (${id})`);
-        return;
-      }
-      try {
-        const text = await deps.comment(persona, video, random() < APOCALYPSE_CHANCE);
-        await deps.db.addPersonaComment(id, persona.userId, text);
-        deps.log?.(`[worker] ${persona.nickname} comentou (${id}): ${text}`);
-      } catch (err) {
-        // Uma persona que falha não impede as outras de comentar.
-        failed.push(`${persona.nickname}: ${err instanceof Error ? err.message : String(err)}`);
-      }
+      if (decision.action !== "ignorar") await deps.db.addPersonaLike(id, persona.userId);
+      await deps.db.saveDecision(persona.userId, id, decision);
     }
-    // Com erro, o job falha e volta; quem já comentou fica de fora da nova tentativa.
+    // Com erro, o job falha e volta; quem já decidiu fica de fora da nova tentativa.
     if (failed.length) throw new Error(failed.join("; "));
   },
 };
@@ -146,14 +159,14 @@ const steps: Record<VideoQueue, Step> = {
 export async function runStep(queue: VideoQueue, deps: PipelineDeps, job: JobInfo): Promise<void> {
   const id = job.data.videoId;
   try {
-    await steps[queue](deps, id);
+    await steps[queue](deps, id, job.data);
     deps.log?.(`[worker] ${queue} ok (${id})`);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     deps.log?.(`[worker] ${queue} falhou (${id}, tentativa ${job.retryCount + 1}): ${message}`);
     if (job.retryCount >= QUEUE_OPTIONS.retryLimit) {
       if (queue === QUEUES.personaComment) {
-        // Sem comentário o vídeo continua no feed; a api tenta de novo na próxima subida.
+        // Sem as decisões das personas o vídeo continua no feed; a api tenta de novo na próxima subida.
       } else if (AFTER_APPROVAL.has(queue)) {
         await deps.db.fail(id, message, true);
       } else {

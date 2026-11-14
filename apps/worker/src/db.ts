@@ -1,5 +1,6 @@
 import type { Pool } from "pg";
 import type { MemoryLine, PersonaProfile, TopicOption, VideoForComment } from "./ai.js";
+import type { Decision, PersonaTaste } from "./jev.js";
 
 export interface VideoRecord {
   id: string;
@@ -13,6 +14,20 @@ export interface VideoRecord {
   filePath: string | null;
 }
 
+/** Persona diante de um vídeo: perfil para o comentário, gosto para o JEV e o que ela já fez. */
+export interface PersonaForVideo extends PersonaProfile, PersonaTaste {
+  /** Já comentou este vídeo (acervo de antes do JEV): no máximo curte. */
+  commented: boolean;
+  /** Comentários dela nas últimas 6 horas em vídeos de quem cadastrou este. */
+  recentWithAuthor: number;
+}
+
+/** Vídeo para o JEV e o comentário: os nomes dos tópicos vão para o prompt, os slugs para a afinidade. */
+export interface VideoForPersonas extends VideoForComment {
+  status: string;
+  topicSlugs: string[];
+}
+
 /** Operações do pipeline no banco. Os handlers dependem desta interface (facilita os testes). */
 export interface VideoDb {
   get(id: string): Promise<VideoRecord | null>;
@@ -24,10 +39,14 @@ export interface VideoDb {
   saveEmbedding(id: string, embedding: number[]): Promise<void>;
   fail(id: string, error: string, keepStatus: boolean): Promise<void>;
   listTopics(): Promise<TopicOption[]>;
-  /** Status, título, descrição e nomes dos tópicos do vídeo, para o comentário da persona. */
-  videoForComment(id: string): Promise<(VideoForComment & { status: string }) | null>;
-  /** Personas que ainda não comentaram o vídeo. */
-  personasWithoutComment(videoId: string): Promise<PersonaProfile[]>;
+  /** Status, título, descrição e tópicos do vídeo, para o JEV e o comentário da persona. */
+  videoForComment(id: string): Promise<VideoForPersonas | null>;
+  /** Personas que ainda não decidiram sobre o vídeo (seguro para novas tentativas). */
+  personasToDecide(videoId: string): Promise<PersonaForVideo[]>;
+  /** Curtida da persona (repetida não faz nada). */
+  addPersonaLike(videoId: string, userId: string): Promise<void>;
+  /** Grava a decisão do JEV (uma por persona e vídeo). */
+  saveDecision(userId: string, videoId: string, decision: Decision<string>): Promise<void>;
   /** Grava o comentário só se a persona ainda não comentou (seguro para novas tentativas). */
   addPersonaComment(videoId: string, userId: string, text: string): Promise<boolean>;
   /** Comentários e mensagens de personas na última hora (limite PERSONA_RATE). */
@@ -149,9 +168,10 @@ export class PgVideoDb implements VideoDb {
   }
 
   async videoForComment(id: string) {
-    const res = await this.pool.query<{ status: string; title: string | null; description: string | null; topics: string[] }>(
+    const res = await this.pool.query<VideoForPersonas>(
       `SELECT v.status, v.title, v.description,
-              COALESCE(array_agg(t.name ORDER BY t.name) FILTER (WHERE t.id IS NOT NULL), '{}') AS topics
+              COALESCE(array_agg(t.name ORDER BY t.name) FILTER (WHERE t.id IS NOT NULL), '{}') AS topics,
+              COALESCE(array_agg(t.slug ORDER BY t.name) FILTER (WHERE t.id IS NOT NULL), '{}') AS "topicSlugs"
          FROM videos v
          LEFT JOIN video_topics vt ON vt.video_id = v.id
          LEFT JOIN topics t ON t.id = vt.topic_id
@@ -162,18 +182,26 @@ export class PgVideoDb implements VideoDb {
     return res.rows[0] ?? null;
   }
 
-  async personasWithoutComment(videoId: string) {
+  async personasToDecide(videoId: string) {
     const res = await this.pool.query<{
       user_id: string;
       nickname: string;
       bio: string;
       tone: string;
       examples: string[];
-      config: { nome?: string };
+      activity_level: number;
+      config: { nome?: string; afinidade?: Record<string, number> };
+      commented: boolean;
+      recent_with_author: number;
     }>(
-      `SELECT p.user_id, u.nickname, p.bio, p.tone, p.examples, p.config
+      `SELECT p.user_id, u.nickname, p.bio, p.tone, p.examples, p.activity_level, p.config,
+              EXISTS (SELECT 1 FROM comments c WHERE c.video_id = $1 AND c.user_id = p.user_id) AS commented,
+              (SELECT count(*)::int FROM comments c JOIN videos o ON o.id = c.video_id
+                 WHERE c.user_id = p.user_id AND c.created_at > now() - interval '6 hours'
+                   AND o.submitted_by = (SELECT submitted_by FROM videos WHERE id = $1)) AS recent_with_author
          FROM personas p JOIN users u ON u.id = p.user_id
-        WHERE NOT EXISTS (SELECT 1 FROM comments c WHERE c.video_id = $1 AND c.user_id = p.user_id)
+        WHERE NOT EXISTS (SELECT 1 FROM persona_decisions d
+                           WHERE d.persona_user_id = p.user_id AND d.trigger = 'video' AND d.target_id = $1)
         ORDER BY u.nickname`,
       [videoId],
     );
@@ -184,7 +212,23 @@ export class PgVideoDb implements VideoDb {
       bio: r.bio,
       tone: r.tone,
       examples: r.examples,
+      activity: r.activity_level,
+      affinity: r.config.afinidade ?? {},
+      commented: r.commented,
+      recentWithAuthor: r.recent_with_author,
     }));
+  }
+
+  async addPersonaLike(videoId: string, userId: string) {
+    await this.pool.query("INSERT INTO likes (user_id, video_id) VALUES ($1, $2) ON CONFLICT DO NOTHING", [userId, videoId]);
+  }
+
+  async saveDecision(userId: string, videoId: string, decision: Decision<string>) {
+    await this.pool.query(
+      `INSERT INTO persona_decisions (persona_user_id, trigger, target_id, action, score, reasons)
+       VALUES ($1, 'video', $2, $3, $4, $5) ON CONFLICT DO NOTHING`,
+      [userId, videoId, decision.action, decision.score, JSON.stringify(decision.reasons)],
+    );
   }
 
   async addPersonaComment(videoId: string, userId: string, text: string) {
