@@ -29,7 +29,7 @@ export function Enter({ onEnter }: { onEnter(user: User): void }) {
       auth.setToken(token);
       onEnter(user);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Não deu para falar com o bunker. Confira a rede e tente de novo.");
+      setError(err instanceof ApiError ? err.message : "O bunker não respondeu. Confira se este aparelho está na rede dele e tente de novo.");
       setPin("");
       setBusy(false);
     }

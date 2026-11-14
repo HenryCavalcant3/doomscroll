@@ -87,7 +87,7 @@ export function Messages({ me }: { me: User }) {
       {list === null ? (
         !error && <p className="hint">Carregando…</p>
       ) : list.length === 0 ? (
-        <p className="hint">Nenhuma conversa ainda. Abra o perfil de alguém ou digite um apelido acima.</p>
+        <p className="hint">Ninguém no rádio ainda. Abra o perfil de alguém ou digite um apelido acima.</p>
       ) : (
         <ul className="inbox-list">
           {list.map((c) => {

@@ -60,7 +60,7 @@ export function AddVideo() {
         setSelected([]);
         setVideoId(err.body.id);
       } else {
-        setError(err instanceof Error ? err.message : "Algo deu errado.");
+        setError(err instanceof Error ? err.message : "Deu ruim aqui no bunker. Tente de novo.");
       }
     } finally {
       setBusy(false);
@@ -74,7 +74,7 @@ export function AddVideo() {
     try {
       setVideo(await api.confirmTopics(video.id, selected));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Algo deu errado.");
+      setError(err instanceof Error ? err.message : "Deu ruim aqui no bunker. Tente de novo.");
     } finally {
       setBusy(false);
     }

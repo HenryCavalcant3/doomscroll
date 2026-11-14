@@ -104,7 +104,7 @@ export function ProfileScreen({ nickname, me, onLogout }: Props) {
         <StalkerList nickname={profile.nickname} name={title} />
       ) : profile.liked.length === 0 ? (
         <p className="hint profile-empty">
-          {own ? "Os vídeos que você curtir aparecem aqui." : "Nenhum vídeo curtido ainda."}
+          {own ? "Seu estoque particular começa aqui. Os vídeos que você curtir ficam guardados nesta aba." : "Nenhum vídeo curtido ainda."}
         </p>
       ) : (
         <ul className="liked-grid">

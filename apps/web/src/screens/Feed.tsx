@@ -71,8 +71,8 @@ export function Feed() {
   if (feed.empty) {
     return (
       <main className="screen placeholder">
-        <h1>O bunker ainda está vazio</h1>
-        <p>Nenhum vídeo foi aprovado ainda. Mande o primeiro!</p>
+        <h1>As prateleiras estão vazias</h1>
+        <p>Nenhum vídeo foi aprovado ainda. Mande o primeiro para o estoque.</p>
         <a className="btn btn-primary btn-link" href="#/adicionar">
           Adicionar vídeo
         </a>
@@ -374,7 +374,7 @@ function CommentsDrawer({ video, onClose, onCommented }: DrawerProps) {
         </header>
         <div className="drawer-body">
           {!comments && !error && <p className="hint">Carregando…</p>}
-          {comments?.length === 0 && <p className="hint">Ninguém comentou ainda. Seja o primeiro!</p>}
+          {comments?.length === 0 && <p className="hint">Silêncio no bunker. Comente antes do Tio Valdir.</p>}
           <ul className="comments" ref={list}>
             {comments?.map((c) => (
               <li key={c.id}>

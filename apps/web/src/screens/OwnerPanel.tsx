@@ -47,7 +47,7 @@ function useOwnerCall() {
         return await fn();
       } catch (err) {
         // 401 já leva para a tela de entrada (api.ts).
-        setError(err instanceof Error ? err.message : "Algo deu errado.");
+        setError(err instanceof Error ? err.message : "Deu ruim aqui no bunker. Tente de novo.");
         return undefined;
       }
     },
@@ -74,7 +74,7 @@ function Queue() {
   return (
     <>
       {error && <p className="error" role="alert">{error}</p>}
-      {videos.length === 0 && <p className="hint">Nada esperando aprovação.</p>}
+      {videos.length === 0 && <p className="hint">Fila zerada. Nenhum vídeo esperando na porta.</p>}
       {videos.map((v) => (
         <article key={v.id} className="card review">
           {v.videoUrl && (
