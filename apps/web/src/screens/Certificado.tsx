@@ -69,7 +69,7 @@ export function Certificado() {
           O bunker funciona sem internet, então ele emite o próprio certificado de segurança. Com ele instalado, o
           endereço abre em HTTPS e o app pode ir para a sua tela inicial.
         </p>
-        <a className="btn btn-primary btn-link cert-botao" href={CERT_URL} download="bunker.crt">
+        <a className="btn btn-primary btn-link cert-botao" href={CERT_URL}>
           Baixar certificado
         </a>
         <p className="cert-aviso">

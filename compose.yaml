@@ -104,10 +104,25 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
-    ports:
-      - "${WEB_PORT:-8080}:80"
     depends_on:
       - api
+    restart: unless-stopped
+
+  # Porta de entrada: HTTP em WEB_PORT e HTTPS em HTTPS_PORT, com a CA local (docker/caddy/Caddyfile).
+  caddy:
+    image: caddy:2.10.2-alpine
+    environment:
+      # IP do computador na rede do bunker (o certificado vale para ele e para localhost).
+      SITE_HOST: ${SITE_HOST:-192.168.137.1}
+    volumes:
+      - ./docker/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    ports:
+      - "${WEB_PORT:-8080}:80"
+      - "${HTTPS_PORT:-8443}:443"
+    depends_on:
+      - web
     restart: unless-stopped
 
 volumes:
@@ -115,3 +130,6 @@ volumes:
   ollama-models:
   media:
   whisper-models:
+  # Guarda a CA local do bunker (chave privada): nunca versionar nem apagar sem motivo.
+  caddy-data:
+  caddy-config:

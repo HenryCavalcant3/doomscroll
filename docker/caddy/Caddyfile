@@ -1,0 +1,42 @@
+# Porta de entrada do bunker: HTTP na 80 (porta WEB_PORT do host) e HTTPS na 443 (HTTPS_PORT).
+# O bunker é offline, então o certificado vem da CA local do próprio Caddy. A CA fica no volume
+# caddy-data: ela não muda entre subidas, e o celular só instala o certificado uma vez.
+{
+	local_certs
+	# Dentro do container não há loja de certificados para instalar a CA.
+	skip_install_trust
+	# O HTTP continua funcionando para quem ainda não instalou o certificado.
+	auto_https disable_redirects
+	# Endereço por IP não manda SNI: sem isto o Caddy não sabe qual certificado entregar.
+	default_sni {$SITE_HOST}
+	pki {
+		ca local {
+			name "Bunker Doomscroll"
+		}
+	}
+}
+
+# Raiz da CA, baixada pela página #/certificado. Um handle próprio, senão o pedido cai no nginx,
+# que devolve o index.html com 200.
+(certificado) {
+	handle /certificado/bunker.crt {
+		root * /data/caddy/pki/authorities/local
+		rewrite * /root.crt
+		header Content-Type application/x-x509-ca-cert
+		file_server
+	}
+}
+
+:80 {
+	import certificado
+	handle {
+		reverse_proxy web:80
+	}
+}
+
+https://{$SITE_HOST}, https://localhost {
+	import certificado
+	handle {
+		reverse_proxy web:80
+	}
+}
