@@ -2,7 +2,13 @@ import { run } from "./tools.js";
 
 const BASE = ["-y", "-hide_banner", "-loglevel", "error"];
 
-/** MP4 H.264/AAC pronto para streaming; vertical até 720 de largura, horizontal até 1280. */
+/**
+ * Teto do vídeo: com o CRF sozinho, cenas agitadas passavam de 6 Mbps, e o celular (que pelo Wi-Fi
+ * recebe uns 2-4 MB/s) demorava para começar. 2 Mbps é a faixa dos apps de vídeo curto em 720p.
+ */
+export const VIDEO_MAXRATE = "2M";
+
+/** MP4 H.264/AAC pronto para streaming; vertical até 720 de largura, horizontal até 1280, até 2 Mbps. */
 export function convertArgs(input: string, output: string): string[] {
   return [
     ...BASE,
@@ -20,6 +26,10 @@ export function convertArgs(input: string, output: string): string[] {
     "veryfast",
     "-crf",
     "23",
+    "-maxrate",
+    VIDEO_MAXRATE,
+    "-bufsize",
+    "4M",
     "-pix_fmt",
     "yuv420p",
     "-c:a",

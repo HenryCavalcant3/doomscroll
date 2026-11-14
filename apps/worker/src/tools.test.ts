@@ -27,6 +27,12 @@ describe("ffmpeg", () => {
     expect(args.at(-1)).toBe("out.mp4");
   });
 
+  it("limita a taxa do vídeo a 2 Mbps", () => {
+    const args = convertArgs("in.mkv", "out.mp4");
+    expect(args[args.indexOf("-maxrate") + 1]).toBe("2M");
+    expect(args).toContain("-bufsize");
+  });
+
   it("extrai áudio 16 kHz mono para o Whisper", () => {
     expect(audioArgs("v.mp4", "a.wav")).toEqual(expect.arrayContaining(["-ar", "16000", "-ac", "1", "pcm_s16le"]));
   });

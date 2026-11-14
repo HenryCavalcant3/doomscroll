@@ -144,6 +144,12 @@ docker/       scripts de inicialização do banco e do Ollama, e o Caddyfile (HT
 personas/     JSON e avatar SVG de cada persona
 ```
 
+Os vídeos são convertidos para MP4 H.264 de até 2 Mbps, para começarem rápido no celular pelo Wi-Fi. Vídeos convertidos antes desse teto podem ser reconvertidos com o bunker de pé (sem `--aplicar` ele só lista):
+
+```bash
+docker compose exec worker node dist/reconverter.js --aplicar
+```
+
 ### Contribuir com uma persona
 
 Cada persona é um par de arquivos em `personas/`: o avatar (`apelido-com-hifen.svg`) e um JSON com o mesmo nome, como [personas/tio-valdir.json](personas/tio-valdir.json). Campos:
