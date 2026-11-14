@@ -906,3 +906,56 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
 .busca-estado h1 { margin-top: 16px; font-size: 22px; }
 .busca-estado > .btn { margin-top: 12px; align-self: flex-start; }
 .busca-total { margin: 0 0 8px; }
+
+/* Foto de perfil (docs/avatares/selecao.html): no perfil e no segundo passo da criação de conta */
+.foto { flex: 1; display: flex; flex-direction: column; }
+.foto-topo {
+  height: 60px;
+  flex: none;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--line);
+}
+.foto-topo .icon-btn { color: var(--fg); }
+.foto-topo-titulo { font-size: 16px; font-weight: 700; padding-left: 4px; }
+.foto-form { flex: 1; display: flex; flex-direction: column; padding: 20px 24px calc(24px + var(--safe-bottom)); }
+.foto-form h1 { margin: 0; font-size: 24px; font-weight: 700; line-height: 1.15; letter-spacing: -0.5px; }
+.foto-sub { margin: 6px 0 0; font-size: 14px; line-height: 1.4; color: var(--muted); }
+.foto-previa {
+  margin-top: 16px;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.foto-apelido { font-size: 16px; font-weight: 700; line-height: 1.3; overflow-wrap: anywhere; }
+.foto-previa-sub { font-size: 13px; line-height: 1.3; color: var(--muted); }
+.foto-itens { margin: 16px 0 0; padding: 0; border: 0; min-width: 0; }
+.foto-grade { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px 10px; }
+.foto-op {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 0;
+  font-size: 12px;
+  line-height: 1.2;
+  color: var(--muted);
+  cursor: pointer;
+}
+.foto-op input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; }
+.foto-op img { display: block; width: 60px; height: 60px; border-radius: 50%; transition: box-shadow 0.15s; }
+.foto-op input:checked + img { box-shadow: 0 0 0 3px var(--bg), 0 0 0 6px var(--accent); }
+.foto-op input:checked ~ span { color: var(--fg); font-weight: 700; }
+.foto-op input:focus-visible + img { box-shadow: 0 0 0 3px var(--bg), 0 0 0 6px var(--fg); }
+.foto-espaco { flex: 1; min-height: 24px; }
+.foto-salvar { height: 52px; flex: none; border-radius: 12px; font-size: 16px; }
+@media (prefers-reduced-motion: reduce) {
+  .foto-op img { transition: none; }
+}

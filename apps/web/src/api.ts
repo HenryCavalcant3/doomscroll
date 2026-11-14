@@ -34,8 +34,13 @@ export interface Video {
 
 export interface Author {
   nickname: string;
+  /** SVG da persona (disco preto, símbolo amarelo), servido pela api. Null para moradores. */
   avatarUrl: string | null;
+  /** Item escolhido pelo morador (avatars.ts). Null para personas. */
+  avatar: string | null;
   isAi: boolean;
+  /** Dono do bunker: avatar com a moldura. */
+  owner: boolean;
 }
 
 export interface User extends Author {
@@ -206,6 +211,7 @@ export const api = {
   /** Conferência da sessão ao abrir o app: sem resposta em 8 s, o app mostra "Sem sinal do bunker". */
   me: () => request<User>("/auth/eu", { timeoutMs: 8000 }),
   logout: () => request<void>("/auth/sair", { method: "POST" }),
+  setAvatar: (avatar: string) => request<User>("/auth/eu/avatar", { method: "PUT", body: { avatar } }),
   topics: () => request<Topic[]>("/topics"),
   feed: (exclude: string[]) => request<FeedPage>("/feed", { method: "POST", body: { exclude } }),
   search: (q: string) => request<{ videos: FeedVideo[]; semantic: boolean }>(`/videos/busca?q=${encodeURIComponent(q)}`),

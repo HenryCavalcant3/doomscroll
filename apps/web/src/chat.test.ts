@@ -10,7 +10,7 @@ const msg = (id: string, createdAt: string, text = id): Message => ({
   video: null,
   reactions: [],
   createdAt,
-  sender: { nickname: "ana", avatarUrl: null, isAi: false },
+  sender: { nickname: "ana", avatarUrl: null, avatar: "padrao", isAi: false, owner: false },
 });
 
 describe("mergeMessages", () => {
@@ -26,7 +26,7 @@ describe("mergeMessages", () => {
 describe("conversationTitle", () => {
   it("usa o nome do grupo ou o apelido do outro lado", () => {
     const base = { id: "c1", type: "direct" as const, bunker: false, lastMessage: null, unread: 0 };
-    expect(conversationTitle({ ...base, name: null, members: [{ nickname: "bia", avatarUrl: null, isAi: false }] })).toBe("bia");
+    expect(conversationTitle({ ...base, name: null, members: [{ nickname: "bia", avatarUrl: null, avatar: "padrao", isAi: false, owner: false }] })).toBe("bia");
     expect(conversationTitle({ ...base, type: "group", name: "Bunker", members: [] })).toBe("Bunker");
   });
 });
@@ -68,7 +68,7 @@ describe("reações", () => {
 describe("resposta da persona em andamento", () => {
   const c = "c1";
   const msg = (nickname: string, conversationId = c) =>
-    ({ id: "m", conversationId, type: "text", text: "oi", video: null, reactions: [], createdAt: "", sender: { nickname, avatarUrl: null, isAi: true } }) as Message;
+    ({ id: "m", conversationId, type: "text", text: "oi", video: null, reactions: [], createdAt: "", sender: { nickname, avatarUrl: null, avatar: null, isAi: true, owner: false } }) as Message;
 
   it("digitando, texto parcial e a mensagem gravada que fecha", () => {
     let s = nextPersonaReply(null, { type: "typing", conversationId: c, nickname: "rato" }, c);
