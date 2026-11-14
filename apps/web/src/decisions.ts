@@ -19,7 +19,12 @@ export function decisionText(d: PersonaDecision): string {
   }
   // Conversa entre personas (tem "mensagens") e Grupo do Bunker (tem "acao").
   if ("mensagens" in d.reasons) return d.action === "ignorar" ? "deixou a conversa morrer" : "respondeu outra persona";
-  if ("acao" in d.reasons) return d.action === "comentar" ? "respondeu no Grupo do Bunker" : "reagiu no Grupo do Bunker";
+  if ("acao" in d.reasons) {
+    if (d.action !== "comentar") return d.reasons.teto_da_conversa ? "só reagiu no Grupo do Bunker (a conversa chegou ao teto)" : "reagiu no Grupo do Bunker";
+    // Nível 1 em diante: respondeu a fala de outra persona (cadeia).
+    const who = typeof d.reasons.nivel === "number" ? "respondeu outra persona no Grupo do Bunker" : "respondeu no Grupo do Bunker";
+    return d.reasons.mencao ? `${who} (alguém citou o nome)` : who;
+  }
   return typeof d.reasons.video === "string" && d.reasons.video !== "nenhum" ? `${action} (“${d.reasons.video}”)` : action;
 }
 
@@ -42,6 +47,12 @@ const LABELS: Record<string, string> = {
   limite_por_hora: "limite por hora",
   destaque: "destaque",
   topico_citado: "tópico citado",
+  ritmo: "ritmo da hora",
+  mencao: "nome citado",
+  resposta: "ida e volta",
+  nivel: "nível da cadeia",
+  teto_da_conversa: "teto da conversa",
+  resposta_garantida: "resposta garantida",
 };
 
 const fmt = (v: unknown) =>

@@ -35,5 +35,9 @@ describe("decisões no painel do dono", () => {
     expect(decisionText({ ...talk, action: "ignorar" })).toBe("deixou a conversa morrer");
     expect(decisionText({ ...talk, action: "responder" })).toBe("respondeu outra persona");
     expect(decisionText({ ...talk, action: "comentar", reasons: { acao: "comentar" } })).toBe("respondeu no Grupo do Bunker");
+    expect(decisionText({ ...talk, action: "comentar", reasons: { acao: "comentar", nivel: 1, mencao: true } })).toBe(
+      "respondeu outra persona no Grupo do Bunker (alguém citou o nome)",
+    );
+    expect(decisionText({ ...talk, action: "reagir", reasons: { acao: "comentar", teto_da_conversa: true } })).toBe("só reagiu no Grupo do Bunker (a conversa chegou ao teto)");
   });
 });
