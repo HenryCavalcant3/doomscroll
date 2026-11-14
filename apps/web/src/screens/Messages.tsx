@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent, type RefObjec
 import { api, type Conversation, type User } from "../api";
 import { conversationTitle, shortTime, useRealtimeEvents } from "../chat";
 import { ConversationAvatar } from "../components/ConversationAvatar";
+import { OwnerKey } from "../components/OwnerKey";
 import { chatHref } from "../router";
 
 /** Tela 4 do SPEC (caixa de entrada): conversas, da mais recente para a mais antiga. */
@@ -98,7 +99,10 @@ export function Messages({ me }: { me: User }) {
                 <a className="inbox-row" href={chatHref(c.id)}>
                   <ConversationAvatar conversation={c} size={48} />
                   <span className="inbox-text">
-                    <span className={`inbox-name${c.unread ? " unread" : ""}`}>{conversationTitle(c)}</span>
+                    <span className={`inbox-name${c.unread ? " unread" : ""}`}>
+                      {conversationTitle(c)}
+                      <OwnerKey who={c.type === "direct" ? c.members[0] : undefined} />
+                    </span>
                     <span className="inbox-preview">
                       {last ? `${mine ? "Você: " : c.type === "group" ? `@${last.sender.nickname}: ` : ""}${last.video ? "mandou um vídeo" : (last.text ?? "")}` : c.bunker ? "Todo mundo da rede está aqui" : "Sem mensagens"}
                     </span>

@@ -967,3 +967,7 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
   .foto-op img { transition: none; }
 }
 .dono-topo { display: flex; align-items: center; gap: 14px; }
+
+/* Chave do dono ao lado do apelido (OwnerKey.tsx), como um "verificado" */
+.owner-key { display: inline-block; flex: none; margin-left: 4px; vertical-align: -0.15em; border-radius: 50%; }
+.msg-sender .owner-key { margin-left: -2px; }

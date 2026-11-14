@@ -3,6 +3,7 @@ import { api, apiUrl, ApiError, REACTIONS, type Conversation, type Message, type
 import { applyReactions, conversationTitle, groupReactions, mergeMessages, nextPersonaReply, shortTime, useRealtimeEvents, type PersonaReply } from "../chat";
 import { Avatar } from "../components/Avatar";
 import { ConversationAvatar } from "../components/ConversationAvatar";
+import { OwnerKey } from "../components/OwnerKey";
 import { Player } from "../components/Player";
 import { profileHref } from "../router";
 
@@ -191,7 +192,10 @@ export function ChatScreen({ id, me, onRead }: Props) {
           <a className="chat-who" href={other ? profileHref(other.nickname) : undefined}>
             <ConversationAvatar conversation={conv} size={40} />
             <span className="chat-who-text">
-              <span className="chat-title">{conversationTitle(conv)}</span>
+              <span className="chat-title">
+                {conversationTitle(conv)}
+                <OwnerKey who={other} />
+              </span>
               {other?.isAi && <span className="chat-sub">persona de IA</span>}
               {group && <span className="chat-sub">{conv.members.length + 1} pessoas</span>}
             </span>
@@ -218,6 +222,7 @@ export function ChatScreen({ id, me, onRead }: Props) {
               {showSender && (
                 <a className="msg-sender" href={profileHref(m.sender.nickname)}>
                   <Avatar who={m.sender} size={20} />@{m.sender.nickname}
+                  <OwnerKey who={m.sender} size={14} />
                 </a>
               )}
               {m.video ? (
