@@ -133,6 +133,19 @@ export interface PersonaPanel {
   rate: number;
   lastHour: number;
   personas: { nickname: string; name: string; avatarUrl: string | null; activity: number; lastHour: number }[];
+  /** Últimas decisões do JEV (nas mensagens, sem o texto: conversa de gente é privada). */
+  decisions: PersonaDecision[];
+}
+
+export interface PersonaDecision {
+  nickname: string;
+  name: string;
+  trigger: "video" | "mensagem";
+  action: string;
+  score: number;
+  reasons: Record<string, unknown>;
+  video: string | null;
+  createdAt: string;
 }
 
 export const apiUrl = (path: string) => `/api${path}`;

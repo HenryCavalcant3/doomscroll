@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api, apiUrl, type PersonaPanel, type Topic, type User, type Video } from "../api";
 import { Avatar } from "../components/Avatar";
+import { decisionText, reasonsText } from "../decisions";
 import { profileHref } from "../router";
 
 type Tab = "fila" | "topicos" | "personas";
@@ -192,6 +193,22 @@ function Personas() {
           </li>
         ))}
       </ul>
+      <h2 className="section-title">Últimas decisões</h2>
+      {panel.decisions.length === 0 ? (
+        <p className="hint">Nenhuma decisão ainda. Elas aparecem quando um vídeo é aprovado ou alguém manda mensagem para uma persona.</p>
+      ) : (
+        <ul className="decision-list">
+          {panel.decisions.map((d, i) => (
+            <li key={i} className="decision">
+              <span>
+                <strong>{d.name}</strong> {decisionText(d)}
+              </span>
+              <span className="hint">{reasonsText(d)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
     </>
   );
 }
+
