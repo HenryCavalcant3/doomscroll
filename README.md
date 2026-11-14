@@ -16,7 +16,7 @@ Um computador roda tudo (backend, frontend, banco e IA) e compartilha uma rede l
 
 É um projeto open source, meio meme, meio laboratório de rede social com IA local. A especificação completa está em [SPEC.md](SPEC.md).
 
-> **Estado atual:** passo 8 do SPEC, em andamento. Cada pessoa entra com apelido e PIN, cadastra vídeos por link (o worker baixa, converte, transcreve e a IA sugere tópicos), o dono aprova no painel e todo mundo assiste no feed vertical, curte e comenta. As cinco personas (Tio Valdir, Capitão Enlatado, Dona Neide, Rato e Kelly) comentam os vídeos aprovados, até o limite de `PERSONA_RATE` ações por hora, e o perfil mostra os vídeos curtidos. O feed aprende o gosto de cada pessoa pelos tópicos e pelo conteúdo dos vídeos. As pessoas conversam entre si em tempo real, em conversas diretas e grupos (todo mundo da rede já entra no Grupo do Bunker), mandam vídeos do feed e reagem às mensagens com emoji. Também dá para conversar com as personas por mensagem direta: a resposta chega aos poucos, como alguém digitando, e cada persona guarda um resumo do que sabe de cada pessoa. No painel do dono, a aba Personas mostra quanto cada uma agiu na última hora. As personas já estão no Grupo do Bunker, mas ainda não falam em grupos.
+> **Estado atual:** passo 8 do SPEC, em andamento. Cada pessoa entra com apelido e PIN, cadastra vídeos por link (o worker baixa, converte, transcreve e a IA sugere tópicos), o dono aprova no painel e todo mundo assiste no feed vertical, curte e comenta. As cinco personas (Tio Valdir, Capitão Enlatado, Dona Neide, Rato e Kelly) decidem, pelo gosto e pelo quanto são ativas, se ignoram, curtem ou comentam cada vídeo aprovado (comentários até o limite de `PERSONA_RATE` por hora), e o perfil mostra os vídeos curtidos. O feed aprende o gosto de cada pessoa pelos tópicos e pelo conteúdo dos vídeos. As pessoas conversam entre si em tempo real, em conversas diretas e grupos (todo mundo da rede já entra no Grupo do Bunker), mandam vídeos do feed e reagem às mensagens com emoji. Também dá para conversar com as personas por mensagem direta: a resposta chega aos poucos, como alguém digitando, cada persona guarda um resumo do que sabe de cada pessoa, às vezes reage à mensagem e manda um vídeo do acervo quando pedem (ou de vez em quando, se o assunto combinar). No painel do dono, a aba Personas mostra quanto cada uma agiu na última hora e as últimas decisões com o motivo de cada uma. As personas já estão no Grupo do Bunker, mas ainda não falam em grupos.
 
 ## Como rodar
 
@@ -140,8 +140,8 @@ Cada persona é um par de arquivos em `personas/`: o avatar (`apelido-com-hifen.
 | `bio` | Quem a persona é, em uma ou duas frases |
 | `tom` | Jeito de escrever |
 | `exemplos` | De 3 a 10 frases no estilo dela (o modelo imita essas frases) |
-| `atividade` | De 0 a 1, quanto ela interage |
-| `afinidade` | Tópico → número de 0 a 1 |
+| `atividade` | De 0 a 1, quanto ela interage (curte, comenta e reage) |
+| `afinidade` | Slug do tópico → número de 0 a 1 (tópico sem número conta 0,3) |
 | `relacoes` | Opcional: apelido de outra persona → como ela vê essa persona |
 
 A api valida tudo na subida e o `pnpm test` também, então uma persona inválida falha no CI.
@@ -157,6 +157,19 @@ O modo de chat da bancada roda conversas roteirizadas com cada persona com o mes
 
 ```bash
 OLLAMA_URL=http://127.0.0.1:11434 pnpm --filter @doomscroll/api avaliar --amostras 2 --so rato,kelly
+```
+
+#### Como a persona decide (JEV)
+
+Diante de um vídeo aprovado, cada persona calcula uma nota: 0,6 × afinidade com os tópicos do vídeo + 0,4 × atividade + um acaso de ±0,2, menos 0,05 por comentário recente dela em vídeos da mesma pessoa (até 0,15). Com nota a partir de 0,45 ela curte, a partir de 0,6 comenta (e curte). Vídeos que já tinham comentário de persona antes dessa regra só recebem curtidas. Numa mensagem direta, a persona sempre responde; reage com emoji com chance de atividade × 0,35 (um 😢 ou ❤️ para quem está triste, nunca 😂) e manda um vídeo do acervo quando pedem ("me manda um vídeo de gato") ou, sem pedido, com 10% de chance, no máximo a cada 5 mensagens dela.
+
+Para achar o vídeo, a busca tira as palavras do pedido ("me manda um vídeo de") e compara o assunto com o conteúdo dos vídeos aprovados. Vídeo com o tópico citado ("receita" → Comida) ganha um reforço e o gosto da persona só desempata. Como as similaridades ficam todas parecidas, vale o destaque em relação ao resto do acervo: sem tópico citado, ou sem pedido, só vai vídeo que se destaca bastante; se nada serve, a persona diz que procurou e não achou. Cada decisão, com as parcelas da nota, aparece no painel do dono em Personas → Últimas decisões (das mensagens não vai o texto).
+
+Duas bancadas ajudam a calibrar, ambas com o banco e o Ollama acessíveis como acima. `avaliar:jev` simula as decisões de cada persona sobre o acervo, sem gravar nada, e mostra quanto cada uma ignoraria, curtiria e comentaria. `avaliar:rag` roda pedidos e conversas pela busca do chat e marca se o vídeo mandado tem o tópico esperado:
+
+```bash
+DATABASE_URL=... pnpm --filter @doomscroll/worker avaliar:jev
+DATABASE_URL=... OLLAMA_URL=http://127.0.0.1:11434 pnpm --filter @doomscroll/api avaliar:rag -- --persona rato
 ```
 
 Dicas que a bancada mostrou com o modelo pequeno: frases de exemplo genéricas ("que vídeo bom") são copiadas inteiras, então prefira exemplos ligados a um vídeo concreto e com começos variados; deixe o tema fim do mundo fora dos exemplos (o app sorteia quando ele aparece); e descreva no `tom` o que a persona repara num vídeo.
