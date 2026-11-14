@@ -204,6 +204,14 @@ Dicas que a bancada mostrou com o modelo pequeno: frases de exemplo genéricas (
 
 Os commits seguem [Conventional Commits](https://www.conventionalcommits.org/pt-br/), em português.
 
+## Próximos passos
+
+- **Vídeo curtido em tela cheia:** no perfil, o vídeo curtido abre como no feed (curtir, comentar, compartilhar e rolar pelos outros curtidos). Descurtir tira o vídeo do perfil.
+- **Busca:** encontrar um vídeo pelo assunto, mesmo com outras palavras, com poucos resultados por busca. Detalhes no [SPEC §7.6](SPEC.md#76-ideias-futuras).
+- **Resumo do dia** no bunker, gerado pela IA (a elaborar).
+- **Depois do MVP:** painel visual das decisões das personas e persona criada pelo usuário, num formato ainda a definir.
+- **Melhorias em estudo:** um único player de vídeo reaproveitado no feed, links curtos do TikTok reconhecidos como repetidos, a voz do Rato, perfis de configuração (leve, equilibrado, GPU) com tempos medidos e um teste com o `qwen2.5:7b`.
+
 ## Aviso sobre o acervo
 
 Baixar vídeos do YouTube, TikTok e outras plataformas pode violar os termos de uso delas. **Este repositório não distribui vídeos.** Cada pessoa monta o próprio acervo, apenas para uso pessoal, e é responsável por ele.

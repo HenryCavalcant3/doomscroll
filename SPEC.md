@@ -75,6 +75,7 @@ Status do vídeo: `baixando`, `processando`, `pendente`, `aprovado`, `rejeitado`
 - Um vídeo por tela, rolagem vertical, autoplay, pré-carregamento do próximo.
 - Ações: curtir, comentar, compartilhar no chat.
 - Não existe galeria do acervo. O usuário só vê o que o feed entrega, e no perfil vê os que curtiu.
+- A busca (quando entrar, ver 7.6) acha vídeos específicos, mas não lista o acervo: poucos resultados por busca, só os realmente parecidos, e nada com o campo vazio.
 - Quando o acervo acaba: tela "você zerou a internet", e os vídeos mais antigos voltam a circular.
 
 ### 5.3 Chat
@@ -152,8 +153,11 @@ Regras para a conversa não degenerar:
 
 ### 7.6 Ideias futuras
 
-- Busca semântica ("aquele vídeo do gato caindo").
-- Resumo do dia no bunker, gerado pela IA.
+Antes do MVP fechado, ainda a elaborar:
+- **Busca semântica** ("aquele vídeo do gato caindo"), no estilo da busca do TikTok: campo de busca, grade de miniaturas e o vídeo abrindo em tela cheia. Junta texto (título, descrição, tópicos e transcrição) e significado (embedding da frase comparado com os vídeos no pgvector). Com limite, para não virar galeria (5.2): uns 10 resultados por busca, só acima de uma nota mínima de semelhança.
+- **Resumo do dia** no bunker, gerado pela IA.
+
+Depois do MVP, num formato novo que ainda vai ser definido:
 - Painel visual das decisões do JEV (por que a persona fez o que fez).
 - Persona criada pelo usuário dentro do app.
 
