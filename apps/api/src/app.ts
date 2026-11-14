@@ -8,6 +8,7 @@ import { parseVideoLink } from "./links.js";
 import type { PersonaChatStore, PersonaReplier } from "./personaChat.js";
 import { generate, OllamaError } from "./ollama.js";
 import { hashPin, verifyPin } from "./pin.js";
+import { cleanQuery, rankSearch, SEARCH } from "./search.js";
 import { QUEUES } from "./queues.js";
 import { Hub, WS_CLOSE } from "./realtime.js";
 import type { Store, UserView, VideoStatus } from "./store.js";
@@ -45,6 +46,8 @@ export interface AppDeps {
   /** Respostas das personas no chat (sem ele, as personas não respondem). */
   replier?: PersonaReplier;
   personas?: PersonaChatStore;
+  /** Embedding da frase buscada (sem ele, ou se falhar, a busca usa só as palavras). */
+  embed?: (text: string) => Promise<number[]>;
 }
 
 const LOGIN_WINDOW_MS = 15 * 60_000;
@@ -83,6 +86,7 @@ export function buildApp({
   wsAuthMs = 10_000,
   replier,
   personas,
+  embed,
 }: AppDeps) {
   const app = Fastify({ logger });
   app.addHook("onClose", async () => replier?.close());
@@ -594,6 +598,22 @@ export function buildApp({
         return profile ?? reply.code(404).send({ error: "Ninguém com esse apelido no bunker." });
       },
     );
+
+    // Busca (SPEC 5.2 e 7.6): poucos vídeos, só os que têm as palavras ou se destacam no significado.
+    priv.get<{ Querystring: { q?: string } }>("/videos/busca", async (req, reply) => {
+      const query = cleanQuery(req.query.q);
+      if (!query) return reply.code(400).send({ error: `Escreva de ${SEARCH.minLength} a ${SEARCH.maxLength} letras para buscar.` });
+      let vector: number[] | null = null;
+      if (embed) {
+        try {
+          vector = await embed(`search_query: ${query}`);
+        } catch (err) {
+          req.log.warn({ err }, "busca sem embedding");
+        }
+      }
+      const ids = rankSearch(await store.searchCandidates(query, vector));
+      return { videos: await store.feedVideos(req.user.id, ids), semantic: vector !== null };
+    });
 
     // Modo stalker (SPEC 7.5): só leitura, só conversas diretas entre personas. Conversa com gente
     // de verdade nunca aparece, nem adivinhando o id.

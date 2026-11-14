@@ -10,7 +10,8 @@
     "test": "vitest run",
     "avaliar": "tsx src/avaliar-chat.ts",
     "avaliar:rag": "tsx src/avaliar-rag.ts",
-    "avaliar:grupo": "tsx src/avaliar-grupo.ts"
+    "avaliar:grupo": "tsx src/avaliar-grupo.ts",
+    "avaliar:busca": "tsx src/avaliar-busca.ts"
   },
   "dependencies": {
     "@fastify/static": "^10.1.10",

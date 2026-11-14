@@ -99,6 +99,8 @@ const app = buildApp({
   logger: true,
   serveMedia: true,
   removeMedia: (id) => removeVideoMedia(config.mediaDir, id),
+  // Busca: curta, quem buscou está esperando; sem resposta a tempo, vai só pelas palavras.
+  embed: (text) => embed({ baseUrl: config.ollamaUrl, model: config.embedModel, text, timeoutMs: 5_000 }),
 });
 
 const shutdown = async () => {

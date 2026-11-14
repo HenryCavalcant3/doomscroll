@@ -1,6 +1,7 @@
 import type { Pool, PoolClient } from "pg";
 import { COMMENT_DELTA, LIKE_DELTA, SCORE_MAX, SCORE_MIN, SHARE_DELTA, viewDelta, type ViewInput } from "./affinity.js";
 import { pickFeed, type Candidate, type Rng } from "./recommend.js";
+import type { SearchCandidate } from "./search.js";
 import { fromPgVector, TASTE_VIDEOS, tasteVector, toPgVector } from "./taste.js";
 
 export type VideoStatus = "baixando" | "processando" | "pendente" | "aprovado" | "rejeitado" | "falhou";
@@ -111,6 +112,10 @@ export interface Store {
   recordShare(userId: string, videoId: string): Promise<void>;
   /** viewerId decide o campo liked dos vídeos curtidos. */
   profile(nickname: string, viewerId: string): Promise<Profile | null>;
+  /** Vídeos aprovados com as palavras da busca (texto ou tópicos) e o cosseno com o embedding dela. */
+  searchCandidates(query: string, embedding: number[] | null): Promise<SearchCandidate[]>;
+  /** Vídeos aprovados na ordem dos ids, com curtida de quem vê. */
+  feedVideos(viewerId: string, ids: string[]): Promise<FeedVideo[]>;
   /**
    * Vídeos aprovados sem nenhuma decisão de persona (o job falhou ou veio de antes do JEV), usado na subida.
    * likesOnly: o vídeo já tem comentário de persona (acervo de antes do JEV), então elas só curtem;
@@ -546,6 +551,35 @@ export class PgStore implements Store {
       [viewerId, row.id],
     );
     return { ...toUser(row), name: row.name, bio: row.bio, liked: liked.rows.map(toFeedVideo) };
+  }
+
+  async searchCandidates(query: string, embedding: number[] | null) {
+    const res = await this.pool.query<{ id: string; text_match: boolean; similarity: number | null }>(
+      `WITH q AS (SELECT plainto_tsquery('portuguese', busca_normaliza($1)) AS q)
+       SELECT v.id,
+              (numnode(q.q) > 0 AND (
+                video_busca(v.title, v.description, v.source_description, v.hashtags, v.transcript) @@ q.q
+                OR EXISTS (SELECT 1 FROM video_topics vt JOIN topics t ON t.id = vt.topic_id
+                            WHERE vt.video_id = v.id
+                              AND to_tsvector('portuguese', busca_normaliza(t.name || ' ' || t.slug)) @@ q.q)
+              )) AS text_match,
+              CASE WHEN $2::vector IS NULL OR v.embedding IS NULL THEN NULL
+                   ELSE (1 - (v.embedding <=> $2::vector))::float8 END AS similarity
+         FROM videos v CROSS JOIN q
+        WHERE v.status = 'aprovado' AND v.file_path IS NOT NULL`,
+      [query, embedding ? toPgVector(embedding) : null],
+    );
+    return res.rows.map((r) => ({ id: r.id, textMatch: r.text_match, similarity: r.similarity }));
+  }
+
+  async feedVideos(viewerId: string, ids: string[]) {
+    if (!ids.length) return [];
+    const res = await this.pool.query<FeedRow>(
+      `${FEED_SELECT} WHERE v.id = ANY($2::uuid[]) AND v.status = 'aprovado' AND v.file_path IS NOT NULL`,
+      [viewerId, ids],
+    );
+    const byId = new Map(res.rows.map((r) => [r.id, toFeedVideo(r)]));
+    return ids.map((id) => byId.get(id)).filter((v): v is FeedVideo => Boolean(v));
   }
 
   async listComments(videoId: string) {

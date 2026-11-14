@@ -226,6 +226,26 @@ class MemoryStore implements Store {
     const liked = [...this.videos.values()].filter((v) => v.status === "aprovado" && this.likes.get(v.id)?.has(found.user.id));
     return { ...found.user, name: null, bio: null, liked: liked.map((v) => this.toFeed(v, viewerId)) };
   }
+  async searchCandidates(query: string, embedding: number[] | null) {
+    const norm = (t: string) => t.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+    const words = norm(query).split(/\s+/).filter(Boolean);
+    return [...this.videos.values()]
+      .filter((v) => v.status === "aprovado")
+      .map((v) => {
+        const text = norm([v.title, v.description, ...v.topics.flatMap((t) => [t.slug, t.name])].filter(Boolean).join(" "));
+        return {
+          id: v.id,
+          textMatch: words.every((w) => text.includes(w)),
+          similarity: embedding && v.embedding ? cosine(embedding, v.embedding) : null,
+        };
+      });
+  }
+  async feedVideos(viewerId: string, ids: string[]) {
+    return ids.flatMap((id) => {
+      const v = this.videos.get(id);
+      return v && v.status === "aprovado" ? [this.toFeed(v, viewerId)] : [];
+    });
+  }
   async recordShare(userId: string, videoId: string) {
     this.shares.add(`${userId}:${videoId}`);
     this.bump(userId, videoId, SHARE_DELTA);
@@ -718,6 +738,67 @@ describe("feed", () => {
     const feed = await app().inject({ method: "POST", url: "/feed", headers, payload: {} });
     expect(feed.json().videos[0]).toMatchObject({ liked: true, likeCount: 1 });
     expect((await app().inject({ method: "DELETE", url: `/videos/${id}/like`, headers })).json()).toEqual({ liked: false, likeCount: 0 });
+  });
+});
+
+describe("busca", () => {
+  /** Vídeo aprovado com texto e embedding (2 dimensões bastam para o cosseno). */
+  async function approved(title: string, embedding: number[], slug = "humor") {
+    const id = await store.createVideo(`https://youtu.be/${store.videos.size}`, "youtube", "u-dono");
+    Object.assign(store.videos.get(id)!, {
+      title,
+      description: null,
+      embedding,
+      status: "aprovado",
+      videoUrl: `/media/${id}/video.mp4`,
+      topics: [{ slug, name: slug, source: "user" }],
+    });
+    return id;
+  }
+  /** 12 vídeos sem relação com as buscas, parecidos entre si, para o destaque ter com o que comparar. */
+  async function filler() {
+    for (let i = 0; i < 12; i++) await approved(`Vídeo qualquer ${i}`, [Math.cos(1.3 + i * 0.05), Math.sin(1.3 + i * 0.05)]);
+  }
+  const search = (q: string, headers: Record<string, string>, embed?: (t: string) => Promise<number[]>) =>
+    buildApp({ config, store, chat, hub, queue, now: () => clock, embed }).inject({ method: "GET", url: `/videos/busca?q=${encodeURIComponent(q)}`, headers });
+
+  it("põe primeiro quem tem as palavras (sem acento) e depois quem se destaca no significado", async () => {
+    const headers = await auth("morador", "111111");
+    await filler();
+    const parecido = await approved("Felino derruba copo", [1, 0.02]);
+    const comPalavra = await approved("Gato na música", [0, 1]);
+    const embed = vi.fn(async () => [1, 0]);
+    const res = await search("  musica   gato ", headers, embed);
+    expect(res.statusCode).toBe(200);
+    expect(embed).toHaveBeenCalledWith("search_query: musica gato");
+    expect(res.json().semantic).toBe(true);
+    expect(res.json().videos.map((v: FeedVideo) => v.id)).toEqual([comPalavra, parecido]);
+    expect(res.json().videos[0]).toMatchObject({ liked: false, likeCount: 0 });
+  });
+
+  it("acha pelo tópico e nunca devolve mais de 10", async () => {
+    const headers = await auth("morador", "111111");
+    for (let i = 0; i < 14; i++) await approved(`Bicho ${i}`, [0, 1], "animais");
+    const res = await search("animais", headers, async () => [1, 0]);
+    expect(res.json().videos).toHaveLength(10);
+  });
+
+  it("sem a IA, busca só pelas palavras; sem nada parecido, volta vazio", async () => {
+    const headers = await auth("morador", "111111");
+    await filler();
+    const comPalavra = await approved("Receita de bolo", [0, 1]);
+    const off = await search("bolo", headers, async () => {
+      throw new Error("Ollama fora");
+    });
+    expect(off.json()).toEqual({ videos: [expect.objectContaining({ id: comPalavra })], semantic: false });
+    expect((await search("tricô", headers, async () => [0.3, -1])).json().videos).toEqual([]);
+  });
+
+  it("recusa busca curta ou longa demais e sem sessão", async () => {
+    const headers = await auth("morador", "111111");
+    expect((await search("a", headers)).statusCode).toBe(400);
+    expect((await search("x".repeat(101), headers)).statusCode).toBe(400);
+    expect((await buildApp({ config, store, chat, hub, queue }).inject({ method: "GET", url: "/videos/busca?q=gato" })).statusCode).toBe(401);
   });
 });
 
