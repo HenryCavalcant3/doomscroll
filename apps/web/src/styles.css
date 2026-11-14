@@ -11,6 +11,9 @@
   --radius: 10px;
   --radius-card: 12px;
   --nav-h: 64px;
+  /* Área segura (entalhe da câmera, barra de gestos); 0 fora do celular. */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
   color-scheme: dark;
   font-family: "Space Grotesk", "Helvetica Neue", Arial, sans-serif;
   background: var(--bg);
@@ -19,6 +22,12 @@
 
 * { box-sizing: border-box; }
 html, body, #root { margin: 0; min-height: 100%; background: var(--bg); }
+/* Jeito de app: sem "puxar para recarregar" nem efeito elástico, sem destaque ao tocar e sem zoom no duplo toque. */
+html, body { overscroll-behavior: none; }
+html { -webkit-tap-highlight-color: transparent; touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+/* Controles não selecionam texto nem abrem o menu de toque longo (iPhone; no Android, main.tsx). */
+button, a, img, video, svg, .bottom-nav, .feed-rail { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.btn:active, .feed-action:active, .bottom-nav a:active { transform: scale(0.97); }
 button, input { font: inherit; color: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: not-allowed; opacity: 0.5; }
@@ -31,11 +40,15 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
   margin: 0 auto;
   display: flex;
   flex-direction: column;
-  border-inline: 1px solid var(--line);
+  padding-top: var(--safe-top);
+}
+/* Contorno só no computador: no celular ele encostava na curva da tela. */
+@media (min-width: 481px) {
+  .app { border-inline: 1px solid var(--line); }
 }
 .screen {
   flex: 1;
-  padding: 24px 20px calc(var(--nav-h) + 24px);
+  padding: 24px 20px calc(var(--nav-h) + var(--safe-bottom) + 24px);
   display: flex;
   flex-direction: column;
   gap: 24px;
@@ -50,11 +63,11 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
   transform: translateX(-50%);
   width: 100%;
   max-width: 480px;
-  height: var(--nav-h);
+  height: calc(var(--nav-h) + var(--safe-bottom));
   display: flex;
   border-top: 1px solid var(--line);
   background: var(--bg);
-  padding-bottom: env(safe-area-inset-bottom);
+  padding-bottom: var(--safe-bottom);
 }
 .bottom-nav a, .bottom-nav span {
   flex: 1;
@@ -77,7 +90,8 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
   background: var(--surface);
   border: 1px solid var(--field-line);
   border-radius: var(--radius);
-  font-size: 15px;
+  /* 16 px: com menos, o iPhone dá zoom ao tocar no campo e o zoom fica. */
+  font-size: 16px;
   width: 100%;
 }
 .input::placeholder { color: #8a8a8a; }
@@ -175,7 +189,7 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
 }
 
 /* Feed (wireframe feed): um vídeo por tela, encaixando na rolagem */
-.feed { position: relative; height: calc(100dvh - var(--nav-h)); background: var(--surface); }
+.feed { position: relative; height: calc(100dvh - var(--safe-top) - var(--nav-h) - var(--safe-bottom)); background: var(--surface); }
 .feed-title {
   position: absolute;
   top: 20px;
@@ -357,7 +371,7 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
 }
 
 /* Entrada (tela 1, docs/acabamento/telas/entrada.html) */
-.entrada { flex: 1; display: flex; flex-direction: column; align-items: center; padding: 0 24px 24px; }
+.entrada { flex: 1; display: flex; flex-direction: column; align-items: center; padding: 0 24px calc(24px + var(--safe-bottom)); }
 .entrada-barata { margin-top: 36px; }
 .entrada-marca { margin-top: 4px; font-size: 40px; font-weight: 700; line-height: 1.1; letter-spacing: -1.5px; }
 .entrada-slogan { margin: 6px 0 0; font-size: 15px; line-height: 1.4; color: var(--muted); text-align: center; }
@@ -396,7 +410,7 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
   border-radius: 12px;
   color: var(--fg);
 }
-.entrada-campo { margin-top: 6px; height: 48px; padding: 0 14px; font-size: 15px; }
+.entrada-campo { margin-top: 6px; height: 48px; padding: 0 14px; font-size: 16px; }
 .entrada-campo::placeholder { color: var(--muted); }
 .pin-boxes { margin-top: 6px; display: flex; gap: 6px; }
 .pin-box { flex: 1; min-width: 0; max-width: 56px; height: 56px; padding: 0; font-size: 24px; font-weight: 700; text-align: center; }
@@ -455,7 +469,7 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
 /* Player do vídeo curtido */
 .player { position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; background: #000; }
 .player video { width: 100%; height: 100%; max-width: 480px; object-fit: contain; }
-.player-close { position: absolute; top: 12px; right: 12px; background: rgb(20 20 20 / 55%); border-radius: 50%; }
+.player-close { position: absolute; top: calc(12px + var(--safe-top)); right: 12px; background: rgb(20 20 20 / 55%); border-radius: 50%; }
 .player-desc {
   position: absolute;
   left: 16px;
@@ -508,7 +522,7 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
 .inbox-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
 
 /* Conversa (wireframe chat): tela toda, campo de mensagem no fim da coluna */
-.chat { height: 100dvh; display: flex; flex-direction: column; }
+.chat { height: calc(100dvh - var(--safe-top)); display: flex; flex-direction: column; }
 .chat-head {
   flex: none;
   height: 68px;
@@ -672,7 +686,7 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
 .abrindo-barra .faixa { width: 100%; height: 100%; }
 
 /* Sem sinal (docs/acabamento/telas/sem-sinal.html) */
-.sem-sinal { flex: 1; display: flex; flex-direction: column; padding: 24px; }
+.sem-sinal { flex: 1; display: flex; flex-direction: column; padding: 24px 24px calc(24px + var(--safe-bottom)); }
 .sem-sinal h1 { margin: 28px 0 8px; font-size: 30px; line-height: 1.1; letter-spacing: -0.5px; text-align: center; }
 .sem-sinal-texto { margin: 0; font-size: 15px; line-height: 1.45; color: var(--muted); text-align: center; }
 .radar { position: relative; width: 220px; height: 220px; margin: 24px auto 0; flex: none; }
@@ -745,7 +759,7 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
 .zerou-fim p { margin: 4px 0 20px; font-size: 13px; line-height: 1.4; color: var(--muted); }
 
 /* Certificado do bunker (docs/acabamento/telas/certificado.html) */
-.cert { padding: 24px; display: flex; flex-direction: column; }
+.cert { padding: 24px 24px calc(24px + var(--safe-bottom)); display: flex; flex-direction: column; }
 .cert-topo { display: flex; align-items: center; gap: 14px; }
 .cert-icone {
   width: 60px;
