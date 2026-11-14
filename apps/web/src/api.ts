@@ -208,6 +208,7 @@ export const api = {
   logout: () => request<void>("/auth/sair", { method: "POST" }),
   topics: () => request<Topic[]>("/topics"),
   feed: (exclude: string[]) => request<FeedPage>("/feed", { method: "POST", body: { exclude } }),
+  search: (q: string) => request<{ videos: FeedVideo[]; semantic: boolean }>(`/videos/busca?q=${encodeURIComponent(q)}`),
   comments: (videoId: string) => request<Comment[]>(`/videos/${videoId}/comments`),
   addComment: (videoId: string, text: string) => request<Comment>(`/videos/${videoId}/comments`, { method: "POST", body: { text } }),
   /** keepalive: o envio continua mesmo se a página for fechada logo depois. */

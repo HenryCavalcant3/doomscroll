@@ -3,22 +3,22 @@ import type { FeedVideo } from "../api";
 import { CloseIcon, CommentsDrawer, FeedItem, likeVideo, ShareDrawer, usePrefetchNext } from "./Feed";
 
 interface Props {
-  /** Os curtidos do perfil, na ordem da grade. */
+  /** Os vídeos da grade (curtidos do perfil, resultados da busca), na ordem dela. */
   videos: FeedVideo[];
   /** Posição do vídeo tocado na grade. */
   start: number;
   title: string;
-  /** Muda um vídeo na lista do perfil (curtida, contagem de comentários). */
+  /** Muda um vídeo na lista de quem abriu (curtida, contagem de comentários). */
   onPatch(id: string, change: Partial<FeedVideo>): void;
   onClose(): void;
 }
 
 /**
- * Curtidos do perfil em tela cheia, com o mesmo vídeo do feed: rola pelos outros curtidos a partir do
- * tocado. Quem fecha decide o que sai da grade (os descurtidos só somem depois, para nada sumir debaixo
- * do dedo).
+ * Uma grade de vídeos em tela cheia, com o mesmo vídeo do feed: rola pelos outros a partir do tocado.
+ * Usada pelos curtidos do perfil e pela busca. Quem fecha decide o que sai da grade (no perfil, os
+ * descurtidos só somem depois, para nada sumir debaixo do dedo).
  */
-export function LikedViewer({ videos, start, title, onPatch, onClose }: Props) {
+export function VideoViewer({ videos, start, title, onPatch, onClose }: Props) {
   const [active, setActive] = useState(start);
   // Tocar na miniatura conta como toque na tela: dá para começar com som (se o navegador recusar,
   // aquele vídeo toca mudo, com o aviso "toque para ouvir").

@@ -74,9 +74,14 @@ export function Feed() {
     <main className="feed">
       {/* O card do fim do acervo tem o próprio topo. */}
       {!(feed.entries[active] && "zerou" in feed.entries[active]) && (
-        <div className="feed-title" aria-hidden="true">
-          Para você
-        </div>
+        <>
+          <div className="feed-title" aria-hidden="true">
+            Para você
+          </div>
+          <a className="icon-btn feed-busca" href="#/buscar" aria-label="Buscar vídeos">
+            <SearchIcon />
+          </a>
+        </>
       )}
       <div className="feed-scroller" ref={scroller}>
         {feed.entries.map((entry, i) =>
@@ -586,6 +591,14 @@ function SoundOffIcon() {
     <svg {...icon} width={40} height={40} strokeWidth={1.5}>
       <path d="M4 9h4l5-4v14l-5-4H4z" />
       <path d="M16 9l5 6M21 9l-5 6" strokeLinecap="round" />
+    </svg>
+  );
+}
+function SearchIcon() {
+  return (
+    <svg {...icon} width={26} height={26} strokeWidth={2} strokeLinecap="round">
+      <circle cx="10.5" cy="10.5" r="6.5" />
+      <path d="M15.5 15.5L21 21" />
     </svg>
   );
 }

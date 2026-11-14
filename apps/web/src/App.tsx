@@ -14,6 +14,7 @@ import { Feed } from "./screens/Feed";
 import { Messages } from "./screens/Messages";
 import { OwnerPanel } from "./screens/OwnerPanel";
 import { ProfileScreen } from "./screens/Profile";
+import { SearchScreen } from "./screens/Search";
 import { StalkerChat } from "./screens/Stalker";
 
 type Session = { state: "checking" } | { state: "offline" } | { state: "out" } | { state: "in"; user: User };
@@ -134,6 +135,7 @@ export function App() {
     <RealtimeContext.Provider value={realtime}>
       <div className="app">
         {route.name === "feed" && <Feed />}
+        {route.name === "buscar" && <SearchScreen />}
         {route.name === "adicionar" && <AddVideo />}
         {route.name === "mensagens" && <Messages me={me} />}
         {route.name === "chat" && <ChatScreen key={route.id} id={route.id} me={me} onRead={refreshUnread} />}

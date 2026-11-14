@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, apiUrl, type FeedVideo, type Profile, type User } from "../api";
 import { Avatar } from "../components/Avatar";
-import { LikedViewer } from "./LikedViewer";
+import { VideoViewer } from "./VideoViewer";
 import { chatHref } from "../router";
 import { StalkerList } from "./Stalker";
 
@@ -128,7 +128,7 @@ export function ProfileScreen({ nickname, me, onLogout }: Props) {
       )}
 
       {playing !== null && (
-        <LikedViewer
+        <VideoViewer
           videos={profile.liked}
           start={playing}
           title={own ? "Curtidos" : `Curtidos de ${title}`}

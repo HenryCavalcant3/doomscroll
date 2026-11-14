@@ -323,6 +323,15 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
   transform-origin: left;
   transition: transform 0.25s linear;
 }
+/* Lupa da busca, no canto do feed, por cima do vídeo */
+.feed-busca {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 3;
+  color: var(--fg);
+  filter: drop-shadow(0 1px 3px rgb(0 0 0 / 70%));
+}
 /* Miniatura por cima do vídeo até ele mostrar imagem (o toque passa para o vídeo) */
 .feed-cover { pointer-events: none; }
 /* Vídeo da vez carregando: um trecho da barra vai e volta no lugar do progresso */
@@ -886,3 +895,14 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
 @media (prefers-reduced-motion: reduce) {
   .anda, .balanca, .pisca, .pulso, .gira, .desce { animation: none; }
 }
+
+/* Busca (aberta pela lupa do feed) */
+.busca-topo { display: flex; align-items: center; gap: 8px; margin: -12px -8px 16px; }
+.busca-voltar { flex: none; color: var(--fg); }
+.busca-campo { flex: 1; min-width: 0; }
+.busca-campo::-webkit-search-cancel-button { display: none; }
+.busca-topo .btn { flex: none; }
+.busca-estado { flex: 1; margin-top: 24px; }
+.busca-estado h1 { margin-top: 16px; font-size: 22px; }
+.busca-estado > .btn { margin-top: 12px; align-self: flex-start; }
+.busca-total { margin: 0 0 8px; }
