@@ -1,5 +1,6 @@
 import type { Pool } from "pg";
 import type { MemoryLine, PersonaProfile, TopicOption, VideoForComment } from "./ai.js";
+import { localHour } from "./ritmo.js";
 import { TICK, type Decision, type PersonaTaste, type TickCandidates } from "./jev.js";
 
 export interface VideoRecord {
@@ -309,7 +310,7 @@ export class PgTickDb implements TickDb {
       id: string;
       nickname: string;
       activity_level: number;
-      config: { afinidade?: Record<string, number>; relacoes?: Record<string, string> };
+      config: { afinidade?: Record<string, number>; relacoes?: Record<string, string>; ritmo?: string[] };
     }>(`SELECT p.user_id AS id, u.nickname, p.activity_level, p.config FROM personas p JOIN users u ON u.id = p.user_id`);
     const videos = await this.pool.query<{ id: string; topics: string[]; liked_by: string[] }>(
       `SELECT v.id,
@@ -345,11 +346,13 @@ export class PgTickDb implements TickDb {
         activity: p.activity_level,
         affinity: p.config.afinidade ?? {},
         relations: Object.keys(p.config.relacoes ?? {}),
+        ritmo: p.config.ritmo ?? [],
       })),
       videos: videos.rows.map((v) => ({ id: v.id, topics: v.topics, likedBy: v.liked_by })),
       sentInPair: new Map(pairs.rows.map((r) => [r.direct_key, new Set(r.videos)])),
       coolingPairs: new Set(pairs.rows.filter((r) => r.cooling).map((r) => r.direct_key)),
       bunkerVideos: new Set(bunker.rows.map((r) => r.video_id)),
+      hour: localHour(),
     };
   }
 

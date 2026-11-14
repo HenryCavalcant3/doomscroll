@@ -4,6 +4,8 @@
  * diante de um vídeo aprovado: ignorar, curtir ou comentar (comentar também curte).
  */
 
+import { rhythm } from "./ritmo.js";
+
 /** O gosto da persona, do JSON dela (atividade e afinidade por slug de tópico). */
 export interface PersonaTaste {
   activity: number;
@@ -67,13 +69,15 @@ export function decideVideo(taste: PersonaTaste, video: VideoContext, random: ()
  * Agendador das personas (SPEC 7.4, "tique do agendador"; 7.5): de tempos em tempos, uma persona
  * puxa conversa mandando um vídeo que ela curtiu para outra persona (ou, às vezes, para o Grupo do
  * Bunker). Quem puxa sai por sorteio pesado pela atividade; o par pela relação entre elas; o vídeo
- * pelo gosto de quem recebe. A conversa que segue (respostas e silêncio) é decidida na api.
+ * pelo gosto de quem recebe. Quem está fora do ritmo (ritmo.ts) sai menos. A conversa que segue (respostas e silêncio) é decidida na api.
  */
 export interface TickPersona extends PersonaTaste {
   id: string;
   nickname: string;
   /** Apelidos de quem ela cita em `relacoes`. */
   relations: string[];
+  /** Faixas de hora em que costuma estar ativa (ritmo.ts). */
+  ritmo?: string[];
 }
 
 export interface TickVideo {
@@ -92,6 +96,8 @@ export interface TickCandidates {
   coolingPairs: Set<string>;
   /** Vídeos já mandados no Grupo do Bunker. */
   bunkerVideos: Set<string>;
+  /** Hora local (0 a 23): quem está fora do ritmo puxa conversa menos. */
+  hour: number;
 }
 
 export interface TickPlan {
@@ -128,12 +134,14 @@ function weighted<T>(items: T[], weight: (t: T) => number, random: () => number)
 
 export function planTick(c: TickCandidates, random: () => number = Math.random): TickPlan | null {
   const liked = (p: TickPersona) => c.videos.filter((v) => v.likedBy.includes(p.id));
+  const pace = (p: TickPersona) => rhythm(p.ritmo, c.hour);
   const starter = weighted(
     c.personas.filter((p) => liked(p).length > 0),
-    (p) => p.activity,
+    (p) => p.activity * pace(p),
     random,
   );
   if (!starter) return null;
+  const ritmo = pace(starter);
   if (random() < TICK.bunkerChance) {
     const video = weighted(
       liked(starter).filter((v) => !c.bunkerVideos.has(v.id)),
@@ -146,7 +154,7 @@ export function planTick(c: TickCandidates, random: () => number = Math.random):
       partnerId: null,
       videoId: video.id,
       score: round(topicAffinity(starter, video.topics)),
-      reasons: { atividade: starter.activity, afinidade: round(topicAffinity(starter, video.topics)), grupo: true },
+      reasons: { atividade: starter.activity, ritmo, afinidade: round(topicAffinity(starter, video.topics)), grupo: true },
     };
   }
   const related = (p: TickPersona) => starter.relations.includes(p.nickname) || p.relations.includes(starter.nickname);
@@ -171,6 +179,6 @@ export function planTick(c: TickCandidates, random: () => number = Math.random):
     partnerId: partner.id,
     videoId: video.id,
     score: affinity,
-    reasons: { atividade: starter.activity, afinidade_de_quem_recebe: affinity, relacao: related(partner) },
+    reasons: { atividade: starter.activity, ritmo, afinidade_de_quem_recebe: affinity, relacao: related(partner) },
   };
 }

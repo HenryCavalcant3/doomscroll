@@ -19,8 +19,8 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): Config {
   if (!/^[a-z0-9.-]+$/.test(whisperModel)) throw new Error(`WHISPER_MODEL inválido: ${whisperModel}`);
   const personaRate = Number(env.PERSONA_RATE || 30);
   if (!Number.isInteger(personaRate) || personaRate < 0) throw new Error(`PERSONA_RATE inválido: ${env.PERSONA_RATE}`);
-  // Padrão: a cada 30 minutos. "off" desliga as conversas entre personas.
-  const tick = (env.PERSONA_TICK ?? "").trim() || "*/30 * * * *";
+  // Padrão: a cada 15 minutos. "off" desliga as conversas entre personas.
+  const tick = (env.PERSONA_TICK ?? "").trim() || "*/15 * * * *";
   if (tick !== "off" && tick.split(/\s+/).length !== 5) throw new Error(`PERSONA_TICK inválido (cron de 5 campos ou "off"): ${tick}`);
   return {
     personaRate,

@@ -11,6 +11,7 @@ const db = (actions: number): TickDb => ({
     sentInPair: new Map(),
     coolingPairs: new Set(),
     bunkerVideos: new Set(),
+    hour: 12,
   }),
 });
 

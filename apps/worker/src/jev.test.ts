@@ -32,7 +32,7 @@ describe("JEV diante de um vídeo", () => {
 });
 
 describe("agendador das personas", () => {
-  const p = (id: string, activity: number, affinity: Record<string, number>, relations: string[] = []) => ({ id, nickname: id, activity, affinity, relations });
+  const p = (id: string, activity: number, affinity: Record<string, number>, relations: string[] = []) => ({ id, nickname: id, activity, affinity, relations, ritmo: undefined as string[] | undefined });
   const base = () => ({
     personas: [p("valdir", 0.9, { humor: 0.9 }, ["rato"]), p("rato", 0.2, { games: 0.9, humor: 0.1 })],
     videos: [
@@ -42,6 +42,7 @@ describe("agendador das personas", () => {
     sentInPair: new Map<string, Set<string>>(),
     coolingPairs: new Set<string>(),
     bunkerVideos: new Set<string>(),
+    hour: 12,
   });
 
   it("quem puxa conversa manda um vídeo que curtiu, escolhido pelo gosto de quem recebe", () => {
@@ -63,6 +64,19 @@ describe("agendador das personas", () => {
     const rolls = [0.5, 0.01, 0.1];
     expect(planTick(base(), () => rolls.shift() ?? 0)).toMatchObject({ partnerId: null, videoId: "piada", reasons: { grupo: true } });
   });
+
+  it("quem está fora do ritmo puxa conversa menos, mas ainda pode puxar", () => {
+    const c = base();
+    c.videos.push({ id: "jogo", topics: ["games"], likedBy: ["rato"] });
+    const ritmo = { valdir: ["05-09"], rato: ["20-04"] };
+    for (const persona of c.personas) persona.ritmo = ritmo[persona.id as keyof typeof ritmo];
+    // Meia-noite: Valdir 0,9 × 0,4 = 0,36 contra Rato 0,2 × 1 = 0,2; 0,9 do sorteio cai no Rato.
+    c.hour = 0;
+    expect(planTick(c, () => 0.9)).toMatchObject({ starterId: "rato", reasons: { ritmo: 1 } });
+    // Às 7h o Valdir pesa 0,9 contra 0,08 do Rato.
+    c.hour = 7;
+    expect(planTick(c, () => 0.9)).toMatchObject({ starterId: "valdir", reasons: { ritmo: 1 } });
+  });
 });
 
 describe("agendador: vídeo repetido", () => {
@@ -74,6 +88,7 @@ describe("agendador: vídeo repetido", () => {
       sentInPair: new Map([[pairKey("valdir", "kelly"), new Set(["cookie"])]]),
       coolingPairs: new Set<string>(),
       bunkerVideos: new Set<string>(),
+      hour: 12,
     };
     expect(planTick(c, () => 0.5)).toBeNull();
   });
