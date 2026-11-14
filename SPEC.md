@@ -53,9 +53,10 @@ Vídeos curtos para o fim do mundo. Um app no estilo TikTok/Reels/Shorts que fun
 ## 4. Usuários e papéis
 
 - Identificação por **apelido + PIN** (PIN guardado com hash). Sem e-mail.
-- **Dono:** quem roda o servidor. Aprova vídeos, gerencia tópicos e personas.
+- **Foto de perfil:** cada morador escolhe um item do bunker (13 desenhos em `docs/avatares/moradores`, disco amarelo com símbolo preto; a escotilha é o padrão de quem ainda não escolheu). A escolha é o segundo passo da criação de conta e pode ser trocada no perfil. Guarda-se só o nome do item.
+- **Dono:** quem roda o servidor. Aprova vídeos, gerencia tópicos e personas. Usa um avatar de morador com a moldura tracejada em volta (`docs/avatares/dono`), em todos os tamanhos; o selo da chave entra no avatar de 64 px ou mais e, nos tamanhos menores, ao lado do apelido, como um "verificado" (feed, comentários, chat, caixa de entrada).
 - **Morador:** usuário comum da rede.
-- **Persona:** usuário com `is_ai = true`.
+- **Persona:** usuário com `is_ai = true`. Usa o avatar da pasta `personas/` (disco preto, símbolo amarelo) e não pode usar os itens dos moradores: a inversão de cores separa IA de gente.
 
 ## 5. Fluxos
 
@@ -163,7 +164,7 @@ Depois da versão 1.0, num formato novo que ainda vai ser definido:
 
 ## 8. Modelo de dados
 
-- **users**: id, nickname, pin_hash, avatar, role (`owner` | `resident`), is_ai, created_at.
+- **users**: id, nickname, pin_hash, avatar, role (`owner` | `resident`), is_ai, created_at. Em `avatar`, morador guarda o nome do item (`padrao` de início) e persona, o arquivo `.svg` da pasta `personas/`.
 - **personas**: user_id, bio, tone, examples (json), activity_level, config (json).
 - **videos**: id, source_url, platform, file_path, thumb_path, duration, title, description, transcript, embedding (vector), status, submitted_by, approved_by, created_at.
 - **topics**: id, name, slug, embedding.
@@ -180,13 +181,13 @@ Depois da versão 1.0, num formato novo que ainda vai ser definido:
 
 ## 9. Telas
 
-1. **Entrada:** apelido + PIN.
+1. **Entrada:** apelido + PIN. Na criação de conta, o segundo passo é a foto de perfil, com o botão "Entrar no bunker".
 2. **Feed:** vídeo em tela cheia, ações na lateral, comentários em gaveta, lupa da busca no canto superior.
    - **Busca:** campo e botão Buscar, grade de miniaturas dos resultados, vídeo em tela cheia como no feed.
 3. **Cadastrar vídeo:** campo de link, status do processamento, tópicos sugeridos.
 4. **Caixa de entrada:** lista de conversas (pessoas, personas, grupo).
 5. **Chat:** mensagens, vídeos compartilhados, reações.
-6. **Perfil:** avatar, apelido, vídeos curtidos. No perfil de persona: bio e modo stalker.
+6. **Perfil:** avatar, apelido, vídeos curtidos. No próprio perfil, "Trocar foto" abre a mesma tela de foto de perfil (`docs/avatares/selecao.html`), com voltar e "Salvar". No perfil de persona: bio e modo stalker.
 7. **Painel do dono:** fila de aprovação, tópicos, personas.
 
 ## 10. Sequência de desenvolvimento
@@ -204,6 +205,9 @@ Depois da versão 1.0, num formato novo que ainda vai ser definido:
 **MVP (já feito):** passos 1 a 5, com uma persona.
 
 **Versão 1.0:** passos 1 a 9, mais a busca e o resumo do dia (7.6).
+
+**Fora do plano:** o que entrou sem estar nesta sequência nem em 7.6, com a data e o motivo. A descrição fica nas seções de sempre; aqui só o registro.
+- 2026-11-14 · **Foto de perfil dos moradores e marcas do dono** (4, 8 e 9). Antes, morador aparecia só com a inicial do apelido, e nada distinguia o dono no feed e no chat. Agora cada morador escolhe um item do bunker, o dono ganha a moldura e a chave, e as personas mantêm as cores invertidas.
 
 ## 11. Pontos de atenção
 
