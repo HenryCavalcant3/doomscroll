@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sem sinal do bunker</title>
+<style>
+body{margin:0;background:#141414;display:flex;justify-content:center}
+@keyframes pulso{0%{transform:scale(.35);opacity:.9}100%{transform:scale(1);opacity:0}}
+.pulso{transform-box:fill-box;transform-origin:center;animation:pulso 2.4s ease-out infinite}
+.p2{animation-delay:1.2s}
+@media (prefers-reduced-motion: reduce){*{animation:none!important}}
+</style>
+</head>
+<body>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #141414; color: #F5F5F5; font-family: 'Space Grotesk', system-ui, sans-serif; display: flex; flex-direction: column">
+<main style="flex: 1; display: flex; flex-direction: column; padding: 24px">
+<div style="position: relative; width: 220px; height: 220px; margin: 24px auto 0">
+<svg aria-hidden="true" width="220" height="220" viewBox="0 0 220 220" style="position: absolute; inset: 0">
+<circle cx="110" cy="110" r="104" fill="none" stroke="#3A3A3A" stroke-width="1.5"/>
+<circle cx="110" cy="110" r="76" fill="none" stroke="#3A3A3A" stroke-width="1.5"/>
+<line x1="110" y1="2" x2="110" y2="218" stroke="#3A3A3A" stroke-width="1.5"/>
+<line x1="2" y1="110" x2="218" y2="110" stroke="#3A3A3A" stroke-width="1.5"/>
+<circle class="pulso" cx="110" cy="110" r="104" fill="none" stroke="#FFD400" stroke-width="2"/>
+<circle class="pulso p2" cx="110" cy="110" r="104" fill="none" stroke="#FFD400" stroke-width="2"/>
+<circle cx="110" cy="110" r="48" fill="#262626"/>
+</svg>
+<svg aria-hidden="true" class="" width="88" height="88" viewBox="0 0 320 320" style="position: absolute; left: 66px; top: 66px">
+<g transform="rotate(25 160 160)">
+<g fill="none" stroke="#FFD400" stroke-linecap="round" stroke-linejoin="round">
+<path d="M150 78 Q 122 40 92 52" stroke-width="7"/>
+<path d="M170 78 Q 198 40 228 52" stroke-width="7"/>
+<g stroke-width="9">
+<polyline points="120,138 88,124 74,98"/>
+<polyline points="112,172 74,174 54,190"/>
+<polyline points="120,206 90,226 82,256"/>
+<polyline points="200,138 232,124 246,98"/>
+<polyline points="208,172 246,174 266,190"/>
+<polyline points="200,206 230,226 238,256"/>
+</g>
+</g>
+<circle cx="160" cy="92" r="24" fill="#FFD400"/>
+<ellipse cx="160" cy="176" rx="52" ry="74" fill="#FFD400"/>
+</g>
+<polygon points="141,152.5 141,196.5 179,174.5" fill="#141414" stroke="#141414" stroke-width="8" stroke-linejoin="round"/>
+</svg>
+</div>
+<h1 style="margin: 28px 0 8px; font-size: 30px; font-weight: 700; line-height: 1.1; letter-spacing: -0.5px; text-align: center">Sem sinal do bunker</h1>
+<p style="margin: 0; font-size: 15px; line-height: 1.45; color: #B0B0B0; text-align: center">O app não encontrou o servidor. Ele pode estar desligado, ou este aparelho saiu da rede do bunker.</p>
+<ol style="list-style: none; margin: 24px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px">
+<li style="display: flex; gap: 12px; padding: 14px; background: #262626; border: 1px solid #3A3A3A; border-radius: 12px">
+<div aria-hidden="true" style="width: 28px; height: 28px; flex: none; border-radius: 50%; background: #FFD400; color: #141414; font-size: 15px; font-weight: 700; display: flex; align-items: center; justify-content: center">1</div>
+<div>
+<div style="font-size: 15px; font-weight: 700; line-height: 1.3">Confira o Wi-Fi</div>
+<div style="margin-top: 2px; font-size: 13px; line-height: 1.4; color: #B0B0B0">Este aparelho precisa estar na mesma rede do computador que roda o bunker.</div>
+</div>
+</li>
+<li style="display: flex; gap: 12px; padding: 14px; background: #262626; border: 1px solid #3A3A3A; border-radius: 12px">
+<div aria-hidden="true" style="width: 28px; height: 28px; flex: none; border-radius: 50%; background: #FFD400; color: #141414; font-size: 15px; font-weight: 700; display: flex; align-items: center; justify-content: center">2</div>
+<div>
+<div style="font-size: 15px; font-weight: 700; line-height: 1.3">Confira o servidor</div>
+<div style="margin-top: 2px; font-size: 13px; line-height: 1.4; color: #B0B0B0">Pergunte a quem cuida do bunker se ele está ligado.</div>
+</div>
+</li>
+</ol>
+<div style="flex: 1"></div>
+<button style="height: 52px; background: #FFD400; color: #141414; border: 0; border-radius: 12px; font: inherit; font-size: 16px; font-weight: 700">Tentar de novo</button>
+<p style="margin: 12px 0 0; font-size: 13px; line-height: 1.4; color: #B0B0B0; text-align: center">Suas curtidas e conversas continuam guardadas no bunker.</p>
+</main>
+</div>
+</body>
+</html>

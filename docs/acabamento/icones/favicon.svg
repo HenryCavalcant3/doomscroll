@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="320" viewBox="0 0 320 320" role="img" aria-label="Doomscroll">
+<rect width="320" height="320" rx="72" fill="#141414"/>
+<g transform="rotate(25 160 160)">
+<g fill="none" stroke="#FFD400" stroke-linecap="round" stroke-linejoin="round">
+<path d="M150 78 Q 122 40 92 52" stroke-width="7"/>
+<path d="M170 78 Q 198 40 228 52" stroke-width="7"/>
+<g stroke-width="9">
+<polyline points="120,138 88,124 74,98"/>
+<polyline points="112,172 74,174 54,190"/>
+<polyline points="120,206 90,226 82,256"/>
+<polyline points="200,138 232,124 246,98"/>
+<polyline points="208,172 246,174 266,190"/>
+<polyline points="200,206 230,226 238,256"/>
+</g>
+</g>
+<circle cx="160" cy="92" r="24" fill="#FFD400"/>
+<ellipse cx="160" cy="176" rx="52" ry="74" fill="#FFD400"/>
+</g>
+<polygon points="141,152.5 141,196.5 179,174.5" fill="#141414" stroke="#141414" stroke-width="8" stroke-linejoin="round"/>
+</svg>

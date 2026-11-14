@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Abrindo o bunker</title>
+<style>
+body{margin:0;background:#141414;display:flex;justify-content:center}
+@keyframes anda{to{background-position:28px 0}}
+@keyframes balanca{0%,100%{transform:translateY(0) rotate(-2deg)}50%{transform:translateY(-5px) rotate(2deg)}}
+.anda{animation:anda .8s linear infinite}
+.balanca{animation:balanca 1.2s ease-in-out infinite}
+@media (prefers-reduced-motion: reduce){*{animation:none!important}}
+</style>
+</head>
+<body>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #141414; color: #F5F5F5; font-family: 'Space Grotesk', system-ui, sans-serif; display: flex; flex-direction: column">
+<main role="status" style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; text-align: center">
+<svg aria-hidden="true" class="balanca" width="128" height="128" viewBox="0 0 320 320" style="">
+<g transform="rotate(25 160 160)">
+<g fill="none" stroke="#FFD400" stroke-linecap="round" stroke-linejoin="round">
+<path d="M150 78 Q 122 40 92 52" stroke-width="7"/>
+<path d="M170 78 Q 198 40 228 52" stroke-width="7"/>
+<g stroke-width="9">
+<polyline points="120,138 88,124 74,98"/>
+<polyline points="112,172 74,174 54,190"/>
+<polyline points="120,206 90,226 82,256"/>
+<polyline points="200,138 232,124 246,98"/>
+<polyline points="208,172 246,174 266,190"/>
+<polyline points="200,206 230,226 238,256"/>
+</g>
+</g>
+<circle cx="160" cy="92" r="24" fill="#FFD400"/>
+<ellipse cx="160" cy="176" rx="52" ry="74" fill="#FFD400"/>
+</g>
+<polygon points="141,152.5 141,196.5 179,174.5" fill="#141414" stroke="#141414" stroke-width="8" stroke-linejoin="round"/>
+</svg>
+<div style="margin-top: 20px; font-size: 22px; font-weight: 700; line-height: 1.2">Abrindo o bunker…</div>
+<p style="margin: 6px 0 0; font-size: 14px; line-height: 1.4; color: #B0B0B0">Destrancando a escotilha</p>
+<div aria-hidden="true" style="margin-top: 24px; width: 220px; height: 16px; box-sizing: border-box; border: 2px solid #FFD400; border-radius: 999px; overflow: hidden">
+<div class="anda" style="width: 100%; height: 100%; background-image: linear-gradient(-45deg, #FFD400 25%, #141414 25%, #141414 50%, #FFD400 50%, #FFD400 75%, #141414 75%); background-size: 28px 28px"></div>
+</div>
+</main>
+</div>
+</body>
+</html>
