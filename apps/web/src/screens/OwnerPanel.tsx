@@ -21,7 +21,13 @@ export function OwnerPanel({ me }: { me: User }) {
 
   return (
     <main className="screen">
-      <h1>Painel do dono</h1>
+      <header className="dono-topo">
+        <Avatar who={me} size={64} />
+        <div>
+          <h1>Painel do dono</h1>
+          <div className="hint">@{me.nickname}</div>
+        </div>
+      </header>
       <div className="tabs" role="tablist">
         <button role="tab" aria-selected={tab === "fila"} onClick={() => setTab("fila")}>
           Fila de aprovação

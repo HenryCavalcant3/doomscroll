@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { api, ApiError, type User } from "../api";
 import { avatarSrc, DEFAULT_AVATAR, MORADOR_AVATARS } from "../avatars";
+import { Avatar } from "../components/Avatar";
 
 interface Props {
   me: User;
@@ -46,7 +47,7 @@ export function AvatarPicker({ me, submitLabel, backHref, onSaved }: Props) {
         <p className="foto-sub">Escolha um item para ser a sua foto de perfil.</p>
 
         <div className="foto-previa">
-          <img className="avatar" src={avatarSrc(choice)} alt="" width={64} height={64} />
+          <Avatar who={{ ...me, avatar: choice }} size={64} />
           <div>
             <div className="foto-apelido">@{me.nickname}</div>
             <div className="foto-previa-sub">É assim que você aparece no bunker.</div>
