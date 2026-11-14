@@ -55,6 +55,13 @@ describe("personas", () => {
     expect(errors.map((e) => e.split(":")[0])).toEqual(["apelido", "avatar", "exemplos", "atividade"]);
   });
 
+  it("não deixa persona usar o avatar de um morador", () => {
+    const withLanterna = new Set([...avatars, "lanterna.svg"]);
+    expect(validatePersona({ ...valid, avatar: "lanterna.svg" }, "tio-valdir.json", withLanterna)).toEqual([
+      "avatar: lanterna.svg é um item dos moradores; persona precisa de um desenho próprio",
+    ]);
+  });
+
   it("exige que o nome do arquivo combine com o apelido", () => {
     expect(validatePersona(valid, "valdir.json", avatars)).toEqual(["o arquivo deve se chamar tio-valdir.json"]);
   });

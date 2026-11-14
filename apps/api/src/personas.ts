@@ -2,6 +2,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Pool } from "pg";
+import { isMoradorAvatar } from "./avatars.js";
 import { validRange } from "./ritmo.js";
 
 /** Formato de personas/<apelido>.json (SPEC 7.3). Qualquer pessoa pode mandar uma persona por pull request. */
@@ -42,6 +43,9 @@ export function validatePersona(data: unknown, fileName: string, avatarFiles: Se
   if (!text(nome, 2, 40)) errors.push("nome: de 2 a 40 caracteres");
   if (typeof avatar !== "string" || !/^[a-z0-9-]+\.svg$/.test(avatar)) {
     errors.push("avatar: nome de um arquivo .svg da pasta personas");
+  } else if (isMoradorAvatar(avatar.slice(0, -".svg".length))) {
+    // Disco amarelo com símbolo preto é de gente; persona usa o contrário (disco preto, símbolo amarelo).
+    errors.push(`avatar: ${avatar} é um item dos moradores; persona precisa de um desenho próprio`);
   } else if (!avatarFiles.has(avatar)) {
     errors.push(`avatar: ${avatar} não existe na pasta personas`);
   }
