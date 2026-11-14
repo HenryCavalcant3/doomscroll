@@ -90,7 +90,16 @@ export function buildApp({
   const failures = new LoginLimiter(5, LOGIN_WINDOW_MS, now);
 
   if (serveMedia) {
-    app.register(fastifyStatic, { root: config.mediaDir, prefix: "/media/", index: false, list: false });
+    // Cada vídeo tem pasta própria (/media/<id>/) e o arquivo não muda depois de pronto: o celular guarda e
+    // não pergunta de novo (na segunda volta do acervo o vídeo toca do cache, sem passar pela rede).
+    app.register(fastifyStatic, {
+      root: config.mediaDir,
+      prefix: "/media/",
+      index: false,
+      list: false,
+      maxAge: "365d",
+      immutable: true,
+    });
     // Só os SVG da pasta personas (os JSON não são servidos).
     app.register(fastifyStatic, {
       root: config.personasDir,
