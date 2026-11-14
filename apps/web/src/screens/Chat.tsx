@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import { api, apiUrl, ApiError, REACTIONS, type Conversation, type Message, type SharedVideo, type User } from "../api";
 import { applyReactions, conversationTitle, groupReactions, mergeMessages, nextPersonaReply, shortTime, useRealtimeEvents, type PersonaReply } from "../chat";
+import { Avatar } from "../components/Avatar";
 import { ConversationAvatar } from "../components/ConversationAvatar";
 import { Player } from "../components/Player";
 import { profileHref } from "../router";
@@ -216,7 +217,7 @@ export function ChatScreen({ id, me, onRead }: Props) {
             <div key={m.id} className={`msg${mine ? " mine" : ""}`}>
               {showSender && (
                 <a className="msg-sender" href={profileHref(m.sender.nickname)}>
-                  @{m.sender.nickname}
+                  <Avatar who={m.sender} size={20} />@{m.sender.nickname}
                 </a>
               )}
               {m.video ? (

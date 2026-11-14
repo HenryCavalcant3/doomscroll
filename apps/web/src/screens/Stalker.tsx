@@ -167,7 +167,7 @@ export function StalkerChat({ nickname, id }: { nickname: string; id: string }) 
             <div key={m.id} className="msg">
               {showSender && (
                 <a className="msg-sender" href={profileHref(m.sender.nickname)}>
-                  @{m.sender.nickname}
+                  <Avatar who={m.sender} size={20} />@{m.sender.nickname}
                 </a>
               )}
               {m.video ? (
