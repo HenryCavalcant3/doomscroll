@@ -130,3 +130,23 @@ export async function chatStream(opts: ChatStreamOptions, onText: (full: string)
   handle(buffer + decoder.decode());
   return full;
 }
+
+/** Embedding de um texto (busca de vídeo da persona). Erros sobem como OllamaError. */
+export async function embed(opts: { baseUrl: string; model: string; text: string; timeoutMs: number; fetchImpl?: typeof fetch }): Promise<number[]> {
+  const fetchImpl = opts.fetchImpl ?? fetch;
+  let res: Response;
+  try {
+    res = await fetchImpl(new URL("/api/embed", opts.baseUrl), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ model: opts.model, input: opts.text }),
+      signal: AbortSignal.timeout(opts.timeoutMs),
+    });
+  } catch {
+    throw new OllamaError("Não foi possível falar com o Ollama.", 502);
+  }
+  if (!res.ok) throw new OllamaError(`O Ollama respondeu com erro ${res.status} no embedding.`, 502);
+  const vector = ((await res.json()) as { embeddings?: number[][] }).embeddings?.[0];
+  if (!vector?.length) throw new OllamaError("O Ollama não devolveu embedding.", 502);
+  return vector;
+}

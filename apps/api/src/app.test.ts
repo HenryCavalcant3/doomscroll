@@ -15,7 +15,8 @@ import {
   type SharedVideo,
 } from "./chat.js";
 import { Hub, WS_CLOSE } from "./realtime.js";
-import { MEMORY_EVERY, PersonaReplier, type ChatGenerator, type PersonaChatStore } from "./personaChat.js";
+import { MEMORY_EVERY, PersonaReplier, type ChatGenerator, type PersonaChatStore, type VideoMatch } from "./personaChat.js";
+import type { ChatDecision } from "./personaJev.js";
 import { QUEUES } from "./queues.js";
 import { clampScore, COMMENT_DELTA, LIKE_DELTA, SHARE_DELTA, viewDelta, type ViewInput } from "./affinity.js";
 import { hashPin } from "./pin.js";
@@ -228,7 +229,7 @@ class MemoryStore implements Store {
     this.shares.add(`${userId}:${videoId}`);
     this.bump(userId, videoId, SHARE_DELTA);
   }
-  async videosMissingPersonaComments() {
+  async videosWithoutPersonaDecisions() {
     return [];
   }
 }
@@ -1017,6 +1018,9 @@ describe("slugify", () => {
 class MemoryPersonaChatStore implements PersonaChatStore {
   counts = new Map<string, number>();
   summaries = new Map<string, string>();
+  /** O que a busca de vídeo devolve (o teste escolhe). */
+  matches: VideoMatch[] = [];
+  decisions: { personaId: string; messageId: string; decision: ChatDecision }[] = [];
   constructor(private readonly chatStore: MemoryChatStore, private readonly users: () => MemoryStore["users"]) {}
   async directPersona(conversationId: string, senderId: string) {
     const c = this.chatStore.conversations.find((x) => x.id === conversationId);
@@ -1040,6 +1044,21 @@ class MemoryPersonaChatStore implements PersonaChatStore {
   async overview() {
     return [{ nickname: "tio_valdir", name: "Tio Valdir", avatarUrl: "/avatars/tio-valdir.svg", activity: 0.9, lastHour: 2 }];
   }
+  async findVideos() {
+    return this.matches;
+  }
+  async topics() {
+    return [{ slug: "animais", name: "Animais" }];
+  }
+  async recentDecisions() {
+    return this.decisions.map(({ decision }) => ({
+      nickname: "tio_valdir", name: "Tio Valdir", trigger: "mensagem" as const, action: decision.action, score: decision.score,
+      reasons: decision.reasons, video: null, createdAt: "2026-11-13T00:00:00.000Z",
+    }));
+  }
+  async saveDecision(personaId: string, messageId: string, decision: ChatDecision) {
+    this.decisions.push({ personaId, messageId, decision });
+  }
 }
 
 describe("chat com personas", () => {
@@ -1060,7 +1079,8 @@ describe("chat com personas", () => {
       onText("Tio Valdir: Bom dia, meu querido!");
       return "Tio Valdir: Bom dia, meu querido!";
     });
-    replier = new PersonaReplier({ chat, personas: personaStore, hub, queue, generate, debounceMs: 10, draftMs: 0 });
+    // random 0.99: sem reação e sem vídeo por conta própria (os testes que querem isso trocam).
+    replier = new PersonaReplier({ chat, personas: personaStore, hub, queue, generate, debounceMs: 10, draftMs: 0, random: () => 0.99 });
   });
 
   async function openWithTio() {
@@ -1101,6 +1121,48 @@ describe("chat com personas", () => {
     await replier.idle();
     expect(generate).toHaveBeenCalledTimes(1);
     expect(generate.mock.calls[0]![0].slice(-2).map((m) => m.content)).toEqual(["tio", "viu o jogo ontem?"]);
+  });
+
+  it("quando pedem um vídeo, busca no acervo e manda a resposta e o vídeo", async () => {
+    const id = await store.createVideo("https://youtu.be/gato", "youtube", "u-dono");
+    Object.assign(store.videos.get(id)!, { status: "aprovado", videoUrl: `/media/${id}/video.mp4`, title: "Gato derruba copo" });
+    personaStore.matches = [{ id, title: "Gato derruba copo", description: null, similarity: 0.72, affinity: 0.5, z: 3, topicMatch: true }];
+    const embed = vi.fn(async () => [0.1, 0.2]);
+    replier = new PersonaReplier({ chat, personas: personaStore, hub, queue, generate, embed, debounceMs: 10, draftMs: 0, random: () => 0.99 });
+    const { a, ana, id: conv, say } = await openWithTio();
+    await say("tio, me manda um vídeo de gato");
+    await replier.idle();
+
+    // Só o assunto vai para a busca.
+    expect(embed).toHaveBeenCalledWith("search_query: tio gato");
+    expect(generate.mock.calls[0]![0][0]!.content).toContain(`vai mandar logo depois desta mensagem: "Gato derruba copo"`);
+    const messages = (await a.inject({ method: "GET", url: `/conversations/${conv}/messages`, headers: ana })).json();
+    expect(messages.map((m: { type: string; sender: AuthorView }) => [m.sender.nickname, m.type])).toEqual([
+      ["ana", "text"],
+      ["tio_valdir", "text"],
+      ["tio_valdir", "video"],
+    ]);
+    expect(personaStore.decisions[0]!.decision).toMatchObject({ action: "enviar_video", reasons: { pediu_video: true, video: "Gato derruba copo", similaridade: 0.72 } });
+  });
+
+  it("pediu vídeo e a busca não achou: a persona diz que não achou", async () => {
+    replier = new PersonaReplier({ chat, personas: personaStore, hub, queue, generate, embed: async () => [0.1], debounceMs: 10, draftMs: 0, random: () => 0.99 });
+    const { say } = await openWithTio();
+    await say("tem algum vídeo de receita?");
+    await replier.idle();
+    expect(generate.mock.calls[0]![0][0]!.content).toContain("pediu um vídeo e não tem nenhum");
+    expect(personaStore.decisions[0]!.decision).toMatchObject({ action: "responder", reasons: { video: "nenhum" } });
+  });
+
+  it("às vezes reage à mensagem, com emoji que combina com ela", async () => {
+    replier = new PersonaReplier({ chat, personas: personaStore, hub, queue, generate, debounceMs: 10, draftMs: 0, random: () => 0 });
+    const { a, ana, id, say } = await openWithTio();
+    listen(store.users.get("ana")!.user.id);
+    await say("kkkkk olha isso");
+    await replier.idle();
+    expect(events.find((e) => e.event.type === "reaction")!.event).toMatchObject({ conversationId: id, reactions: [{ emoji: "😂", nickname: "tio_valdir" }] });
+    const [first] = (await a.inject({ method: "GET", url: `/conversations/${id}/messages`, headers: ana })).json();
+    expect(first.reactions).toEqual([{ emoji: "😂", nickname: "tio_valdir" }]);
   });
 
   it("não responde em grupo, mesmo com a persona no Grupo do Bunker", async () => {
@@ -1145,7 +1207,7 @@ describe("chat com personas", () => {
 
   it("o dono vê as ações das personas na última hora", async () => {
     const res = await personaApp().inject({ method: "GET", url: "/owner/personas", headers: await auth() });
-    expect(res.json()).toMatchObject({ rate: 30, lastHour: 2, personas: [{ nickname: "tio_valdir", lastHour: 2 }] });
+    expect(res.json()).toMatchObject({ rate: 30, lastHour: 2, personas: [{ nickname: "tio_valdir", lastHour: 2 }], decisions: [] });
     expect((await personaApp().inject({ method: "GET", url: "/owner/personas", headers: await auth("ana", "1111") })).statusCode).toBe(403);
   });
 });

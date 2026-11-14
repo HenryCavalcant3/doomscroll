@@ -11,7 +11,7 @@ import { loadPersonas, syncPersonas } from "./personas.js";
 import { ensureQueues, QUEUES } from "./queues.js";
 import { PgStore } from "./store.js";
 import { PgChatStore } from "./chat.js";
-import { chatStream } from "./ollama.js";
+import { chatStream, embed } from "./ollama.js";
 import { CHAT_OPTIONS, PersonaReplier, PgPersonaChatStore } from "./personaChat.js";
 import { Hub } from "./realtime.js";
 
@@ -37,10 +37,10 @@ boss.on("error", (err) => console.error("[api] erro no pg-boss:", err));
 await boss.start();
 await ensureQueues(boss);
 
-// Vídeos aprovados cujo comentário falhou (nenhuma persona comentou) ganham comentário agora.
-const missing = await store.videosMissingPersonaComments();
-for (const videoId of missing) await boss.send(QUEUES.personaComment, { videoId });
-if (missing.length) console.log(`[api] comentários de persona enfileirados para ${missing.length} vídeo(s)`);
+// Vídeos aprovados sem decisão das personas (o job falhou, ou acervo de antes do JEV, que só ganha curtidas).
+const undecided = await store.videosWithoutPersonaDecisions();
+for (const { id, likesOnly } of undecided) await boss.send(QUEUES.personaComment, likesOnly ? { videoId: id, likesOnly } : { videoId: id });
+if (undecided.length) console.log(`[api] decisões de persona enfileiradas para ${undecided.length} vídeo(s)`);
 
 const hub = new Hub();
 const personaStore = new PgPersonaChatStore(pool);
@@ -62,6 +62,8 @@ const replier = new PersonaReplier({
       },
       onText,
     ),
+  // Busca de vídeo (RAG): curta, para não segurar a resposta se o Ollama estiver ocupado.
+  embed: (text) => embed({ baseUrl: config.ollamaUrl, model: config.embedModel, text, timeoutMs: 30_000 }),
   log: (msg) => console.log(`[api] ${msg}`),
 });
 

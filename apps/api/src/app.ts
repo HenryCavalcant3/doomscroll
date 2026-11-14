@@ -631,7 +631,8 @@ export function buildApp({
       // Personas: ações na última hora e o limite PERSONA_RATE.
       owner.get("/owner/personas", async () => {
         const list = personas ? await personas.overview() : [];
-        return { rate: config.personaRate, lastHour: list.reduce((s, p) => s + p.lastHour, 0), personas: list };
+        const decisions = personas ? await personas.recentDecisions(40) : [];
+        return { rate: config.personaRate, lastHour: list.reduce((s, p) => s + p.lastHour, 0), personas: list, decisions };
       });
 
       owner.post<{ Body: { name: string } }>(

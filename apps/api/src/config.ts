@@ -10,6 +10,8 @@ export interface Config {
   ownerPin: string | undefined;
   ollamaUrl: string;
   llmModel: string;
+  /** Modelo de embedding: a persona busca vídeos no acervo pelo assunto da conversa (RAG). */
+  embedModel: string;
   /** Tempo máximo de espera pela LLM. Em CPU a primeira carga do modelo pode passar de um minuto. */
   llmTimeoutMs: number;
   /** Ações de persona por hora (mostrado no painel do dono; quem aplica o limite é o worker). */
@@ -26,6 +28,7 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): Config {
     ownerPin: env.OWNER_PIN || undefined,
     ollamaUrl: env.OLLAMA_URL ?? "http://localhost:11434",
     llmModel: env.LLM_MODEL ?? "qwen2.5:3b",
+    embedModel: env.EMBED_MODEL ?? "nomic-embed-text",
     llmTimeoutMs: Number(env.LLM_TIMEOUT_MS ?? 300_000),
     personaRate: Number(env.PERSONA_RATE || 30),
   };

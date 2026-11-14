@@ -8,7 +8,8 @@
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "avaliar": "tsx src/avaliar-chat.ts"
+    "avaliar": "tsx src/avaliar-chat.ts",
+    "avaliar:rag": "tsx src/avaliar-rag.ts"
   },
   "dependencies": {
     "@fastify/static": "^10.1.10",

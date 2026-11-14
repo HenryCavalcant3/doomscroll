@@ -112,10 +112,11 @@ export interface Store {
   /** viewerId decide o campo liked dos vídeos curtidos. */
   profile(nickname: string, viewerId: string): Promise<Profile | null>;
   /**
-   * Vídeos aprovados sem nenhum comentário de persona, porque o comentário falhou (usado na subida).
-   * Persona nova não ganha o acervo antigo inteiro para comentar de uma vez.
+   * Vídeos aprovados sem nenhuma decisão de persona (o job falhou ou veio de antes do JEV), usado na subida.
+   * likesOnly: o vídeo já tem comentário de persona (acervo de antes do JEV), então elas só curtem;
+   * assim persona nova não ganha o acervo antigo inteiro para comentar de uma vez.
    */
-  videosMissingPersonaComments(): Promise<string[]>;
+  videosWithoutPersonaDecisions(): Promise<{ id: string; likesOnly: boolean }[]>;
 }
 
 /** Avatares de usuários e personas são servidos pela api em /avatars. */
@@ -560,12 +561,14 @@ export class PgStore implements Store {
     return res.rows.map(toComment);
   }
 
-  async videosMissingPersonaComments() {
-    const res = await this.pool.query<{ id: string }>(
-      `SELECT v.id FROM videos v
+  async videosWithoutPersonaDecisions() {
+    const res = await this.pool.query<{ id: string; likes_only: boolean }>(
+      `SELECT v.id,
+              EXISTS (SELECT 1 FROM comments c JOIN personas p ON p.user_id = c.user_id WHERE c.video_id = v.id) AS likes_only
+         FROM videos v
         WHERE v.status = 'aprovado'
-          AND NOT EXISTS (SELECT 1 FROM comments c JOIN personas p ON p.user_id = c.user_id WHERE c.video_id = v.id)`,
+          AND NOT EXISTS (SELECT 1 FROM persona_decisions d WHERE d.trigger = 'video' AND d.target_id = v.id)`,
     );
-    return res.rows.map((r) => r.id);
+    return res.rows.map((r) => ({ id: r.id, likesOnly: r.likes_only }));
   }
 }

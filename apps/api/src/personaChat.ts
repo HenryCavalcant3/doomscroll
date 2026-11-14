@@ -3,6 +3,7 @@ import type { Pool } from "pg";
 import type { JobQueue } from "./app.js";
 import type { ChatStore, MessageView } from "./chat.js";
 import { isRepeatAbort, type ChatMessage } from "./ollama.js";
+import { asksForVideo, decideChat, topicsIn, videoQuery, type ChatDecision } from "./personaJev.js";
 import { QUEUES } from "./queues.js";
 import type { Hub } from "./realtime.js";
 import { avatarUrl } from "./store.js";
@@ -16,6 +17,39 @@ export interface PersonaProfile {
   bio: string;
   tone: string;
   examples: string[];
+  /** De 0 a 1, quanto ela interage (JEV); sem valor, 0,5. */
+  activity?: number;
+}
+
+/** Vídeo do acervo achado pela busca (RAG) para a persona mandar. */
+export interface VideoMatch {
+  id: string;
+  title: string | null;
+  description: string | null;
+  /** Cosseno entre a conversa e o vídeo. */
+  similarity: number;
+  /** Afinidade da persona com os tópicos do vídeo. */
+  affinity: number;
+  /** Quantos desvios-padrão a similaridade fica acima da média do acervo: o que separa assunto de ruído. */
+  z: number;
+  /** O vídeo tem um tópico citado na conversa ("receita" → comida). */
+  topicMatch: boolean;
+}
+
+/** O vídeo que vai junto com a resposta, ou "nenhum" quando pediram e a busca não achou. */
+export type VideoShare = Pick<VideoMatch, "title" | "description"> | "nenhum";
+
+/** Decisão do JEV para o painel do dono. Nas mensagens não vai o texto: conversa de gente é privada. */
+export interface DecisionView {
+  nickname: string;
+  name: string;
+  trigger: "video" | "mensagem";
+  action: string;
+  score: number;
+  reasons: Record<string, unknown>;
+  /** Título do vídeo (gatilho vídeo); null nas mensagens. */
+  video: string | null;
+  createdAt: string;
 }
 
 export interface PersonaOverview {
@@ -35,6 +69,17 @@ export interface PersonaChatStore {
   /** Conta uma mensagem trocada; true quando chegou a `every` (e zera a contagem). */
   countMessage(personaId: string, contactId: string, every: number): Promise<boolean>;
   overview(): Promise<PersonaOverview[]>;
+  /**
+   * Vídeos aprovados mais parecidos com a conversa, sem os já mandados nela. Tópico citado (`topics`)
+   * reforça; o gosto da persona só desempata.
+   */
+  findVideos(personaId: string, conversationId: string, embedding: number[], topics: string[], limit: number): Promise<VideoMatch[]>;
+  /** Tópicos do acervo (para achar os citados na conversa). */
+  topics(): Promise<{ slug: string; name: string }[]>;
+  /** Grava a decisão do JEV diante da mensagem (uma por persona e mensagem). */
+  saveDecision(personaId: string, messageId: string, decision: ChatDecision): Promise<void>;
+  /** Últimas decisões de todas as personas, da mais nova para a mais antiga. */
+  recentDecisions(limit: number): Promise<DecisionView[]>;
 }
 
 /** Mensagens trocadas entre um resumo da memória e o próximo (SPEC 7.4: "a cada N mensagens"). */
@@ -63,6 +108,21 @@ export function messageLine(m: MessageView): string {
 }
 
 /** Prompt de chat: persona, memória do contato e as últimas mensagens (as da persona como assistant). */
+/**
+ * Frases de exemplo para "não achei o vídeo". O modelo pequeno só fala em primeira pessoa com uma
+ * frase pronta (sem ela, diz "não achou"), e copia a frase inteira: por isso varia.
+ */
+const NOT_FOUND = ["procurei aqui e não achei nada disso", "dei uma olhada e não tem nada assim", "fucei tudo e não achei"];
+/**
+ * Idem para "achei": sem frase pronta, a pergunta "tem algum vídeo de receita?" puxa um "não vi
+ * nenhum" logo antes do vídeo chegar (13 de 15 na bancada).
+ */
+const FOUND = ["achei um aqui", "tem sim, olha esse", "olha esse que eu achei"];
+
+/** Título sem hashtags e enfeites ("COMIDA DE RUA * Pastel * … #shorts"), que confundem o modelo pequeno. */
+export const promptTitle = (title: string | null) =>
+  (title ?? "").replace(/#\S+/g, " ").replace(/[*|_~]+/g, " ").replace(/\s+/g, " ").trim() || "sem título";
+
 export function buildChatMessages(
   persona: PersonaProfile,
   contact: string,
@@ -71,7 +131,15 @@ export function buildChatMessages(
   examples: string[] = persona.examples,
   /** Nova tentativa depois de uma resposta recusada por `badReply`: o prompt avisa. */
   retry = false,
+  /** Vídeo que a persona vai mandar junto (RAG), ou "nenhum" quando pediram e não achou. */
+  video?: VideoShare,
 ): ChatMessage[] {
+  const share =
+    video === "nenhum"
+      ? `\n- @${contact} pediu um vídeo e não tem nenhum sobre isso aqui. Diga do seu jeito, numa frase, algo como "${NOT_FOUND[Math.floor(Math.random() * NOT_FOUND.length)]}".`
+      : video
+        ? `\n- Você achou um vídeo para @${contact} e vai mandar logo depois desta mensagem: "${promptTitle(video.title)}"${video.description ? ` (${video.description})` : ""}. Comece com algo como "${FOUND[Math.floor(Math.random() * FOUND.length)]}" e diga numa frase, do seu jeito, do que é o vídeo, sem inventar nada além do título e da descrição.`
+        : "";
   const system = `Você é ${persona.name}, numa rede social brasileira de vídeos curtos, conversando por mensagem direta com @${contact}.
 Quem você é (só você, não @${contact}): ${persona.bio}
 Seu jeito de escrever: ${persona.tone}
@@ -88,7 +156,7 @@ Regras:
 - Copie o jeito das frases acima, nunca o assunto.
 - Não invente fatos sobre você nem sobre @${contact}, nem o que aparece num vídeo além do título e da descrição. Se não souber, pergunte.
 - Não fale de fim do mundo, apocalipse nem bunker, a não ser que @${contact} puxe o assunto.
-- Escreva só a sua mensagem, sem o seu nome na frente e sem aspas.${
+- Escreva só a sua mensagem, sem o seu nome na frente e sem aspas.${share}${
     retry
       ? "\n\nAviso só para você (não fale dele na resposta): sua resposta anterior foi descartada (repetia a mensagem, copiava uma frase, repetia palavras sem parar ou não estava em português). Escreva outra, com suas palavras."
       : ""
@@ -124,6 +192,19 @@ const normalize = (s: string) =>
     .replace(/[̀-ͯ]/g, "")
     .toLowerCase()
     .match(/[a-z0-9]+/g) ?? [];
+
+const TITLE_FILLER = new Set(["video", "apresentado", "aqui", "vai", "um", "esse", "este", "o", "segue"]);
+
+/**
+ * A "apresentação" só repete o título ("Vídeo: Shorts in Minecraft #shorts"), o que o modelo pequeno
+ * faz muito. O cartão do vídeo já mostra o título, então o texto não vai.
+ */
+export function onlyTitle(text: string, title: string | null): boolean {
+  if (!title) return false;
+  const words = normalize(text).filter((w) => !TITLE_FILLER.has(w));
+  const inTitle = new Set(normalize(title));
+  return words.length > 0 && words.every((w) => inTitle.has(w));
+}
 
 /** Palavras normalizadas da conversa (as palavras longas daqui podem aparecer na resposta). */
 const talkWords = (history: MessageView[]) => new Set(normalize(history.map(messageLine).join(" ")));
@@ -219,6 +300,7 @@ export async function generateReply(
   history: MessageView[],
   onDraft: (text: string) => void,
   signal: AbortSignal,
+  video?: VideoShare,
 ): Promise<{ text: string; rejected: string[] }> {
   const rejected: string[] = [];
   let fallback = "";
@@ -226,7 +308,7 @@ export async function generateReply(
   for (let attempt = 0; attempt < REPLY_ATTEMPTS; attempt++) {
     // Exemplos sorteados de novo a cada tentativa, sem os que já foram copiados (o modelo insiste neles).
     const fresh = persona.examples.filter((ex) => !rejected.some((r) => copies(normalize(r), ex, talk)));
-    const prompt = buildChatMessages(persona, contact, memory, history, pickExamples(fresh), rejected.length > 0);
+    const prompt = buildChatMessages(persona, contact, memory, history, pickExamples(fresh), rejected.length > 0, video);
     let raw: string;
     try {
       raw = await generate(prompt, stopWords(contact), (full) => onDraft(cleanReply(full, persona)), signal);
@@ -255,8 +337,26 @@ export interface ReplierDeps {
   debounceMs?: number;
   /** Intervalo mínimo entre dois avisos do texto parcial. */
   draftMs?: number;
+  /** Embedding de busca (RAG); sem ele, a persona não manda vídeos. */
+  embed?: (text: string) => Promise<number[]>;
+  /** Sorteio (0 a 1); substituível nos testes. */
+  random?: () => number;
   log?: (msg: string) => void;
 }
+
+/**
+ * Destaque (desvios-padrão acima da média do acervo) para a busca valer. As similaridades do
+ * nomic-embed-text ficam todas perto umas das outras (0,4 a 0,7), então o valor absoluto não separa
+ * assunto de ruído; o destaque separa melhor. Calibrado com avaliar:rag:
+ * - pedido com tópico citado ("vídeo de receita") vai o melhor do tópico; sem tópico ("vídeo de
+ *   tricô") só vai com destaque forte, senão a persona diz que não achou;
+ * - sem pedido, só com destaque forte, ou tópico citado e destaque médio (bolo → receita de cookie).
+ */
+export const RAG = { strongZ: 2.5, topicZ: 1.5 };
+
+/** O vídeo serve para mandar (pedido ou espontâneo). */
+export const goodMatch = (m: VideoMatch, asked: boolean) =>
+  m.z >= RAG.strongZ || (m.topicMatch && (asked || m.z >= RAG.topicZ));
 
 /**
  * Responde as mensagens diretas mandadas para personas. Roda na api (não na fila), direto no Ollama:
@@ -336,6 +436,31 @@ export class PersonaReplier {
     }
   }
 
+  private async react(persona: PersonaProfile, conversationId: string, messageId: string, emoji: string) {
+    const result = await this.deps.chat.setReaction(persona.id, conversationId, messageId, emoji);
+    if (result) this.deps.hub.send(result.memberIds, { type: "reaction", conversationId, messageId, reactions: result.reactions });
+  }
+
+  /** RAG: busca no acervo pela última mensagem (pedido) ou pelas últimas falas da pessoa (sem pedido). */
+  private async pickVideo(persona: PersonaProfile, conversationId: string, history: MessageView[], asked: boolean): Promise<VideoMatch | null> {
+    if (!this.deps.embed) return null;
+    const theirs = history.filter((m) => m.sender.nickname !== persona.nickname && m.text).map((m) => m.text!);
+    // Pedido com assunto ("vídeo de gato") busca só o assunto; pedido vago ou conversa, as últimas falas.
+    const subject = asked ? videoQuery(theirs.at(-1)!) : "";
+    const query = subject || theirs.slice(-3).join("\n");
+    try {
+      const topics = topicsIn(query, await this.deps.personas.topics());
+      const matches = await this.deps.personas.findVideos(persona.id, conversationId, await this.deps.embed(`search_query: ${query}`), topics, 3);
+      const good = matches.filter((m) => goodMatch(m, asked));
+      if (asked) return good[0] ?? null;
+      return good.length ? good[Math.floor((this.deps.random ?? Math.random)() * good.length)]! : null;
+    } catch (err) {
+      // Sem a busca, a persona responde sem vídeo.
+      this.deps.log?.(`[persona] busca de vídeo falhou: ${err instanceof Error ? err.message : String(err)}`);
+      return null;
+    }
+  }
+
   private async reply(conversationId: string, persona: PersonaProfile, contactId: string, contact: string, history: MessageView[]) {
     const { chat, hub } = this.deps;
     const members = await chat.memberIds(conversationId);
@@ -344,6 +469,13 @@ export class PersonaReplier {
     const replyId = randomUUID();
     let lastDraft = 0;
     try {
+      const last = history.at(-1)!;
+      const lastText = last.text ?? "";
+      const decision = decideChat(persona.activity ?? 0.5, lastText, chatContext(persona, history), this.deps.random);
+      if (decision.react) await this.react(persona, conversationId, last.id, decision.react);
+      const asked = decision.reasons.pediu_video === true;
+      const match = decision.action === "enviar_video" ? await this.pickVideo(persona, conversationId, history, asked) : null;
+      const video: VideoShare | undefined = match ?? (asked && this.deps.embed ? "nenhum" : undefined);
       const memory = await this.deps.personas.memory(persona.id, contactId);
       // Numa nova tentativa, o texto parcial recomeça no mesmo balão (mesmo replyId).
       const { text, rejected } = await generateReply(
@@ -359,13 +491,26 @@ export class PersonaReplier {
           hub.send(members, { type: "draft", ...who, replyId, text: draft });
         },
         this.abort.signal,
+        video,
       );
       for (const r of rejected) this.deps.log?.(`[persona] ${persona.nickname} repetiu ou copiou: ${r.slice(0, 120)}`);
       if (!text) throw new Error("resposta vazia, repetida ou copiada do exemplo");
-      const sent = await chat.sendMessage(persona.id, conversationId, { text });
-      if (typeof sent === "string") throw new Error(`não gravou a resposta (${sent})`);
-      hub.send(sent.memberIds, { type: "message", message: sent.message });
+      // Texto que só repete o título do vídeo não vai: o vídeo sozinho já é a resposta.
+      if (!match || !onlyTitle(text, match.title)) {
+        const sent = await chat.sendMessage(persona.id, conversationId, { text });
+        if (typeof sent === "string") throw new Error(`não gravou a resposta (${sent})`);
+        hub.send(sent.memberIds, { type: "message", message: sent.message });
+      }
+      if (match) {
+        const shared = await chat.sendMessage(persona.id, conversationId, { videoId: match.id });
+        if (typeof shared === "string") this.deps.log?.(`[persona] ${persona.nickname} não mandou o vídeo (${shared})`);
+        else hub.send(shared.memberIds, { type: "message", message: shared.message });
+      }
       await this.countForMemory(persona.id, contactId);
+      const final: ChatDecision = match
+        ? { ...decision, reasons: { ...decision.reasons, video: match.title ?? "sem título", similaridade: round2(match.similarity), destaque: round2(match.z), topico_citado: match.topicMatch } }
+        : { ...decision, action: "responder", reasons: { ...decision.reasons, ...(decision.action === "enviar_video" ? { video: "nenhum" } : {}) } };
+      await this.deps.personas.saveDecision(persona.id, last.id, final);
     } catch (err) {
       if (this.abort.signal.aborted) return;
       hub.send(members, { type: "reply_failed", ...who });
@@ -374,12 +519,32 @@ export class PersonaReplier {
   }
 }
 
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/** O que o JEV do chat olha na conversa: pedido de vídeo, intervalo desde o último vídeo e assunto. */
+export function chatContext(persona: PersonaProfile, history: MessageView[]) {
+  const mine = history.filter((m) => m.sender.nickname === persona.nickname);
+  const lastVideo = mine.findLastIndex((m) => m.type === "video");
+  const sinceLastVideo = lastVideo < 0 ? mine.length : mine.length - lastVideo - 1;
+  const theirs = history.filter((m) => m.sender.nickname !== persona.nickname && m.text).slice(-3);
+  const words = theirs.reduce((n, m) => n + (m.text!.match(/[\p{L}\p{N}]+/gu)?.length ?? 0), 0);
+  return { asked: asksForVideo(history.at(-1)?.text ?? ""), sinceLastVideo, words };
+}
+
 export class PgPersonaChatStore implements PersonaChatStore {
   constructor(private readonly pool: Pool) {}
 
   async directPersona(conversationId: string, senderId: string) {
-    const res = await this.pool.query<{ user_id: string; nickname: string; bio: string; tone: string; examples: string[]; config: { nome?: string } }>(
-      `SELECT p.user_id, u.nickname, p.bio, p.tone, p.examples, p.config
+    const res = await this.pool.query<{
+      user_id: string;
+      nickname: string;
+      bio: string;
+      tone: string;
+      examples: string[];
+      activity_level: number;
+      config: { nome?: string };
+    }>(
+      `SELECT p.user_id, u.nickname, p.bio, p.tone, p.examples, p.activity_level, p.config
          FROM conversations c
          JOIN conversation_members m ON m.conversation_id = c.id AND m.user_id <> $2
          JOIN personas p ON p.user_id = m.user_id
@@ -389,7 +554,9 @@ export class PgPersonaChatStore implements PersonaChatStore {
       [conversationId, senderId],
     );
     const r = res.rows[0];
-    return r ? { id: r.user_id, nickname: r.nickname, name: r.config.nome ?? r.nickname, bio: r.bio, tone: r.tone, examples: r.examples } : null;
+    return r
+      ? { id: r.user_id, nickname: r.nickname, name: r.config.nome ?? r.nickname, bio: r.bio, tone: r.tone, examples: r.examples, activity: r.activity_level }
+      : null;
   }
 
   async memory(personaId: string, contactId: string) {
@@ -426,6 +593,80 @@ export class PgPersonaChatStore implements PersonaChatStore {
       avatarUrl: avatarUrl(r.avatar),
       activity: r.activity_level,
       lastHour: r.last_hour,
+    }));
+  }
+
+  async findVideos(personaId: string, conversationId: string, embedding: number[], topics: string[], limit: number) {
+    // A conversa manda: quem pediu vídeo de gato quer gato, mesmo do Rato. Tópico citado reforça (+0,1);
+    // o gosto da persona só desempata (0,05 × afinidade). O destaque (z) compara com o acervo inteiro.
+    const res = await this.pool.query<VideoMatch>(
+      `WITH scored AS (
+         SELECT v.id, v.title, v.description,
+                (1 - (v.embedding <=> $3::vector))::float8 AS similarity,
+                COALESCE(avg(COALESCE((p.config->'afinidade'->>t.slug)::float8, 0.3)), 0.3)::float8 AS affinity,
+                COALESCE(bool_or(t.slug = ANY($4::text[])), false) AS "topicMatch"
+           FROM videos v
+           JOIN personas p ON p.user_id = $1
+           LEFT JOIN video_topics vt ON vt.video_id = v.id
+           LEFT JOIN topics t ON t.id = vt.topic_id
+          WHERE v.status = 'aprovado' AND v.embedding IS NOT NULL
+          GROUP BY v.id
+       ), ranked AS (
+         SELECT s.*, ((s.similarity - avg(s.similarity) OVER ()) / NULLIF(stddev_pop(s.similarity) OVER (), 0))::float8 AS z
+           FROM scored s
+       )
+       SELECT r.id, r.title, r.description, r.similarity, r.affinity, r."topicMatch", COALESCE(r.z, 0)::float8 AS z
+         FROM ranked r JOIN videos v ON v.id = r.id
+        WHERE v.file_path IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = $2 AND m.video_id = r.id)
+        ORDER BY r.similarity + CASE WHEN r."topicMatch" THEN 0.1 ELSE 0 END + 0.05 * r.affinity DESC
+        LIMIT $5`,
+      [personaId, conversationId, `[${embedding.join(",")}]`, topics, limit],
+    );
+    return res.rows;
+  }
+
+  async topics() {
+    return (await this.pool.query<{ slug: string; name: string }>("SELECT slug, name FROM topics")).rows;
+  }
+
+  async saveDecision(personaId: string, messageId: string, decision: ChatDecision) {
+    await this.pool.query(
+      `INSERT INTO persona_decisions (persona_user_id, trigger, target_id, action, score, reasons)
+       VALUES ($1, 'mensagem', $2, $3, $4, $5) ON CONFLICT DO NOTHING`,
+      [personaId, messageId, decision.action, decision.score, JSON.stringify(decision.reasons)],
+    );
+  }
+
+  async recentDecisions(limit: number) {
+    const res = await this.pool.query<{
+      nickname: string;
+      config: { nome?: string };
+      trigger: "video" | "mensagem";
+      action: string;
+      score: number;
+      reasons: Record<string, unknown>;
+      video: string | null;
+      created_at: Date;
+    }>(
+      `SELECT u.nickname, p.config, d.trigger, d.action, d.score, d.reasons, d.created_at,
+              CASE WHEN d.trigger = 'video' THEN (SELECT COALESCE(v.title, 'sem título') FROM videos v WHERE v.id = d.target_id) END AS video
+         FROM persona_decisions d
+         JOIN users u ON u.id = d.persona_user_id
+         JOIN personas p ON p.user_id = d.persona_user_id
+        ORDER BY d.created_at DESC, d.id DESC
+        LIMIT $1`,
+      [limit],
+    );
+    return res.rows.map((r) => ({
+      nickname: r.nickname,
+      name: r.config.nome ?? r.nickname,
+      trigger: r.trigger,
+      action: r.action,
+      score: r.score,
+      reasons: r.reasons,
+      video: r.video,
+      createdAt: r.created_at.toISOString(),
     }));
   }
 }
