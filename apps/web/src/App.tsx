@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, auth, ApiError, type User } from "./api";
 import { RealtimeContext } from "./chat";
+import { Abrindo } from "./components/Abrindo";
 import { BottomNav } from "./components/BottomNav";
+import { SemSinal } from "./components/SemSinal";
 import { Realtime, wsUrl } from "./realtime";
 import { useRoute } from "./router";
 import { AddVideo } from "./screens/AddVideo";
+import { Certificado } from "./screens/Certificado";
 import { ChatScreen } from "./screens/Chat";
 import { Enter } from "./screens/Enter";
 import { Feed } from "./screens/Feed";
@@ -96,25 +99,25 @@ export function App() {
     setSession({ state: "out" });
   }, []);
 
+  // O passo a passo do certificado abre sem sessão: é lido antes de instalar o app.
+  if (route.name === "certificado") {
+    return (
+      <div className="app">
+        <Certificado />
+      </div>
+    );
+  }
   if (session.state === "checking") {
     return (
       <div className="app">
-        <main className="screen placeholder">
-          <p>Abrindo o bunker…</p>
-        </main>
+        <Abrindo />
       </div>
     );
   }
   if (session.state === "offline") {
     return (
       <div className="app">
-        <main className="screen placeholder">
-          <h1>Sem sinal do bunker</h1>
-          <p>Confira se você está na mesma rede do computador que roda o Doomscroll.</p>
-          <button className="btn" onClick={check}>
-            Tentar de novo
-          </button>
-        </main>
+        <SemSinal onRetry={check} />
       </div>
     );
   }

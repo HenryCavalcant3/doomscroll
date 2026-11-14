@@ -348,12 +348,56 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
   object-fit: cover;
 }
 
-/* Entrada (tela 1) */
-.enter { justify-content: center; gap: 28px; padding-bottom: 32px; }
-.enter-logo { align-self: center; border-radius: 22px; }
-.enter-head { text-align: center; display: flex; flex-direction: column; gap: 6px; }
-.enter-head h1 { font-size: 28px; }
-.enter-form { display: flex; flex-direction: column; gap: 16px; }
+/* Entrada (tela 1, docs/acabamento/telas/entrada.html) */
+.entrada { flex: 1; display: flex; flex-direction: column; align-items: center; padding: 0 24px 24px; }
+.entrada-barata { margin-top: 36px; }
+.entrada-marca { margin-top: 4px; font-size: 40px; font-weight: 700; line-height: 1.1; letter-spacing: -1.5px; }
+.entrada-slogan { margin: 6px 0 0; font-size: 15px; line-height: 1.4; color: var(--muted); text-align: center; }
+.entrada-selo {
+  margin-top: 14px;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.entrada-luz { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+.entrada-porta {
+  position: relative;
+  align-self: stretch;
+  margin-top: 24px;
+  padding: 24px 20px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+}
+.entrada-porta h1 { margin: 0 0 16px; font-size: 22px; line-height: 1.2; }
+.entrada-porta label, .entrada-porta legend { font-size: 14px; font-weight: 700; }
+.entrada-porta fieldset { margin: 16px 0 0; padding: 0; border: 0; min-width: 0; }
+.entrada-porta legend { padding: 0; }
+.entrada-porta .error { margin-top: 12px; }
+.entrada-porta .btn-primary { margin-top: 20px; height: 52px; border-radius: 12px; font-size: 16px; }
+.entrada-campo, .pin-box {
+  background: var(--bg);
+  border: 1px solid var(--field-line);
+  border-radius: 12px;
+  color: var(--fg);
+}
+.entrada-campo { margin-top: 6px; height: 48px; padding: 0 14px; font-size: 15px; }
+.entrada-campo::placeholder { color: var(--muted); }
+.pin-boxes { margin-top: 6px; display: flex; gap: 6px; }
+.pin-box { flex: 1; min-width: 0; max-width: 56px; height: 56px; padding: 0; font-size: 24px; font-weight: 700; text-align: center; }
+/* Parafusos nos quatro cantos: o cartão é a porta do bunker. */
+.parafuso { position: absolute; width: 8px; height: 8px; border-radius: 50%; background: var(--field-line); }
+.parafuso:nth-of-type(1) { left: 10px; top: 10px; }
+.parafuso:nth-of-type(2) { right: 10px; top: 10px; }
+.parafuso:nth-of-type(3) { left: 10px; bottom: 10px; }
+.parafuso:nth-of-type(4) { right: 10px; bottom: 10px; }
+.entrada-rodape { margin: 16px 0 0; font-size: 13px; line-height: 1.45; color: var(--muted); text-align: center; }
 
 /* Perfil (wireframe persona) */
 .profile { gap: 0; padding-top: 28px; }
@@ -590,3 +634,169 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
 .persona-count { font-weight: 700; color: var(--accent); min-width: 32px; text-align: right; }
 .decision-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; }
 .decision { display: flex; flex-direction: column; gap: 2px; padding: 10px 4px; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+
+/* Telas de estado com o tema do bunker (docs/acabamento; regra do tema no CLAUDE.md) */
+.faixa {
+  background-image: linear-gradient(-45deg, var(--accent) 25%, var(--bg) 25%, var(--bg) 50%, var(--accent) 50%, var(--accent) 75%, var(--bg) 75%);
+  background-size: 28px 28px;
+}
+.faixa-topo { height: 10px; flex: none; }
+.estado {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 24px;
+}
+.estado-sub { margin: 6px 0 0; font-size: 14px; line-height: 1.4; color: var(--muted); }
+.abrindo { justify-content: center; }
+.abrindo-titulo { margin-top: 20px; font-size: 22px; font-weight: 700; line-height: 1.2; }
+.abrindo-barra {
+  margin-top: 24px;
+  width: 220px;
+  height: 16px;
+  border: 2px solid var(--accent);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.abrindo-barra .faixa { width: 100%; height: 100%; }
+
+/* Sem sinal (docs/acabamento/telas/sem-sinal.html) */
+.sem-sinal { flex: 1; display: flex; flex-direction: column; padding: 24px; }
+.sem-sinal h1 { margin: 28px 0 8px; font-size: 30px; line-height: 1.1; letter-spacing: -0.5px; text-align: center; }
+.sem-sinal-texto { margin: 0; font-size: 15px; line-height: 1.45; color: var(--muted); text-align: center; }
+.radar { position: relative; width: 220px; height: 220px; margin: 24px auto 0; flex: none; }
+.radar svg { position: absolute; inset: 0; }
+.radar .radar-barata { left: 66px; top: 66px; }
+.passos { list-style: none; margin: 24px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.passos li {
+  display: flex;
+  gap: 12px;
+  padding: 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.passo-num {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 15px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.passo-titulo { font-size: 15px; font-weight: 700; line-height: 1.3; }
+.passo-texto { margin-top: 2px; font-size: 13px; line-height: 1.4; color: var(--muted); }
+.sem-sinal-fim { margin-top: auto; padding-top: 24px; display: flex; flex-direction: column; }
+.sem-sinal-fim .btn-primary { height: 52px; border-radius: 12px; font-size: 16px; }
+.sem-sinal-fim p { margin: 12px 0 0; font-size: 13px; line-height: 1.4; color: var(--muted); text-align: center; }
+
+/* Fim do acervo, entre duas voltas do feed (docs/acabamento/telas/zerou-a-internet.html) */
+.zerou { display: flex; flex-direction: column; background: var(--bg); color: var(--fg); }
+.zerou::after { display: none; }
+.zerou-corpo { flex: 1; display: flex; flex-direction: column; align-items: center; text-align: center; padding: 0 24px; min-height: 0; }
+.zerou-selo {
+  margin-top: 28px;
+  padding: 6px 12px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+.zerou-anel { position: relative; width: 200px; height: 200px; margin-top: 24px; flex: none; }
+.zerou-anel svg { position: absolute; inset: 0; }
+.zerou-anel .zerou-barata { left: 32px; top: 32px; }
+.zerou h2 { margin: 24px 0 8px; font-size: 34px; font-weight: 700; line-height: 1.05; letter-spacing: -1px; }
+.zerou-sub { margin: 0; font-size: 16px; line-height: 1.4; color: var(--muted); }
+.zerou-placar {
+  margin-top: 24px;
+  padding: 16px 24px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  text-align: left;
+}
+.zerou-num { font-size: 64px; font-weight: 700; line-height: 1; color: var(--accent); letter-spacing: -2px; }
+.zerou-rotulo { font-size: 16px; font-weight: 700; line-height: 1.3; }
+.zerou-volta { font-size: 14px; line-height: 1.3; color: var(--muted); }
+.zerou-fim { margin-top: auto; padding-top: 16px; display: flex; flex-direction: column; align-items: center; }
+.zerou-role { margin-top: 8px; font-size: 15px; font-weight: 700; }
+.zerou-fim p { margin: 4px 0 20px; font-size: 13px; line-height: 1.4; color: var(--muted); }
+
+/* Certificado do bunker (docs/acabamento/telas/certificado.html) */
+.cert { padding: 24px; display: flex; flex-direction: column; }
+.cert-topo { display: flex; align-items: center; gap: 14px; }
+.cert-icone {
+  width: 60px;
+  height: 60px;
+  flex: none;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.cert-sobre { font-size: 12px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--accent); }
+.cert h1 { margin: 2px 0 0; font-size: 26px; line-height: 1.1; letter-spacing: -0.5px; }
+.cert h2 { margin: 28px 0 12px; font-size: 18px; }
+.cert-texto { margin: 20px 0 0; font-size: 15px; line-height: 1.5; color: var(--muted); }
+.cert-texto-junto { margin-top: -4px; }
+.cert-botao { margin-top: 20px; height: 52px; border-radius: 12px; font-size: 16px; justify-content: center; }
+.cert-https { margin-top: 16px; border: 1px solid var(--fg); color: var(--fg); background: none; }
+.cert-aviso {
+  margin: 12px 0 0;
+  padding: 12px 14px;
+  border: 1px dashed var(--field-line);
+  border-radius: 12px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.cert details { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+.cert details + details { margin-top: 10px; }
+.cert summary { min-height: 52px; padding: 14px 16px; font-size: 16px; font-weight: 700; cursor: pointer; }
+.cert-passos { list-style: none; margin: 0; padding: 4px 16px 16px; display: flex; flex-direction: column; gap: 14px; color: var(--muted); }
+.cert-passos li { display: flex; gap: 12px; }
+.cert-passos li > div { font-size: 14px; line-height: 1.45; padding-top: 3px; }
+.cert-passos strong { color: var(--fg); }
+.cert-alerta {
+  margin-top: 6px;
+  display: inline-block;
+  padding: 2px 8px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+}
+.cert-nota { margin: 0; padding: 0 16px 16px; font-size: 13px; line-height: 1.4; color: var(--muted); }
+
+@keyframes anda { to { background-position: 28px 0; } }
+@keyframes balanca { 0%, 100% { transform: translateY(0) rotate(-2deg); } 50% { transform: translateY(-5px) rotate(2deg); } }
+@keyframes pisca { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+@keyframes pulso { 0% { transform: scale(0.35); opacity: 0.9; } 100% { transform: scale(1); opacity: 0; } }
+.pulso { transform-box: fill-box; transform-origin: center; animation: pulso 2.4s ease-out infinite; }
+.pulso-2 { animation-delay: 1.2s; }
+@keyframes gira { to { transform: rotate(360deg); } }
+@keyframes desce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(6px); } }
+.gira { transform-box: fill-box; transform-origin: center; animation: gira 24s linear infinite; }
+.desce { animation: desce 1.4s ease-in-out infinite; }
+.anda { animation: anda 0.8s linear infinite; }
+.pisca { animation: pisca 1.8s ease-in-out infinite; }
+.balanca { animation: balanca 1.2s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .anda, .balanca, .pisca, .pulso, .gira, .desce { animation: none; }
+}

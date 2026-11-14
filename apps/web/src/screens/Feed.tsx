@@ -3,6 +3,7 @@ import { api, apiUrl, type Comment, type Conversation, type FeedVideo } from "..
 import { conversationTitle } from "../chat";
 import { Avatar } from "../components/Avatar";
 import { ConversationAvatar } from "../components/ConversationAvatar";
+import { Zerou } from "../components/Zerou";
 import { appendPage, initialFeed, needsMore, patchVideo, type FeedState } from "../feedQueue";
 import { profileHref } from "../router";
 import { ViewTracker } from "../viewTracker";
@@ -81,25 +82,32 @@ export function Feed() {
 
   return (
     <main className="feed">
-      <div className="feed-title" aria-hidden="true">
-        Para você
-      </div>
+      {/* O card do fim do acervo tem o próprio topo. */}
+      {!(feed.entries[active] && "zerou" in feed.entries[active]) && (
+        <div className="feed-title" aria-hidden="true">
+          Para você
+        </div>
+      )}
       <div className="feed-scroller" ref={scroller}>
-        {feed.entries.map((entry, i) => (
-          <FeedItem
-            key={entry.key}
-            index={i}
-            video={entry.video}
-            active={i === active}
-            mounted={Math.abs(i - active) <= 1}
-            muted={muted}
-            onUnmute={() => setMuted(false)}
-            onSoundBlocked={soundBlocked}
-            onComments={() => setCommentsFor(entry.video)}
-            onShare={() => setShareFor(entry.video)}
-            onLike={() => toggleLike(entry.video)}
-          />
-        ))}
+        {feed.entries.map((entry, i) =>
+          "zerou" in entry ? (
+            <Zerou key={entry.key} index={i} count={entry.zerou} />
+          ) : (
+            <FeedItem
+              key={entry.key}
+              index={i}
+              video={entry.video}
+              active={i === active}
+              mounted={Math.abs(i - active) <= 1}
+              muted={muted}
+              onUnmute={() => setMuted(false)}
+              onSoundBlocked={soundBlocked}
+              onComments={() => setCommentsFor(entry.video)}
+              onShare={() => setShareFor(entry.video)}
+              onLike={() => toggleLike(entry.video)}
+            />
+          ),
+        )}
         {(feed.entries.length === 0 || error) && (
           <div className="feed-item feed-status" role="status">
             {error ? (

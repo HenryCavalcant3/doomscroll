@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 
 export type Route =
   | { name: "feed" | "adicionar" | "mensagens" | "perfil" | "dono" }
+  /** Passo a passo do certificado HTTPS, aberto sem entrar: #/certificado. */
+  | { name: "certificado" }
   /** Conversa: #/chat/<id>. */
   | { name: "chat"; id: string }
   /** Perfil de outra pessoa ou persona: #/u/<apelido>. */
@@ -9,7 +11,7 @@ export type Route =
   /** Modo stalker, conversa entre personas: #/espiar/<apelido>/<id>. */
   | { name: "espiar"; nickname: string; id: string };
 
-const SIMPLE = ["feed", "adicionar", "mensagens", "perfil", "dono"] as const;
+const SIMPLE = ["feed", "adicionar", "mensagens", "perfil", "dono", "certificado"] as const;
 
 export function parseRoute(hash: string): Route {
   const path = hash.replace(/^#\/?/, "");

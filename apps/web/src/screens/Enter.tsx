@@ -1,13 +1,24 @@
-import { useState, type FormEvent } from "react";
-import logo from "../../../../docs/logo.svg";
+import { useEffect, useState, type FormEvent } from "react";
 import { api, auth, ApiError, type User } from "../api";
+import { Barata } from "../components/Barata";
+import { PIN_LENGTH, PinBoxes } from "../components/PinBoxes";
 
-/** Tela 1 do SPEC (Entrada): apelido + PIN. Apelido novo cria a conta. */
+/** Tela 1 do SPEC (Entrada): apelido + PIN de 6 números. Apelido novo cria a conta (docs/acabamento/telas/entrada.html). */
 export function Enter({ onEnter }: { onEnter(user: User): void }) {
   const [nickname, setNickname] = useState("");
   const [pin, setPin] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // O selo "Bunker no ar" só aparece quando a api respondeu de verdade.
+  const [online, setOnline] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    api.health().then((ok) => alive && setOnline(ok));
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -19,23 +30,35 @@ export function Enter({ onEnter }: { onEnter(user: User): void }) {
       onEnter(user);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Não deu para falar com o bunker. Confira a rede e tente de novo.");
+      setPin("");
       setBusy(false);
     }
   }
 
   return (
-    <main className="screen enter">
-      <img className="enter-logo" src={logo} alt="" width={96} height={96} />
-      <div className="enter-head">
-        <h1>Doomscroll</h1>
-        <p className="hint">Vídeos curtos para o fim do mundo.</p>
-      </div>
-      <form className="enter-form" onSubmit={submit}>
-        <div className="field">
+    <>
+      <div className="faixa faixa-topo" aria-hidden="true" />
+      <main className="entrada">
+        <Barata size={112} className="entrada-barata" />
+        <div className="entrada-marca">doomscroll</div>
+        <p className="entrada-slogan">Vídeos curtos para o fim do mundo.</p>
+        {online && (
+          <div className="entrada-selo">
+            <span className="entrada-luz pisca" aria-hidden="true" />
+            Bunker no ar
+          </div>
+        )}
+        <form className="entrada-porta" onSubmit={submit}>
+          <span className="parafuso" aria-hidden="true" />
+          <span className="parafuso" aria-hidden="true" />
+          <span className="parafuso" aria-hidden="true" />
+          <span className="parafuso" aria-hidden="true" />
+          <h1>Quem vem lá?</h1>
           <label htmlFor="nickname">Apelido</label>
           <input
             id="nickname"
-            className="input"
+            className="entrada-campo"
+            placeholder="Como te chamam por aqui"
             autoComplete="username"
             autoCapitalize="none"
             autoCorrect="off"
@@ -45,34 +68,23 @@ export function Enter({ onEnter }: { onEnter(user: User): void }) {
             onChange={(e) => setNickname(e.target.value.toLowerCase())}
             required
           />
-        </div>
-        <div className="field">
-          <label htmlFor="pin">PIN</label>
-          <input
-            id="pin"
-            className="input"
-            type="password"
-            inputMode="numeric"
-            autoComplete="current-password"
-            maxLength={64}
-            value={pin}
-            onChange={(e) => setPin(e.target.value)}
-            required
-          />
-        </div>
-        {error && (
-          <p className="error" role="alert">
-            {error}
-          </p>
-        )}
-        <button className="btn btn-primary" type="submit" disabled={busy || !nickname || !pin}>
-          Entrar
-        </button>
-      </form>
-      <p className="hint">
-        Primeira vez? Escolha um apelido (letras sem acento, números ou _) e um PIN de 4 a 6 números. A conta é
-        criada na hora. O dono do bunker entra com o apelido <strong>dono</strong>.
-      </p>
-    </main>
+          <fieldset>
+            <legend>PIN de {PIN_LENGTH} números</legend>
+            <PinBoxes value={pin} onChange={setPin} disabled={busy} />
+          </fieldset>
+          {error && (
+            <p className="error" role="alert">
+              {error}
+            </p>
+          )}
+          <button className="btn btn-primary" type="submit" disabled={busy || !nickname || pin.length !== PIN_LENGTH}>
+            Entrar
+          </button>
+        </form>
+        <p className="entrada-rodape">
+          Primeira vez por aqui? Escolha um apelido e um PIN. Sua vaga no bunker é criada na hora.
+        </p>
+      </main>
+    </>
   );
 }

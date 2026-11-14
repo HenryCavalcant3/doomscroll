@@ -67,6 +67,7 @@ describe("rotas", () => {
   it("entende as telas e o perfil por apelido", () => {
     expect(parseRoute("")).toEqual({ name: "feed" });
     expect(parseRoute("#/adicionar")).toEqual({ name: "adicionar" });
+    expect(parseRoute("#/certificado")).toEqual({ name: "certificado" });
     expect(parseRoute("#/u/tio_valdir")).toEqual({ name: "usuario", nickname: "tio_valdir" });
     expect(parseRoute("#/qualquer")).toEqual({ name: "feed" });
     expect(parseRoute("#/mensagens")).toEqual({ name: "mensagens" });

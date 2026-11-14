@@ -198,6 +198,8 @@ export async function request<T>(
 }
 
 export const api = {
+  /** A api respondeu? (o selo "Bunker no ar" da entrada). */
+  health: () => request<{ status: string }>("/health").then(() => true, () => false),
   enter: (nickname: string, pin: string) => request<Login>("/auth/entrar", { method: "POST", body: { nickname, pin } }),
   me: () => request<User>("/auth/eu"),
   logout: () => request<void>("/auth/sair", { method: "POST" }),

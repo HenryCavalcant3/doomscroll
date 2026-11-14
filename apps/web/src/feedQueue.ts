@@ -1,10 +1,19 @@
 import type { FeedPage, FeedVideo } from "./api";
 
-export interface FeedEntry {
-  /** Único na lista, mesmo quando o feed recomeça e o vídeo volta. */
-  key: string;
-  video: FeedVideo;
-}
+/** Um vídeo do feed, ou o card "Você zerou a internet" entre duas voltas do acervo. */
+export type FeedEntry =
+  | {
+      /** Único na lista, mesmo quando o feed recomeça e o vídeo volta. */
+      key: string;
+      video: FeedVideo;
+    }
+  | {
+      key: string;
+      /** Quantos vídeos a volta que acabou entregou. */
+      zerou: number;
+    };
+
+const videoOf = (e: FeedEntry | undefined) => (e && "video" in e ? e.video : undefined);
 
 export interface FeedState {
   entries: FeedEntry[];
@@ -17,16 +26,23 @@ export interface FeedState {
 
 export const initialFeed: FeedState = { entries: [], seen: [], round: 0, empty: false };
 
-/** Junta uma página do feed à lista. Quando o acervo acaba, o servidor recomeça e uma nova volta começa. */
+/**
+ * Junta uma página do feed à lista. Quando o acervo acaba, o servidor recomeça e uma nova volta começa,
+ * com o card "Você zerou a internet" na virada.
+ */
 export function appendPage(state: FeedState, page: FeedPage): FeedState {
   const round = page.restarted ? state.round + 1 : state.round;
   const seen = page.restarted ? [] : state.seen;
   let videos = page.videos;
   // Na virada da volta, evita o mesmo vídeo duas vezes seguidas.
-  const last = state.entries.at(-1)?.video.id;
+  const last = videoOf(state.entries.at(-1))?.id;
   if (page.restarted && videos.length > 1 && videos[0]!.id === last) videos = [...videos.slice(1), videos[0]!];
   return {
-    entries: [...state.entries, ...videos.map((video) => ({ key: `${round}:${video.id}`, video }))],
+    entries: [
+      ...state.entries,
+      ...(page.restarted && videos.length ? [{ key: `${round}:zerou`, zerou: state.seen.length }] : []),
+      ...videos.map((video) => ({ key: `${round}:${video.id}`, video })),
+    ],
     seen: [...seen, ...videos.map((v) => v.id)],
     round,
     empty: state.entries.length === 0 && page.videos.length === 0,
@@ -40,6 +56,6 @@ export const needsMore = (state: FeedState, active: number) => !state.empty && a
 export function patchVideo(state: FeedState, id: string, patch: Partial<FeedVideo>): FeedState {
   return {
     ...state,
-    entries: state.entries.map((e) => (e.video.id === id ? { ...e, video: { ...e.video, ...patch } } : e)),
+    entries: state.entries.map((e) => ("video" in e && e.video.id === id ? { ...e, video: { ...e.video, ...patch } } : e)),
   };
 }
