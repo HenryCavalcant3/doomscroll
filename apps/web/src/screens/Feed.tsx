@@ -24,6 +24,7 @@ export function Feed() {
   const soundBlocked = useCallback(() => setMuted(true), []);
   const onCommented = useCallback((id: string, count: number) => setFeed((f) => patchVideo(f, id, { commentCount: count })), []);
 
+  const [nextReady, onStarted] = usePrefetchNext(active);
   const toggleLike = (video: FeedVideo) => likeVideo(video, (id, patch) => setFeed((f) => patchVideo(f, id, patch)));
 
   // Busca mais vídeos quando o usuário chega perto do fim da lista.
@@ -89,10 +90,11 @@ export function Feed() {
               index={i}
               video={entry.video}
               active={i === active}
-              mounted={Math.abs(i - active) <= 1}
+              mounted={i === active || (i === active + 1 && nextReady)}
               muted={muted}
               onUnmute={() => setMuted(false)}
               onSoundBlocked={soundBlocked}
+              onStarted={onStarted}
               onComments={() => setCommentsFor(entry.video)}
               onShare={() => setShareFor(entry.video)}
               onLike={() => toggleLike(entry.video)}
@@ -120,6 +122,25 @@ export function Feed() {
   );
 }
 
+/** Quanto o próximo vídeo espera se o ativo não começar a tocar (pausado, sem permissão para tocar). */
+const PREFETCH_FALLBACK_MS = 2500;
+
+/**
+ * Só o vídeo ativo e o próximo têm <video>, e o próximo só entra depois que o ativo começou a tocar.
+ * No iPhone cada <video> baixa o arquivo inteiro e o Safari não guarda vídeo em cache (os pedidos
+ * são por faixa): com o anterior e o próximo baixando junto, o vídeo da vez ficava sem rede e
+ * aparecia preto, principalmente rolando rápido.
+ */
+export function usePrefetchNext(active: number): [boolean, () => void] {
+  const [readyFor, setReadyFor] = useState<number | null>(null);
+  useEffect(() => {
+    const timer = setTimeout(() => setReadyFor(active), PREFETCH_FALLBACK_MS);
+    return () => clearTimeout(timer);
+  }, [active]);
+  const onStarted = useCallback(() => setReadyFor(active), [active]);
+  return [readyFor === active, onStarted];
+}
+
 type LikePatch = Pick<FeedVideo, "liked" | "likeCount">;
 
 /** Curtida otimista: muda na hora e corrige com a resposta (ou desfaz se der erro). */
@@ -137,18 +158,20 @@ interface ItemProps {
   index: number;
   video: FeedVideo;
   active: boolean;
-  /** Só o vídeo ativo e os vizinhos têm elemento <video> (economiza memória e banda). */
+  /** Só o vídeo ativo e o próximo têm elemento <video> (ver usePrefetchNext). */
   mounted: boolean;
   muted: boolean;
   onUnmute(): void;
   /** O navegador recusou tocar com som (sem toque recente na tela): volta ao modo mudo. */
   onSoundBlocked(): void;
+  /** O vídeo ativo começou a tocar: libera o próximo para carregar. */
+  onStarted(): void;
   onComments(): void;
   onShare(): void;
   onLike(): void;
 }
 
-export function FeedItem({ index, video, active, mounted, muted, onUnmute, onSoundBlocked, onComments, onShare, onLike }: ItemProps) {
+export function FeedItem({ index, video, active, mounted, muted, onUnmute, onSoundBlocked, onStarted, onComments, onShare, onLike }: ItemProps) {
   const ref = useRef<HTMLVideoElement>(null);
   const [paused, setPaused] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -240,7 +263,7 @@ export function FeedItem({ index, video, active, mounted, muted, onUnmute, onSou
           ref={ref}
           src={apiUrl(video.videoUrl)}
           poster={video.thumbUrl ? apiUrl(video.thumbUrl) : undefined}
-          preload={active || index > 0 ? "auto" : "metadata"}
+          preload="auto"
           muted
           loop
           playsInline
@@ -249,6 +272,7 @@ export function FeedItem({ index, video, active, mounted, muted, onUnmute, onSou
           onCanPlay={() => ref.current?.paused && tryPlay()}
           onPlaying={() => {
             setPaused(false);
+            if (active) onStarted();
             if (active && !document.hidden) tracker.play();
           }}
           onPause={() => tracker.pause()}

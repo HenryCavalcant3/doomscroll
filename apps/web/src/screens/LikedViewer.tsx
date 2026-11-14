@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { FeedVideo } from "../api";
-import { CloseIcon, CommentsDrawer, FeedItem, likeVideo, ShareDrawer } from "./Feed";
+import { CloseIcon, CommentsDrawer, FeedItem, likeVideo, ShareDrawer, usePrefetchNext } from "./Feed";
 
 interface Props {
   /** Os curtidos do perfil, na ordem da grade. */
@@ -23,6 +23,7 @@ export function LikedViewer({ videos, start, title, onPatch, onClose }: Props) {
   // Tocar na miniatura conta como toque na tela: dá para começar com som (se o navegador recusar,
   // o FeedItem volta ao modo mudo).
   const [muted, setMuted] = useState(false);
+  const [nextReady, onStarted] = usePrefetchNext(active);
   const [commentsFor, setCommentsFor] = useState<FeedVideo | null>(null);
   const [shareFor, setShareFor] = useState<FeedVideo | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
@@ -80,10 +81,11 @@ export function LikedViewer({ videos, start, title, onPatch, onClose }: Props) {
             index={i}
             video={video}
             active={i === active}
-            mounted={Math.abs(i - active) <= 1}
+            mounted={i === active || (i === active + 1 && nextReady)}
             muted={muted}
             onUnmute={() => setMuted(false)}
             onSoundBlocked={soundBlocked}
+            onStarted={onStarted}
             onComments={() => setCommentsFor(video)}
             onShare={() => setShareFor(video)}
             onLike={() => likeVideo(video, onPatch)}
