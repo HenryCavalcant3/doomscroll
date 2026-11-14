@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseVideoLink } from "./links.js";
+import { readConfig } from "./config.js";
 import { generatePin, hashPin, verifyPin } from "./pin.js";
 
 describe("parseVideoLink", () => {
@@ -55,5 +56,12 @@ describe("PIN", () => {
 
   it("gera PINs de 6 dígitos", () => {
     expect(generatePin()).toMatch(/^\d{6}$/);
+  });
+
+  it("recusa OWNER_PIN que não tem 6 números", () => {
+    expect(() => readConfig({ OWNER_PIN: "1234" })).toThrow(/6 números/);
+    expect(() => readConfig({ OWNER_PIN: "abcdef" })).toThrow(/6 números/);
+    expect(readConfig({ OWNER_PIN: "123456" }).ownerPin).toBe("123456");
+    expect(readConfig({}).ownerPin).toBeUndefined();
   });
 });

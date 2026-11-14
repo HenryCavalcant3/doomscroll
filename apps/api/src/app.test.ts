@@ -413,7 +413,7 @@ beforeEach(async () => {
   hub = new Hub();
   store.users.set("dono", {
     user: { id: "u-dono", nickname: "dono", avatarUrl: null, role: "owner", isAi: false },
-    pinHash: await hashPin("1234"),
+    pinHash: await hashPin("123412"),
   });
   store.users.set("tio_valdir", {
     user: { id: "u-tio", nickname: "tio_valdir", avatarUrl: "/avatars/tio-valdir.svg", role: "resident", isAi: true },
@@ -432,7 +432,7 @@ const enter = (nickname: string, pin: string, a = app()) =>
   a.inject({ method: "POST", url: "/auth/entrar", payload: { nickname, pin } });
 
 /** Entra e devolve o cabeçalho de sessão. */
-async function auth(nickname = "dono", pin = "1234") {
+async function auth(nickname = "dono", pin = "123412") {
   const res = await enter(nickname, pin);
   expect(res.statusCode).toBeLessThan(300);
   return { authorization: `Bearer ${res.json().token}` };
@@ -474,42 +474,44 @@ describe("api básica", () => {
 
 describe("entrada com apelido e PIN", () => {
   it("cria a conta no primeiro acesso e entra com o mesmo PIN depois", async () => {
-    const first = await enter("  @Morador_1 ", "4321");
+    const first = await enter("  @Morador_1 ", "432143");
     expect(first.statusCode).toBe(201);
     expect(first.json()).toMatchObject({ created: true, user: { nickname: "morador_1", role: "resident" } });
     expect(store.users.get("morador_1")!.pinHash).toMatch(/^scrypt\$/);
 
-    const again = await enter("morador_1", "4321");
+    const again = await enter("morador_1", "432143");
     expect(again.statusCode).toBe(200);
     expect(again.json().created).toBe(false);
     expect(again.json().token).not.toBe(first.json().token);
   });
 
   it("recusa PIN errado, apelido inválido, PIN fraco e apelido de persona", async () => {
-    expect((await enter("dono", "9999")).statusCode).toBe(401);
-    expect((await enter("a!", "1234")).statusCode).toBe(400);
+    expect((await enter("dono", "999999")).statusCode).toBe(401);
+    expect((await enter("a!", "123412")).statusCode).toBe(400);
     expect((await enter("novo", "12")).statusCode).toBe(400);
+    expect((await enter("novo", "1234")).statusCode).toBe(400);
+    expect((await enter("novo", "1234567")).statusCode).toBe(400);
     expect((await enter("novo", "abcd")).statusCode).toBe(400);
-    expect((await enter("tio_valdir", "1234")).statusCode).toBe(409);
+    expect((await enter("tio_valdir", "123412")).statusCode).toBe(409);
   });
 
   it("bloqueia o apelido depois de 5 PINs errados e libera depois de 15 minutos", async () => {
     const a = app();
-    for (let i = 0; i < 5; i++) expect((await enter("dono", "0000", a)).statusCode).toBe(401);
-    const blocked = await enter("dono", "1234", a);
+    for (let i = 0; i < 5; i++) expect((await enter("dono", "000000", a)).statusCode).toBe(401);
+    const blocked = await enter("dono", "123412", a);
     expect(blocked.statusCode).toBe(429);
     expect(blocked.headers["retry-after"]).toBe("900");
     // Outro apelido continua entrando (todos chegam com o mesmo IP atrás do Docker).
-    expect((await enter("outro", "5555", a)).statusCode).toBe(201);
+    expect((await enter("outro", "555555", a)).statusCode).toBe(201);
     clock += 15 * 60_000;
-    expect((await enter("dono", "1234", a)).statusCode).toBe(200);
+    expect((await enter("dono", "123412", a)).statusCode).toBe(200);
   });
 
   it("pede sessão nas rotas do app e encerra a sessão ao sair", async () => {
     expect((await app().inject({ method: "POST", url: "/feed", payload: {} })).statusCode).toBe(401);
     expect((await app().inject({ method: "GET", url: "/topics", headers: { authorization: "Bearer x" } })).statusCode).toBe(401);
 
-    const headers = await auth("morador", "1111");
+    const headers = await auth("morador", "111111");
     const me = await app().inject({ method: "GET", url: "/auth/eu", headers });
     expect(me.json()).toMatchObject({ nickname: "morador", role: "resident" });
     expect((await app().inject({ method: "POST", url: "/auth/sair", headers })).statusCode).toBe(204);
@@ -519,7 +521,7 @@ describe("entrada com apelido e PIN", () => {
 
 describe("cadastro de vídeo", () => {
   it("aceita um link do Shorts, registra quem mandou e enfileira o download", async () => {
-    const headers = await auth("morador", "1111");
+    const headers = await auth("morador", "111111");
     const res = await app().inject({
       method: "POST",
       url: "/videos",
@@ -592,7 +594,7 @@ describe("cadastro de vídeo", () => {
 describe("painel do dono", () => {
   it("só aceita a conta de dono", async () => {
     expect((await app().inject({ method: "GET", url: "/owner/videos" })).statusCode).toBe(401);
-    const resident = await auth("morador", "1111");
+    const resident = await auth("morador", "111111");
     expect((await app().inject({ method: "GET", url: "/owner/videos", headers: resident })).statusCode).toBe(403);
     expect((await app().inject({ method: "GET", url: "/owner/videos", headers: await auth() })).statusCode).toBe(200);
   });
@@ -696,7 +698,7 @@ describe("feed", () => {
   });
 
   it("comenta como o usuário da sessão, com o texto limpo", async () => {
-    const headers = await auth("morador", "1111");
+    const headers = await auth("morador", "111111");
     const [id] = await approved(1);
     const res = await app().inject({ method: "POST", url: `/videos/${id}/comments`, headers, payload: { text: "  muito\n bom  " } });
     expect(res.statusCode).toBe(201);
@@ -708,7 +710,7 @@ describe("feed", () => {
   });
 
   it("curte e descurte sem contar duas vezes", async () => {
-    const headers = await auth("morador", "1111");
+    const headers = await auth("morador", "111111");
     const [id] = await approved(1);
     const like = () => app().inject({ method: "PUT", url: `/videos/${id}/like`, headers });
     expect((await like()).json()).toEqual({ liked: true, likeCount: 1 });
@@ -735,7 +737,7 @@ describe("visualizações e recomendação", () => {
     app().inject({ method: "POST", url: `/videos/${id}/view`, headers, payload });
 
   it("grava a visualização e recusa valores fora da faixa", async () => {
-    const headers = await auth("morador", "1111");
+    const headers = await auth("morador", "111111");
     const id = await approvedWith("humor");
     expect((await view(id, headers, { watchedMs: 900, watchPct: 0.05, replays: 0 })).statusCode).toBe(204);
     expect(store.views).toEqual([expect.objectContaining({ userId: "u-morador", videoId: id, skipped: true })]);
@@ -750,7 +752,7 @@ describe("visualizações e recomendação", () => {
   });
 
   it("curtida, descurtida e comentário mexem na afinidade do tópico", async () => {
-    const headers = await auth("morador", "1111");
+    const headers = await auth("morador", "111111");
     const id = await approvedWith("animais");
     await app().inject({ method: "PUT", url: `/videos/${id}/like`, headers });
     await app().inject({ method: "PUT", url: `/videos/${id}/like`, headers });
@@ -762,7 +764,7 @@ describe("visualizações e recomendação", () => {
   });
 
   it("deixa o vídeo visto em quarentena por 3 dias", async () => {
-    const headers = await auth("morador", "1111");
+    const headers = await auth("morador", "111111");
     const a = await approvedWith("humor");
     const b = await approvedWith("dicas");
     await view(a, headers, { watchedMs: 10_000, watchPct: 1, replays: 0 });
@@ -773,7 +775,7 @@ describe("visualizações e recomendação", () => {
   });
 
   it("prioriza o vídeo parecido com o que foi curtido, mesmo com tópico diferente", async () => {
-    const headers = await auth("morador", "1111");
+    const headers = await auth("morador", "111111");
     const outro = await approvedWith("dicas", [0, 0, 1]);
     const parecido = await approvedWith("dicas", [0.9, 0.1, 0]);
     const liked = await approvedWith("humor", [1, 0, 0]);
@@ -789,7 +791,7 @@ describe("visualizações e recomendação", () => {
   });
 
   it("com tudo em quarentena, volta primeiro o que foi curtido", async () => {
-    const headers = await auth("morador", "1111");
+    const headers = await auth("morador", "111111");
     const a = await approvedWith("humor");
     const b = await approvedWith("dicas");
     await view(a, headers, { watchedMs: 10_000, watchPct: 1, replays: 0 });
@@ -803,7 +805,7 @@ describe("visualizações e recomendação", () => {
 
 describe("perfil", () => {
   it("mostra o usuário e os vídeos que ele curtiu", async () => {
-    const headers = await auth("morador", "1111");
+    const headers = await auth("morador", "111111");
     const id = await store.createVideo("https://youtu.be/a", "youtube");
     Object.assign(store.videos.get(id)!, { status: "aprovado", videoUrl: "/media/a.mp4" });
     await app().inject({ method: "PUT", url: `/videos/${id}/like`, headers });
@@ -817,8 +819,8 @@ describe("perfil", () => {
 describe("chat", () => {
   /** Duas pessoas com uma conversa direta aberta. */
   async function pair() {
-    const ana = await auth("ana", "1111");
-    const bia = await auth("bia", "2222");
+    const ana = await auth("ana", "111111");
+    const bia = await auth("bia", "222222");
     const open = await app().inject({ method: "POST", url: "/conversations", headers: ana, payload: { nickname: "@Bia" } });
     expect(open.statusCode).toBe(200);
     return { ana, bia, id: open.json().id as string };
@@ -875,7 +877,7 @@ describe("chat", () => {
 
   it("esconde a conversa de quem não é membro e recusa mensagem vazia", async () => {
     const { ana, id } = await pair();
-    const eve = await auth("eve", "3333");
+    const eve = await auth("eve", "333333");
     expect((await app().inject({ method: "GET", url: `/conversations/${id}`, headers: eve })).statusCode).toBe(404);
     expect((await app().inject({ method: "GET", url: `/conversations/${id}/messages`, headers: eve })).statusCode).toBe(404);
     expect((await send(eve, id, "oi")).statusCode).toBe(404);
@@ -922,14 +924,14 @@ describe("chat", () => {
 
     const page = await app().inject({ method: "GET", url: `/conversations/${id}/messages`, headers: ana });
     expect(page.json()[0].reactions).toEqual([{ emoji: "🔥", nickname: "bia" }]);
-    const eve = await auth("eve", "3333");
+    const eve = await auth("eve", "333333");
     expect((await react(eve, "🔥")).statusCode).toBe(404);
   });
 
   it("cria grupo que aparece na caixa de entrada mesmo sem mensagem", async () => {
-    const ana = await auth("ana", "1111");
-    const bia = await auth("bia", "2222");
-    await auth("eve", "3333");
+    const ana = await auth("ana", "111111");
+    const bia = await auth("bia", "222222");
+    await auth("eve", "333333");
     const create = (payload: object) => app().inject({ method: "POST", url: "/groups", headers: ana, payload });
     const res = await create({ name: "  Os  sobreviventes ", nicknames: ["@Bia", "eve", "bia", "ana"] });
     expect(res.statusCode).toBe(201);
@@ -943,13 +945,13 @@ describe("chat", () => {
   });
 
   it("põe todo mundo no Grupo do Bunker, inclusive as personas e quem entra depois", async () => {
-    await auth("ana", "1111");
+    await auth("ana", "111111");
     await chat.ensureBunker();
     await chat.ensureBunker();
-    const ana = await auth("ana", "1111");
+    const ana = await auth("ana", "111111");
     const bunkerId = chat.conversations.find((c) => c.bunker)!.id;
     await send(ana, bunkerId, "cheguei primeiro");
-    const bia = await auth("bia", "2222");
+    const bia = await auth("bia", "222222");
     const [bunker] = await inbox(bia);
     // Quem entra depois não vê o histórico como não lido.
     expect(bunker).toMatchObject({ type: "group", name: BUNKER_NAME, bunker: true, unread: 0 });
@@ -975,7 +977,7 @@ describe("chat", () => {
 
     it("avisa os membros da conversa quando chega mensagem", async () => {
       const { ana, bia, id } = await pair();
-      const eve = await auth("eve", "3333");
+      const eve = await auth("eve", "333333");
       const a = app();
       const toBia = await connect(a, tokenOf(bia));
       const toEve = await connect(a, tokenOf(eve));
@@ -1103,7 +1105,7 @@ describe("chat com personas", () => {
   });
 
   async function openWithTio() {
-    const ana = await auth("ana", "1111");
+    const ana = await auth("ana", "111111");
     const a = personaApp();
     const res = await a.inject({ method: "POST", url: "/conversations", headers: ana, payload: { nickname: "tio_valdir" } });
     expect(res.statusCode).toBe(200);
@@ -1185,7 +1187,7 @@ describe("chat com personas", () => {
   });
 
   it("não responde em grupo, mesmo com a persona no Grupo do Bunker", async () => {
-    const ana = await auth("ana", "1111");
+    const ana = await auth("ana", "111111");
     await chat.ensureBunker();
     const bunkerId = chat.conversations.find((c) => c.bunker)!.id;
     const res = await personaApp().inject({ method: "POST", url: `/conversations/${bunkerId}/messages`, headers: ana, payload: { text: "bom dia" } });
@@ -1227,7 +1229,7 @@ describe("chat com personas", () => {
   it("o dono vê as ações das personas na última hora", async () => {
     const res = await personaApp().inject({ method: "GET", url: "/owner/personas", headers: await auth() });
     expect(res.json()).toMatchObject({ rate: 30, lastHour: 2, personas: [{ nickname: "tio_valdir", lastHour: 2 }], decisions: [] });
-    expect((await personaApp().inject({ method: "GET", url: "/owner/personas", headers: await auth("ana", "1111") })).statusCode).toBe(403);
+    expect((await personaApp().inject({ method: "GET", url: "/owner/personas", headers: await auth("ana", "111111") })).statusCode).toBe(403);
   });
 });
 
@@ -1236,7 +1238,7 @@ describe("modo stalker", () => {
     for (const [nickname, id] of [["rato", "u-rato"], ["kelly", "u-kelly"]] as const) {
       store.users.set(nickname, { user: { id, nickname, avatarUrl: null, role: "resident", isAi: true }, pinHash: null });
     }
-    const headers = await auth("ana", "4321");
+    const headers = await auth("ana", "432143");
     const anaId = store.users.get("ana")!.user.id;
     const between = (await chat.openDirect("u-tio", "rato")) as ConversationView;
     await chat.sendMessage("u-tio", between.id, { text: "olha esse, Rato" });
@@ -1367,7 +1369,7 @@ describe("personas entre si", () => {
 
   it("no Grupo do Bunker, responde à mensagem de gente com o apelido de cada um no prompt", async () => {
     await chat.ensureBunker();
-    const ana = await auth("ana", "4321");
+    const ana = await auth("ana", "432143");
     const anaId = store.users.get("ana")!.user.id;
     const bunker = (await chat.listConversations(anaId)).find((c) => c.bunker)!;
     talk.bunker = bunker.id;
@@ -1410,7 +1412,7 @@ describe("personas entre si", () => {
 
   async function bunkerWithAna() {
     await chat.ensureBunker();
-    await auth("ana", "4321");
+    await auth("ana", "432143");
     const anaId = store.users.get("ana")!.user.id;
     const bunker = (await chat.listConversations(anaId)).find((c) => c.bunker)!;
     talk.bunker = bunker.id;
@@ -1474,6 +1476,6 @@ describe("personas entre si", () => {
     const res = await a().inject({ method: "POST", url: "/owner/personas/tique", headers: await auth() });
     expect(res.statusCode).toBe(202);
     expect(queue.send).toHaveBeenCalledWith(QUEUES.personaTick, {});
-    expect((await a().inject({ method: "POST", url: "/owner/personas/tique", headers: await auth("bia", "5555") })).statusCode).toBe(403);
+    expect((await a().inject({ method: "POST", url: "/owner/personas/tique", headers: await auth("bia", "555555") })).statusCode).toBe(403);
   });
 });

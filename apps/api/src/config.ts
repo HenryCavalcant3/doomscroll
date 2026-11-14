@@ -1,3 +1,4 @@
+import { PIN } from "./auth.js";
 import { DEFAULT_PERSONAS_DIR } from "./personas.js";
 
 export interface Config {
@@ -20,7 +21,9 @@ export interface Config {
   personaTalkDelay: number;
 }
 
+/** Lê o ambiente. Um OWNER_PIN fora da regra derruba a subida, para o dono não ficar sem conseguir entrar. */
 export function readConfig(env: NodeJS.ProcessEnv = process.env): Config {
+  if (env.OWNER_PIN && !PIN.test(env.OWNER_PIN)) throw new Error("OWNER_PIN precisa ter 6 números (como todo PIN do app).");
   return {
     port: Number(env.PORT ?? 3000),
     host: env.HOST ?? "0.0.0.0",

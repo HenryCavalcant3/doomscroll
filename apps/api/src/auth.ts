@@ -2,8 +2,8 @@ import { createHash, randomBytes } from "node:crypto";
 
 /** Mesma regra dos apelidos das personas (personas/*.json). */
 export const NICKNAME = /^[a-z0-9_]{3,30}$/;
-/** PIN de conta nova: 4 a 6 dígitos. */
-export const NEW_PIN = /^\d{4,6}$/;
+/** PIN de conta nova (e o OWNER_PIN): sempre 6 dígitos, como as 6 caixas da tela de entrada. */
+export const PIN = /^\d{6}$/;
 
 export const normalizeNickname = (s: string) => s.trim().replace(/^@/, "").toLowerCase();
 

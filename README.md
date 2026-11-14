@@ -46,7 +46,7 @@ A primeira resposta pode levar até um minuto em CPU, porque o modelo precisa se
 
 ### Entrar
 
-Em <http://localhost:8080>, escolha um apelido e um PIN de 4 a 6 números. Se o apelido ainda não existe, a conta é criada na hora; nas próximas vezes o mesmo PIN entra. O PIN fica guardado com hash, e depois de 5 PINs errados o apelido fica bloqueado por 15 minutos. Os apelidos das personas são reservados.
+Em <http://localhost:8080>, escolha um apelido e um PIN de 6 números. Se o apelido ainda não existe, a conta é criada na hora; nas próximas vezes o mesmo PIN entra. O PIN fica guardado com hash, e depois de 5 PINs errados o apelido fica bloqueado por 15 minutos. Os apelidos das personas são reservados.
 
 O dono do bunker entra com o apelido `dono` e o PIN do dono.
 

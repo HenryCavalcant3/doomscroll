@@ -2,7 +2,7 @@ import fastifyStatic from "@fastify/static";
 import fastifyWebsocket from "@fastify/websocket";
 import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
 import { GROUP_MAX_MEMBERS, MESSAGES_PAGE, REACTIONS, type ChatStore, type MessageContent } from "./chat.js";
-import { bearerToken, hashToken, LoginLimiter, newToken, NEW_PIN, NICKNAME, normalizeNickname } from "./auth.js";
+import { bearerToken, hashToken, LoginLimiter, newToken, NICKNAME, normalizeNickname, PIN } from "./auth.js";
 import type { Config } from "./config.js";
 import { parseVideoLink } from "./links.js";
 import type { PersonaChatStore, PersonaReplier } from "./personaChat.js";
@@ -217,7 +217,7 @@ export function buildApp({
         failures.reset(nickname);
         user = found.user;
       } else {
-        if (!NEW_PIN.test(pin)) return reply.code(400).send({ error: "O PIN precisa ter de 4 a 6 números." });
+        if (!PIN.test(pin)) return reply.code(400).send({ error: "O PIN precisa ter 6 números." });
         const newUser = await store.createUser(nickname, await hashPin(pin));
         // Outra pessoa criou o mesmo apelido no mesmo instante.
         if (!newUser) return reply.code(409).send({ error: "Esse apelido acabou de ser criado. Tente entrar de novo." });
