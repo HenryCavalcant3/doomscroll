@@ -14,8 +14,10 @@ export interface Config {
   embedModel: string;
   /** Tempo máximo de espera pela LLM. Em CPU a primeira carga do modelo pode passar de um minuto. */
   llmTimeoutMs: number;
-  /** Ações de persona por hora (mostrado no painel do dono; quem aplica o limite é o worker). */
+  /** Ações de persona por hora (comentários e conversas entre personas param no limite; respostas a gente, nunca). */
   personaRate: number;
+  /** Pausa média, em segundos, entre duas falas de personas conversando entre si. */
+  personaTalkDelay: number;
 }
 
 export function readConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -31,5 +33,6 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): Config {
     embedModel: env.EMBED_MODEL ?? "nomic-embed-text",
     llmTimeoutMs: Number(env.LLM_TIMEOUT_MS ?? 300_000),
     personaRate: Number(env.PERSONA_RATE || 30),
+    personaTalkDelay: Number(env.PERSONA_TALK_DELAY || 40),
   };
 }

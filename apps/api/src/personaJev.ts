@@ -60,7 +60,6 @@ export function decideChat(activity: number, lastText: string, ctx: ChatContext,
   const videoRoll = random();
   const spontaneous = canSpontaneous && videoRoll < CHAT_JEV.spontaneousChance;
   const action: ChatAction = ctx.asked || spontaneous ? "enviar_video" : "responder";
-  const round = (n: number) => Math.round(n * 100) / 100;
   return {
     action,
     react,
@@ -113,4 +112,88 @@ export function topicsIn(text: string, topics: { slug: string; name: string }[])
   return topics
     .filter((t) => words.has(t.slug) || words.has(fold(t.name)) || (TOPIC_WORDS[t.slug] ?? []).some((w) => words.has(w)))
     .map((t) => t.slug);
+}
+
+/**
+ * JEV das personas entre si (SPEC 7.5). Toda conversa nasce de um vídeo mandado pelo agendador;
+ * depois cada fala é uma decisão: responder ou deixar quieto. De 3 a 6 mensagens, depois silêncio.
+ */
+export const TALK_JEV = {
+  minMessages: 3,
+  maxMessages: 6,
+  /** Chance de seguir depois do mínimo: base + atividade × peso − por mensagem a mais. */
+  keepGoing: 0.3,
+  perActivity: 0.4,
+  perExtra: 0.15,
+  reactPerActivity: 0.35,
+};
+
+export interface TalkDecision {
+  action: "responder" | "ignorar";
+  react: string | null;
+  score: number;
+  reasons: Record<string, number | string | boolean>;
+}
+
+const round = (n: number) => Math.round(n * 100) / 100;
+
+/** `messages`: quantas mensagens a conversa já tem desde o vídeo que a começou (o vídeo conta). */
+export function decideTalk(activity: number, messages: number, lastText: string, random: () => number = Math.random): TalkDecision {
+  const react = random() < activity * TALK_JEV.reactPerActivity ? reactionFor(lastText, random) : null;
+  const chance =
+    messages >= TALK_JEV.maxMessages
+      ? 0
+      : messages < TALK_JEV.minMessages
+        ? 1
+        : TALK_JEV.keepGoing + TALK_JEV.perActivity * activity - TALK_JEV.perExtra * (messages - TALK_JEV.minMessages);
+  const roll = random();
+  return {
+    action: roll < chance ? "responder" : "ignorar",
+    react,
+    score: round(chance),
+    reasons: { mensagens: messages, atividade: activity, chance: round(Math.max(0, chance)), acaso: round(roll), reacao: react ?? "nenhuma" },
+  };
+}
+
+/** No Grupo do Bunker, no máximo isto de personas responde a cada mensagem de gente. */
+export const GROUP_JEV = { maxReplies: 2, commentAt: 0.6, reactAt: 0.45, chance: 0.3, unknownAffinity: 0.3 };
+
+export interface GroupCandidateTaste {
+  id: string;
+  activity: number;
+  /** Afinidade com os tópicos do vídeo mandado; null quando a mensagem é texto. */
+  affinity: number | null;
+}
+
+export interface GroupDecision {
+  id: string;
+  action: "comentar" | "reagir" | "ignorar";
+  score: number;
+  reasons: Record<string, number | string | boolean>;
+}
+
+/**
+ * Quem responde a uma mensagem de gente no Grupo do Bunker: nota = 0,5 × atividade + 0,4 ×
+ * afinidade + acaso (±0,15). Comenta a partir de 0,6 (só as duas maiores notas), reage a partir de 0,45.
+ */
+export function decideGroup(candidates: GroupCandidateTaste[], random: () => number = Math.random): GroupDecision[] {
+  const scored = candidates.map((c) => {
+    const affinity = c.affinity ?? GROUP_JEV.unknownAffinity;
+    const acaso = round((random() - 0.5) * GROUP_JEV.chance);
+    const score = round(0.5 * c.activity + 0.4 * affinity + acaso);
+    return { c, score, reasons: { atividade: c.activity, afinidade: round(affinity), acaso } };
+  });
+  const commenters = new Set(
+    scored
+      .filter((s) => s.score >= GROUP_JEV.commentAt)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, GROUP_JEV.maxReplies)
+      .map((s) => s.c.id),
+  );
+  return scored.map(({ c, score, reasons }) => ({
+    id: c.id,
+    action: commenters.has(c.id) ? "comentar" : score >= GROUP_JEV.reactAt ? "reagir" : "ignorar",
+    score,
+    reasons,
+  }));
 }

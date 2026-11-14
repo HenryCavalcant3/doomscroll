@@ -586,6 +586,43 @@ export function buildApp({
       },
     );
 
+    // Modo stalker (SPEC 7.5): só leitura, só conversas diretas entre personas. Conversa com gente
+    // de verdade nunca aparece, nem adivinhando o id.
+    priv.get<{ Params: { nickname: string } }>(
+      "/personas/:nickname/conversas",
+      { schema: { params: { type: "object", required: ["nickname"], properties: { nickname: { type: "string", maxLength: 40 } } } } },
+      async (req, reply) => {
+        const list = await chat.stalkerConversations(normalizeNickname(req.params.nickname));
+        return list ?? reply.code(404).send({ error: "Essa persona não existe." });
+      },
+    );
+
+    priv.get<{ Params: { nickname: string; id: string }; Querystring: { before?: string; limit?: number } }>(
+      "/personas/:nickname/conversas/:id/mensagens",
+      {
+        schema: {
+          params: { type: "object", required: ["nickname", "id"], properties: { nickname: { type: "string", maxLength: 40 }, id: { type: "string" } } },
+          querystring: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              before: { type: "string", maxLength: 36 },
+              limit: { type: "integer", minimum: 1, maximum: MESSAGES_PAGE },
+            },
+          },
+        },
+      },
+      async (req, reply) => {
+        const messages = await chat.stalkerMessages(
+          normalizeNickname(req.params.nickname),
+          req.params.id,
+          req.query.before ?? null,
+          req.query.limit ?? MESSAGES_PAGE,
+        );
+        return messages ?? reply.code(404).send({ error: "Conversa não encontrada." });
+      },
+    );
+
     // Painel do dono: só para quem entrou com a conta de dono.
     priv.register(async (owner) => {
       owner.addHook("preHandler", async (req: FastifyRequest, reply: FastifyReply) => {
@@ -629,6 +666,12 @@ export function buildApp({
       );
 
       // Personas: ações na última hora e o limite PERSONA_RATE.
+      // Roda o agendador das personas agora (no worker), sem esperar o próximo tique.
+      owner.post("/owner/personas/tique", async (_req, reply) => {
+        await queue.send(QUEUES.personaTick, {});
+        return reply.code(202).send({ ok: true });
+      });
+
       owner.get("/owner/personas", async () => {
         const list = personas ? await personas.overview() : [];
         const decisions = personas ? await personas.recentDecisions(40) : [];

@@ -43,11 +43,11 @@ export type VideoShare = Pick<VideoMatch, "title" | "description"> | "nenhum";
 export interface DecisionView {
   nickname: string;
   name: string;
-  trigger: "video" | "mensagem";
+  trigger: "video" | "mensagem" | "tique";
   action: string;
   score: number;
   reasons: Record<string, unknown>;
-  /** Título do vídeo (gatilho vídeo); null nas mensagens. */
+  /** Título do vídeo (gatilhos vídeo e tique); null nas mensagens. */
   video: string | null;
   createdAt: string;
 }
@@ -300,18 +300,21 @@ export async function generateReply(
   history: MessageView[],
   onDraft: (text: string) => void,
   signal: AbortSignal,
-  video?: VideoShare,
+  opts: ReplyOptions = {},
 ): Promise<{ text: string; rejected: string[] }> {
+  const { video } = opts;
   const rejected: string[] = [];
   let fallback = "";
   const talk = talkWords(history);
   for (let attempt = 0; attempt < REPLY_ATTEMPTS; attempt++) {
     // Exemplos sorteados de novo a cada tentativa, sem os que já foram copiados (o modelo insiste neles).
     const fresh = persona.examples.filter((ex) => !rejected.some((r) => copies(normalize(r), ex, talk)));
-    const prompt = buildChatMessages(persona, contact, memory, history, pickExamples(fresh), rejected.length > 0, video);
+    const examples = pickExamples(fresh);
+    const retry = rejected.length > 0;
+    const prompt = opts.build ? opts.build(examples, retry) : buildChatMessages(persona, contact, memory, history, examples, retry, video);
     let raw: string;
     try {
-      raw = await generate(prompt, stopWords(contact), (full) => onDraft(cleanReply(full, persona)), signal);
+      raw = await generate(prompt, opts.stop ?? stopWords(contact), (full) => onDraft(cleanReply(full, persona)), signal);
     } catch (err) {
       // Repetição sem fim conta como tentativa recusada; outros erros (Ollama fora) sobem.
       if (!isRepeatAbort(err)) throw err;
@@ -325,6 +328,15 @@ export async function generateReply(
     rejected.push(text.slice(0, 200));
   }
   return { text: fallback, rejected };
+}
+
+export interface ReplyOptions {
+  /** Vídeo que a persona vai mandar junto (RAG), ou "nenhum" quando pediram e não achou. */
+  video?: VideoShare;
+  /** Outro prompt (grupo) no lugar do de conversa direta, com os exemplos sorteados e o aviso de nova tentativa. */
+  build?: (examples: string[], retry: boolean) => ChatMessage[];
+  /** Paradas no lugar de `stopWords(contact)`. */
+  stop?: string[];
 }
 
 export interface ReplierDeps {
@@ -342,6 +354,8 @@ export interface ReplierDeps {
   /** Sorteio (0 a 1); substituível nos testes. */
   random?: () => number;
   log?: (msg: string) => void;
+  /** Mensagem de gente que não é para uma persona em conversa direta (grupo, conversa entre pessoas). */
+  onOtherMessage?: (message: MessageView, senderId: string) => Promise<void> | void;
 }
 
 /**
@@ -376,11 +390,16 @@ export class PersonaReplier {
     this.track(
       (async () => {
         const persona = await this.deps.personas.directPersona(message.conversationId, senderId);
-        if (!persona) return;
+        if (!persona) return this.deps.onOtherMessage?.(message, senderId);
         await this.countForMemory(persona.id, senderId);
         this.schedule(message.conversationId, persona, senderId);
       })(),
     );
+  }
+
+  /** Tem resposta para gente esperando ou em andamento: as conversas entre personas esperam (SPEC 7.5). */
+  busy(): boolean {
+    return this.timers.size > 0 || this.running.size > 0;
   }
 
   /** Espera os timers e as respostas em andamento (usado nos testes). */
@@ -491,7 +510,7 @@ export class PersonaReplier {
           hub.send(members, { type: "draft", ...who, replyId, text: draft });
         },
         this.abort.signal,
-        video,
+        { video },
       );
       for (const r of rejected) this.deps.log?.(`[persona] ${persona.nickname} repetiu ou copiou: ${r.slice(0, 120)}`);
       if (!text) throw new Error("resposta vazia, repetida ou copiada do exemplo");
@@ -642,7 +661,7 @@ export class PgPersonaChatStore implements PersonaChatStore {
     const res = await this.pool.query<{
       nickname: string;
       config: { nome?: string };
-      trigger: "video" | "mensagem";
+      trigger: "video" | "mensagem" | "tique";
       action: string;
       score: number;
       reasons: Record<string, unknown>;
@@ -650,7 +669,8 @@ export class PgPersonaChatStore implements PersonaChatStore {
       created_at: Date;
     }>(
       `SELECT u.nickname, p.config, d.trigger, d.action, d.score, d.reasons, d.created_at,
-              CASE WHEN d.trigger = 'video' THEN (SELECT COALESCE(v.title, 'sem título') FROM videos v WHERE v.id = d.target_id) END AS video
+              CASE WHEN d.trigger = 'video' THEN (SELECT COALESCE(v.title, 'sem título') FROM videos v WHERE v.id = d.target_id)
+                   WHEN d.trigger = 'tique' THEN (SELECT COALESCE(v.title, 'sem título') FROM messages m JOIN videos v ON v.id = m.video_id WHERE m.id = d.target_id) END AS video
          FROM persona_decisions d
          JOIN users u ON u.id = d.persona_user_id
          JOIN personas p ON p.user_id = d.persona_user_id

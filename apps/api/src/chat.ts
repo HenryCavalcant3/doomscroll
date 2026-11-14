@@ -85,6 +85,13 @@ export interface ChatStore {
   memberIds(conversationId: string): Promise<string[]>;
   /** Marca como lido até a mensagem dada (nunca volta atrás); false quando não acha a conversa ou a mensagem. */
   markRead(userId: string, conversationId: string, messageId: string): Promise<boolean>;
+  /**
+   * Modo stalker (SPEC 7.5): conversas diretas da persona com outras personas, com o outro lado em
+   * `members`. Conversa com gente nunca entra. null quando o apelido não é de persona.
+   */
+  stalkerConversations(nickname: string): Promise<ConversationView[] | null>;
+  /** Mensagens de uma conversa do modo stalker; null quando não é conversa direta só de personas com essa persona. */
+  stalkerMessages(nickname: string, conversationId: string, before: string | null, limit: number): Promise<MessageView[] | null>;
 }
 
 /** Chave da conversa direta: os dois ids em ordem. */
@@ -167,6 +174,10 @@ const CONVERSATION_SELECT = `
            WHERE m.conversation_id = c.id AND m.sender_id <> $1 AND m.created_at > me.last_read_at) AS unread
     FROM conversations c
     JOIN conversation_members me ON me.conversation_id = c.id AND me.user_id = $1`;
+
+/** A conversa `c` só tem personas (nenhuma pessoa de verdade): a única que o modo stalker mostra. */
+const ONLY_PERSONAS = `NOT EXISTS (SELECT 1 FROM conversation_members om JOIN users ou ON ou.id = om.user_id
+                                   WHERE om.conversation_id = c.id AND NOT ou.is_ai)`;
 
 const toConversation = (r: ConversationRow): ConversationView => ({
   id: r.id,
@@ -372,5 +383,34 @@ export class PgChatStore implements ChatStore {
       [userId, conversationId, messageId],
     );
     return res.rowCount === 1;
+  }
+
+  private async personaId(nickname: string) {
+    const res = await this.pool.query<{ id: string }>("SELECT id FROM users WHERE nickname = $1 AND is_ai", [nickname]);
+    return res.rows[0]?.id ?? null;
+  }
+
+  async stalkerConversations(nickname: string) {
+    const id = await this.personaId(nickname);
+    if (!id) return null;
+    const res = await this.pool.query<ConversationRow>(
+      `${CONVERSATION_SELECT}
+        WHERE c.type = 'direct' AND c.last_message_at IS NOT NULL AND ${ONLY_PERSONAS}
+        ORDER BY c.last_message_at DESC LIMIT 50`,
+      [id],
+    );
+    return res.rows.map(toConversation);
+  }
+
+  async stalkerMessages(nickname: string, conversationId: string, before: string | null, limit: number) {
+    const id = await this.personaId(nickname);
+    if (!id || !isUuid(conversationId)) return null;
+    const ok = await this.pool.query(
+      `SELECT 1 FROM conversations c
+         JOIN conversation_members me ON me.conversation_id = c.id AND me.user_id = $1
+        WHERE c.id = $2 AND c.type = 'direct' AND ${ONLY_PERSONAS}`,
+      [id, conversationId],
+    );
+    return ok.rowCount ? this.listMessages(id, conversationId, before, limit) : null;
   }
 }

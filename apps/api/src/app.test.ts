@@ -16,6 +16,7 @@ import {
 } from "./chat.js";
 import { Hub, WS_CLOSE } from "./realtime.js";
 import { MEMORY_EVERY, PersonaReplier, type ChatGenerator, type PersonaChatStore, type VideoMatch } from "./personaChat.js";
+import { PersonaTalker, type GroupCandidate, type TalkJob, type TalkPersona, type TalkStore } from "./personaTalk.js";
 import type { ChatDecision } from "./personaJev.js";
 import { QUEUES } from "./queues.js";
 import { clampScore, COMMENT_DELTA, LIKE_DELTA, SHARE_DELTA, viewDelta, type ViewInput } from "./affinity.js";
@@ -378,6 +379,24 @@ class MemoryChatStore implements ChatStore {
     if (!me || !msg) return false;
     me.lastRead = Math.max(me.lastRead, msg.at);
     return true;
+  }
+  private personaOnly(personaId: string, id: string) {
+    const c = this.conversations.find((x) => x.id === id);
+    const ids = this.members.filter((m) => m.conversationId === id).map((m) => m.userId);
+    return c?.type === "direct" && ids.includes(personaId) && ids.every((u) => this.user(u).isAi);
+  }
+  async stalkerConversations(nickname: string) {
+    const persona = this.users().get(nickname)?.user;
+    if (!persona?.isAi) return null;
+    return this.conversations
+      .filter((c) => c.lastAt !== null && this.personaOnly(persona.id, c.id))
+      .sort((a, b) => b.lastAt! - a.lastAt!)
+      .map((c) => this.view(persona.id, c.id));
+  }
+  async stalkerMessages(nickname: string, id: string, before: string | null, limit: number) {
+    const persona = this.users().get(nickname)?.user;
+    if (!persona?.isAi || !this.personaOnly(persona.id, id)) return null;
+    return this.listMessages(persona.id, id, before, limit);
   }
 }
 
@@ -1209,5 +1228,191 @@ describe("chat com personas", () => {
     const res = await personaApp().inject({ method: "GET", url: "/owner/personas", headers: await auth() });
     expect(res.json()).toMatchObject({ rate: 30, lastHour: 2, personas: [{ nickname: "tio_valdir", lastHour: 2 }], decisions: [] });
     expect((await personaApp().inject({ method: "GET", url: "/owner/personas", headers: await auth("ana", "1111") })).statusCode).toBe(403);
+  });
+});
+
+describe("modo stalker", () => {
+  it("mostra só as conversas diretas entre personas, e nunca as de gente de verdade", async () => {
+    for (const [nickname, id] of [["rato", "u-rato"], ["kelly", "u-kelly"]] as const) {
+      store.users.set(nickname, { user: { id, nickname, avatarUrl: null, role: "resident", isAi: true }, pinHash: null });
+    }
+    const headers = await auth("ana", "4321");
+    const anaId = store.users.get("ana")!.user.id;
+    const between = (await chat.openDirect("u-tio", "rato")) as ConversationView;
+    await chat.sendMessage("u-tio", between.id, { text: "olha esse, Rato" });
+    const withAna = (await chat.openDirect(anaId, "tio_valdir")) as ConversationView;
+    await chat.sendMessage(anaId, withAna.id, { text: "segredo da ana" });
+    const a = app();
+    const get = (url: string) => a.inject({ method: "GET", url, headers });
+
+    const list = await get("/personas/tio_valdir/conversas");
+    expect(list.statusCode).toBe(200);
+    expect(list.json()).toHaveLength(1);
+    expect(list.json()[0]).toMatchObject({ id: between.id, members: [{ nickname: "rato" }] });
+    expect((await get(`/personas/rato/conversas/${between.id}/mensagens`)).json().map((m: MessageView) => m.text)).toEqual(["olha esse, Rato"]);
+
+    // Id adivinhado de conversa com gente, persona que não está na conversa ou apelido de gente: nada.
+    expect((await get(`/personas/tio_valdir/conversas/${withAna.id}/mensagens`)).statusCode).toBe(404);
+    expect((await get(`/personas/kelly/conversas/${between.id}/mensagens`)).statusCode).toBe(404);
+    expect((await get("/personas/ana/conversas")).statusCode).toBe(404);
+    expect((await get("/personas/ana/conversas/" + withAna.id + "/mensagens")).statusCode).toBe(404);
+    // E não dá para escrever por ali.
+    expect((await a.inject({ method: "POST", url: `/personas/tio_valdir/conversas/${between.id}/mensagens`, headers, payload: { text: "oi" } })).statusCode).toBe(404);
+  });
+});
+
+class MemoryTalkStore implements TalkStore {
+  personas = new Map<string, TalkPersona>();
+  claims = new Map<string, { action: string }>();
+  actions = 0;
+  candidates: GroupCandidate[] = [];
+  bunker: string | null = null;
+  async persona(id: string) {
+    return this.personas.get(id) ?? null;
+  }
+  async actionsLastHour() {
+    return this.actions;
+  }
+  async claim(personaId: string, trigger: string, targetId: string, d: { action: string }) {
+    const key = `${personaId}:${trigger}:${targetId}`;
+    if (this.claims.has(key)) return false;
+    this.claims.set(key, d);
+    return true;
+  }
+  async groupCandidates() {
+    return this.candidates;
+  }
+  async bunkerId() {
+    return this.bunker;
+  }
+}
+
+describe("personas entre si", () => {
+  const persona = (id: string, nickname: string, activity: number, relations: Record<string, string> = {}): TalkPersona => ({
+    id, nickname, name: nickname, bio: "Do bunker.", tone: "Curto.", examples: ["KKKK", "Bom dia!", "Que coisa"], activity, relations,
+  });
+  let talk: MemoryTalkStore;
+  let jobs: { data: TalkJob; startAfter?: number }[];
+  let generate: ReturnType<typeof vi.fn<ChatGenerator>>;
+  let busy: boolean;
+  const talker = (random = () => 0.1) =>
+    new PersonaTalker({
+      chat, store: talk, hub, generate, busy: () => busy, rate: 30, turnDelaySeconds: 10, random,
+      queue: { send: async (_name, data, options) => void jobs.push({ data: data as TalkJob, startAfter: options?.startAfter }) },
+    });
+
+  beforeEach(async () => {
+    store.users.set("rato", { user: { id: "u-rato", nickname: "rato", avatarUrl: null, role: "resident", isAi: true }, pinHash: null });
+    talk = new MemoryTalkStore();
+    talk.personas.set("u-tio", persona("u-tio", "tio_valdir", 0.9, { rato: "o sobrinho rabugento que nunca ri das piadas" }));
+    talk.personas.set("u-rato", persona("u-rato", "rato", 0.2));
+    jobs = [];
+    busy = false;
+    generate = vi.fn<ChatGenerator>(async () => "Esse aí é bom demais, rapaz");
+  });
+
+  async function approvedVideo(title = "Gato derruba copo") {
+    const id = await store.createVideo("https://youtu.be/" + title.length, "youtube", "u-dono");
+    Object.assign(store.videos.get(id)!, { status: "aprovado", videoUrl: `/media/${id}/video.mp4`, title });
+    return id;
+  }
+
+  it("o tique manda o vídeo e passa a vez para a outra persona, que responde com a relação no prompt", async () => {
+    const videoId = await approvedVideo();
+    const t = talker();
+    await t.handle({ kind: "start", starterId: "u-tio", partnerId: "u-rato", videoId, score: 0.8, reasons: { relacao: true } });
+    const conv = (await chat.stalkerConversations("tio_valdir"))![0]!;
+    expect(conv.lastMessage).toMatchObject({ type: "video", sender: { nickname: "tio_valdir" } });
+    expect([...talk.claims.values()]).toEqual([{ action: "enviar_video", score: 0.8, reasons: { relacao: true, para: "rato" } }]);
+    expect(jobs).toEqual([{ data: { kind: "turn", conversationId: conv.id, personaId: "u-rato", afterId: conv.lastMessage!.id, messages: 1 }, startAfter: expect.any(Number) }]);
+
+    // Repetir o mesmo job não manda o vídeo de novo.
+    await t.handle({ kind: "start", starterId: "u-tio", partnerId: "u-rato", videoId, score: 0.8, reasons: {} });
+    expect((await chat.stalkerMessages("rato", conv.id, null, 50))!).toHaveLength(1);
+
+    // A vez do Rato: responde (antes do mínimo de 3 mensagens, sempre) e devolve a vez ao Tio.
+    await t.handle(jobs.pop()!.data);
+    const msgs = (await chat.stalkerMessages("rato", conv.id, null, 50))!;
+    expect(msgs.map((m) => [m.sender.nickname, m.type])).toEqual([["tio_valdir", "video"], ["rato", "text"]]);
+    expect(jobs.at(-1)!.data).toMatchObject({ kind: "turn", personaId: "u-tio", afterId: msgs[1]!.id, messages: 2 });
+    // O Tio, na vez dele, vê o Rato pela relação do JSON.
+    await t.handle(jobs.pop()!.data);
+    expect(generate.mock.calls.at(-1)![0][0]!.content).toContain("O que você sabe de @rato: o sobrinho rabugento");
+  });
+
+  it("depois do máximo de mensagens a conversa morre, e acima do limite por hora ninguém continua", async () => {
+    const videoId = await approvedVideo();
+    const t = talker(() => 0.99);
+    await t.handle({ kind: "start", starterId: "u-tio", partnerId: "u-rato", videoId, score: 0.8, reasons: {} });
+    const turn = jobs.pop()!.data as Extract<TalkJob, { kind: "turn" }>;
+    await t.handle({ ...turn, messages: 6 });
+    expect(generate).not.toHaveBeenCalled();
+    expect(jobs).toEqual([]);
+    expect([...talk.claims.values()].at(-1)).toMatchObject({ action: "ignorar" });
+
+    talk.claims.clear();
+    talk.actions = 30;
+    await t.handle({ ...turn, messages: 1 });
+    expect(generate).not.toHaveBeenCalled();
+    expect([...talk.claims.values()].at(-1)).toMatchObject({ action: "ignorar", reasons: { limite_por_hora: true } });
+  });
+
+  it("espera a vez quando tem gente conversando com persona", async () => {
+    busy = true;
+    const job: TalkJob = { kind: "start", starterId: "u-tio", partnerId: "u-rato", videoId: await approvedVideo(), score: 0.5, reasons: {} };
+    await talker().handle(job);
+    expect(jobs).toEqual([{ data: job, startAfter: 15 }]);
+    expect(await chat.stalkerConversations("tio_valdir")).toEqual([]);
+  });
+
+  it("no Grupo do Bunker, responde à mensagem de gente com o apelido de cada um no prompt", async () => {
+    await chat.ensureBunker();
+    const ana = await auth("ana", "4321");
+    const anaId = store.users.get("ana")!.user.id;
+    const bunker = (await chat.listConversations(anaId)).find((c) => c.bunker)!;
+    talk.bunker = bunker.id;
+    const sent = await chat.sendMessage(anaId, bunker.id, { text: "gente, alguém viu o jogo ontem?" });
+    if (typeof sent === "string") throw new Error(sent);
+    const t = talker(() => 0.99);
+    await t.onHumanMessage(sent.message, anaId);
+    expect(jobs[0]!.data).toEqual({ kind: "group", conversationId: bunker.id, messageId: sent.message.id });
+
+    // Tio (ativo) comenta; Rato (quase nunca) fica quieto.
+    talk.candidates = [
+      { persona: talk.personas.get("u-tio")!, affinity: null },
+      { persona: talk.personas.get("u-rato")!, affinity: null },
+    ];
+    await t.handle(jobs.shift()!.data);
+    expect(jobs.map((j) => j.data)).toEqual([expect.objectContaining({ kind: "group_reply", personaId: "u-tio", reasons: expect.objectContaining({ acao: "comentar" }) })]);
+    await t.handle(jobs.shift()!.data);
+    const prompt = generate.mock.calls[0]![0];
+    expect(prompt[0]!.content).toContain('no grupo "Grupo do Bunker"');
+    expect(prompt.at(-1)).toEqual({ role: "user", content: "@ana: gente, alguém viu o jogo ontem?" });
+    expect(generate.mock.calls[0]![1]).toContain("@ana:");
+    const msgs = (await a().inject({ method: "GET", url: `/conversations/${bunker.id}/messages`, headers: ana })).json();
+    expect(msgs.at(-1)).toMatchObject({ text: "Esse aí é bom demais, rapaz", sender: { nickname: "tio_valdir" } });
+
+    // Duas mensagens seguidas de gente: só a última chama as personas.
+    const first = await chat.sendMessage(anaId, bunker.id, { text: "gente" });
+    const second = await chat.sendMessage(anaId, bunker.id, { text: "alguém viu o jogo?" });
+    if (typeof first === "string" || typeof second === "string") throw new Error("não mandou");
+    jobs = [];
+    await t.handle({ kind: "group", conversationId: bunker.id, messageId: first.message.id });
+    expect(jobs).toEqual([]);
+    await t.handle({ kind: "group", conversationId: bunker.id, messageId: second.message.id });
+    expect(jobs.map((j) => j.data)).toEqual([expect.objectContaining({ kind: "group_reply", messageId: second.message.id })]);
+
+    // Mensagem de persona no grupo não chama outras personas.
+    jobs = [];
+    await t.onHumanMessage(msgs.at(-1), "u-tio");
+    expect(jobs).toEqual([]);
+  });
+  const a = () => app();
+
+  it("o dono dispara um tique na hora; outras pessoas não", async () => {
+    const res = await a().inject({ method: "POST", url: "/owner/personas/tique", headers: await auth() });
+    expect(res.statusCode).toBe(202);
+    expect(queue.send).toHaveBeenCalledWith(QUEUES.personaTick, {});
+    expect((await a().inject({ method: "POST", url: "/owner/personas/tique", headers: await auth("bia", "5555") })).statusCode).toBe(403);
   });
 });

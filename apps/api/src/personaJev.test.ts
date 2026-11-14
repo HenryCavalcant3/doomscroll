@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { goodMatch, onlyTitle, promptTitle, type VideoMatch } from "./personaChat.js";
-import { CHAT_JEV, asksForVideo, decideChat, reactionFor, topicsIn, videoQuery } from "./personaJev.js";
+import { CHAT_JEV, TALK_JEV, asksForVideo, decideChat, decideGroup, decideTalk, reactionFor, topicsIn, videoQuery } from "./personaJev.js";
 
 const seq = (...xs: number[]) => {
   let i = 0;
@@ -83,5 +83,28 @@ describe("título no prompt", () => {
     expect(promptTitle("COMIDA DE RUA * Pastel * recheio diferente #shorts")).toBe("COMIDA DE RUA Pastel recheio diferente");
     expect(promptTitle("#shorts #fyp")).toBe("sem título");
     expect(promptTitle(null)).toBe("sem título");
+  });
+});
+
+describe("JEV das personas entre si", () => {
+  it("responde sempre antes do mínimo, nunca depois do máximo, e no meio depende da atividade", () => {
+    expect(decideTalk(0.2, 1, "olha esse", () => 0.99).action).toBe("responder");
+    expect(decideTalk(0.9, TALK_JEV.maxMessages, "olha esse", () => 0).action).toBe("ignorar");
+    // 3 mensagens: chance 0,3 + 0,4 × atividade.
+    expect(decideTalk(0.9, 3, "olha esse", () => 0.6).action).toBe("responder");
+    expect(decideTalk(0.2, 3, "olha esse", () => 0.6).action).toBe("ignorar");
+  });
+
+  it("no grupo, só as duas maiores notas comentam; quem fica no meio só reage", () => {
+    const out = decideGroup(
+      [
+        { id: "valdir", activity: 0.9, affinity: 0.9 },
+        { id: "kelly", activity: 0.7, affinity: 0.9 },
+        { id: "neide", activity: 0.6, affinity: 0.9 },
+        { id: "rato", activity: 0.2, affinity: 0.1 },
+      ],
+      () => 0.5,
+    );
+    expect(Object.fromEntries(out.map((d) => [d.id, d.action]))).toEqual({ valdir: "comentar", kelly: "comentar", neide: "reagir", rato: "ignorar" });
   });
 });

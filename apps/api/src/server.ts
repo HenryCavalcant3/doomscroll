@@ -12,7 +12,8 @@ import { ensureQueues, QUEUES } from "./queues.js";
 import { PgStore } from "./store.js";
 import { PgChatStore } from "./chat.js";
 import { chatStream, embed } from "./ollama.js";
-import { CHAT_OPTIONS, PersonaReplier, PgPersonaChatStore } from "./personaChat.js";
+import { CHAT_OPTIONS, PersonaReplier, PgPersonaChatStore, type ChatGenerator } from "./personaChat.js";
+import { PersonaTalker, PgTalkStore, type TalkJob } from "./personaTalk.js";
 import { Hub } from "./realtime.js";
 
 const config = readConfig();
@@ -44,27 +45,47 @@ if (undecided.length) console.log(`[api] decisões de persona enfileiradas para 
 
 const hub = new Hub();
 const personaStore = new PgPersonaChatStore(pool);
+// O stop impede o modelo de escrever a fala do outro lado.
+const generate: ChatGenerator = (messages, stop, onText, signal) =>
+  chatStream(
+    {
+      baseUrl: config.ollamaUrl,
+      model: config.llmModel,
+      messages,
+      options: { ...CHAT_OPTIONS, stop },
+      timeoutMs: config.llmTimeoutMs,
+      signal,
+    },
+    onText,
+  );
+// Personas entre si e no Grupo do Bunker (SPEC 7.5): uma fala por job, sempre depois do chat com gente.
+let talker: PersonaTalker | null = null;
 const replier = new PersonaReplier({
   chat,
   personas: personaStore,
   hub,
   queue: boss,
-  // O stop impede o modelo de escrever a fala do outro lado.
-  generate: (messages, stop, onText, signal) =>
-    chatStream(
-      {
-        baseUrl: config.ollamaUrl,
-        model: config.llmModel,
-        messages,
-        options: { ...CHAT_OPTIONS, stop },
-        timeoutMs: config.llmTimeoutMs,
-        signal,
-      },
-      onText,
-    ),
+  generate,
+  onOtherMessage: (message, senderId) => talker?.onHumanMessage(message, senderId),
   // Busca de vídeo (RAG): curta, para não segurar a resposta se o Ollama estiver ocupado.
   embed: (text) => embed({ baseUrl: config.ollamaUrl, model: config.embedModel, text, timeoutMs: 30_000 }),
   log: (msg) => console.log(`[api] ${msg}`),
+});
+
+talker = new PersonaTalker({
+  chat,
+  store: new PgTalkStore(pool),
+  hub,
+  generate,
+  queue: boss,
+  busy: () => replier.busy(),
+  rate: config.personaRate,
+  turnDelaySeconds: config.personaTalkDelay,
+  log: (msg) => console.log(`[api] ${msg}`),
+});
+const talk = talker;
+await boss.work<TalkJob>(QUEUES.personaTalk, { batchSize: 1, pollingIntervalSeconds: 2 }, async ([job]) => {
+  if (job) await talk.handle(job.data);
 });
 
 const app = buildApp({
@@ -81,6 +102,7 @@ const app = buildApp({
 });
 
 const shutdown = async () => {
+  talk.close();
   await app.close();
   await boss.stop({ graceful: true });
   await pool.end();
