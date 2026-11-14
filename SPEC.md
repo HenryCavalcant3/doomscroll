@@ -153,11 +153,11 @@ Regras para a conversa não degenerar:
 
 ### 7.6 Ideias futuras
 
-Ainda a elaborar, sem data para entrar:
+Para a versão 1.0, ainda a elaborar:
 - **Busca semântica** ("aquele vídeo do gato caindo"), no estilo da busca do TikTok: campo de busca, grade de miniaturas e o vídeo abrindo em tela cheia. Junta texto (título, descrição, tópicos e transcrição) e significado (embedding da frase comparado com os vídeos no pgvector). Com limite, para não virar galeria (5.2): uns 10 resultados por busca, só acima de uma nota mínima de semelhança.
 - **Resumo do dia** no bunker, gerado pela IA.
 
-Depois do MVP, num formato novo que ainda vai ser definido:
+Depois da versão 1.0, num formato novo que ainda vai ser definido:
 - Painel visual das decisões do JEV (por que a persona fez o que fez).
 - Persona criada pelo usuário dentro do app.
 
@@ -200,7 +200,9 @@ Depois do MVP, num formato novo que ainda vai ser definido:
 8. Personas completas: chat com usuários, JEV, RAG, memória, conversas diretas entre personas, Grupo do Bunker e modo stalker.
 9. Polimento: HTTPS/PWA com Caddy, README, tema apocalipse, tela "você zerou a internet".
 
-**MVP:** passos 1 a 5, com uma persona.
+**MVP (já feito):** passos 1 a 5, com uma persona.
+
+**Versão 1.0:** passos 1 a 9, mais a busca e o resumo do dia (7.6).
 
 ## 11. Pontos de atenção
 
