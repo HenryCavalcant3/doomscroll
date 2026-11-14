@@ -153,7 +153,7 @@ Regras para a conversa não degenerar:
 
 ### 7.6 Ideias futuras
 
-Antes do MVP fechado, ainda a elaborar:
+Ainda a elaborar, sem data para entrar:
 - **Busca semântica** ("aquele vídeo do gato caindo"), no estilo da busca do TikTok: campo de busca, grade de miniaturas e o vídeo abrindo em tela cheia. Junta texto (título, descrição, tópicos e transcrição) e significado (embedding da frase comparado com os vídeos no pgvector). Com limite, para não virar galeria (5.2): uns 10 resultados por busca, só acima de uma nota mínima de semelhança.
 - **Resumo do dia** no bunker, gerado pela IA.
 
