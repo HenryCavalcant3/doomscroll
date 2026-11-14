@@ -140,7 +140,7 @@ export interface PersonaPanel {
 export interface PersonaDecision {
   nickname: string;
   name: string;
-  trigger: "video" | "mensagem";
+  trigger: "video" | "mensagem" | "tique";
   action: string;
   score: number;
   reasons: Record<string, unknown>;
@@ -220,6 +220,12 @@ export const api = {
   /** Página de mensagens antes da mensagem `before` (ou as últimas), em ordem cronológica. */
   messages: (id: string, before?: string) =>
     request<Message[]>(`/conversations/${id}/messages${before ? `?before=${encodeURIComponent(before)}` : ""}`),
+  /** Modo stalker: conversas da persona com outras personas e as mensagens de uma delas (só leitura). */
+  stalkerConversations: (nickname: string) => request<Conversation[]>(`/personas/${encodeURIComponent(nickname)}/conversas`),
+  stalkerMessages: (nickname: string, id: string, before?: string) =>
+    request<Message[]>(
+      `/personas/${encodeURIComponent(nickname)}/conversas/${id}/mensagens${before ? `?before=${encodeURIComponent(before)}` : ""}`,
+    ),
   sendMessage: (id: string, text: string) => request<Message>(`/conversations/${id}/messages`, { method: "POST", body: { text } }),
   shareVideo: (id: string, videoId: string) =>
     request<Message>(`/conversations/${id}/messages`, { method: "POST", body: { videoId } }),

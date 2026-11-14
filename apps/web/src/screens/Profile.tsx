@@ -3,6 +3,7 @@ import { api, apiUrl, type FeedVideo, type Profile, type User } from "../api";
 import { Avatar } from "../components/Avatar";
 import { Player } from "../components/Player";
 import { chatHref } from "../router";
+import { StalkerList } from "./Stalker";
 
 type Tab = "curtidos" | "stalker";
 
@@ -100,9 +101,7 @@ export function ProfileScreen({ nickname, me, onLogout }: Props) {
       </div>
 
       {tab === "stalker" ? (
-        <p className="notice">
-          Em breve você vai poder espiar, só lendo, as conversas de {title} com outras personas.
-        </p>
+        <StalkerList nickname={profile.nickname} name={title} />
       ) : profile.liked.length === 0 ? (
         <p className="hint profile-empty">
           {own ? "Os vídeos que você curtir aparecem aqui." : "Nenhum vídeo curtido ainda."}

@@ -294,7 +294,7 @@ export function ChatScreen({ id, me, onRead }: Props) {
             </div>
           </div>
         )}
-        {personaReply?.failed && <p className="hint chat-failed">@{personaReply.nickname} não conseguiu responder agora. Tente mandar de novo.</p>}
+        {personaReply?.failed && !group && <p className="hint chat-failed">@{personaReply.nickname} não conseguiu responder agora. Tente mandar de novo.</p>}
       </div>
 
       {playing && <Player video={playing} onClose={closePlayer} />}
@@ -321,7 +321,7 @@ export function ChatScreen({ id, me, onRead }: Props) {
   );
 }
 
-function PlayIcon() {
+export function PlayIcon() {
   return (
     <svg width={40} height={40} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinejoin="round" aria-hidden="true">
       <path d="M8 5l11 7-11 7z" />

@@ -5,7 +5,9 @@ export type Route =
   /** Conversa: #/chat/<id>. */
   | { name: "chat"; id: string }
   /** Perfil de outra pessoa ou persona: #/u/<apelido>. */
-  | { name: "usuario"; nickname: string };
+  | { name: "usuario"; nickname: string }
+  /** Modo stalker, conversa entre personas: #/espiar/<apelido>/<id>. */
+  | { name: "espiar"; nickname: string; id: string };
 
 const SIMPLE = ["feed", "adicionar", "mensagens", "perfil", "dono"] as const;
 
@@ -13,6 +15,8 @@ export function parseRoute(hash: string): Route {
   const path = hash.replace(/^#\/?/, "");
   const user = /^u\/([^/]+)$/.exec(path);
   if (user) return { name: "usuario", nickname: decodeURIComponent(user[1]!) };
+  const spy = /^espiar\/([^/]+)\/([0-9a-f-]{36})$/i.exec(path);
+  if (spy) return { name: "espiar", nickname: decodeURIComponent(spy[1]!), id: spy[2]! };
   const chat = /^chat\/([0-9a-f-]{36})$/i.exec(path);
   if (chat) return { name: "chat", id: chat[1]! };
   return (SIMPLE as readonly string[]).includes(path) ? { name: path as (typeof SIMPLE)[number] } : { name: "feed" };
@@ -20,6 +24,7 @@ export function parseRoute(hash: string): Route {
 
 export const chatHref = (id: string) => `#/chat/${id}`;
 export const profileHref = (nickname: string) => `#/u/${encodeURIComponent(nickname)}`;
+export const stalkerHref = (nickname: string, id: string) => `#/espiar/${encodeURIComponent(nickname)}/${id}`;
 
 /** Rotas por hash (#/feed, #/u/apelido...): simples e funciona servido por qualquer servidor estático. */
 export function useRoute(): Route {

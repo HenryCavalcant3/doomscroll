@@ -11,6 +11,7 @@ import { Feed } from "./screens/Feed";
 import { Messages } from "./screens/Messages";
 import { OwnerPanel } from "./screens/OwnerPanel";
 import { ProfileScreen } from "./screens/Profile";
+import { StalkerChat } from "./screens/Stalker";
 
 type Session = { state: "checking" } | { state: "offline" } | { state: "out" } | { state: "in"; user: User };
 
@@ -77,7 +78,10 @@ export function App() {
   }, [signedIn, route, refreshUnread]);
   useEffect(() => {
     if (!signedIn) return;
-    const unsubscribe = realtime.subscribe(refreshUnread);
+    // Só mensagem nova (ou reconexão) muda as não lidas; "digitando" e texto parcial chegam várias vezes por segundo.
+    const unsubscribe = realtime.subscribe((e) => {
+      if (e.type === "message" || e.type === "ready") refreshUnread();
+    });
     const onVisible = () => !document.hidden && refreshUnread();
     document.addEventListener("visibilitychange", onVisible);
     return () => {
@@ -135,8 +139,9 @@ export function App() {
         {route.name === "usuario" && (
           <ProfileScreen key={route.nickname} nickname={route.nickname} me={me} onLogout={logout} />
         )}
+        {route.name === "espiar" && <StalkerChat key={route.id} nickname={route.nickname} id={route.id} />}
         {/* A conversa ocupa a tela toda, com o campo de mensagem no lugar da navegação. */}
-        {route.name !== "chat" && <BottomNav route={route} unread={unread} />}
+        {route.name !== "chat" && route.name !== "espiar" && <BottomNav route={route} unread={unread} />}
       </div>
     </RealtimeContext.Provider>
   );

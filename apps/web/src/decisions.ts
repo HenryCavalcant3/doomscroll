@@ -13,6 +13,13 @@ const ACTIONS: Record<string, string> = {
 export function decisionText(d: PersonaDecision): string {
   const action = ACTIONS[d.action] ?? d.action;
   if (d.trigger === "video") return `${action} “${d.video ?? "vídeo apagado"}”`;
+  if (d.trigger === "tique") {
+    const to = typeof d.reasons.para === "string" ? d.reasons.para : "outra persona";
+    return `puxou conversa: mandou “${d.video ?? "vídeo apagado"}” para ${to === "Grupo do Bunker" ? to : `@${to}`}`;
+  }
+  // Conversa entre personas (tem "mensagens") e Grupo do Bunker (tem "acao").
+  if ("mensagens" in d.reasons) return d.action === "ignorar" ? "deixou a conversa morrer" : "respondeu outra persona";
+  if ("acao" in d.reasons) return d.action === "comentar" ? "respondeu no Grupo do Bunker" : "reagiu no Grupo do Bunker";
   return typeof d.reasons.video === "string" && d.reasons.video !== "nenhum" ? `${action} (“${d.reasons.video}”)` : action;
 }
 
@@ -27,6 +34,12 @@ const LABELS: Record<string, string> = {
   desde_ultimo_video: "msgs desde o último vídeo",
   palavras: "palavras",
   similaridade: "similaridade",
+  mensagens: "mensagens na conversa",
+  chance: "chance de seguir",
+  afinidade_de_quem_recebe: "afinidade de quem recebe",
+  relacao: "se conhecem",
+  grupo: "no grupo",
+  limite_por_hora: "limite por hora",
   destaque: "destaque",
   topico_citado: "tópico citado",
 };
@@ -37,8 +50,8 @@ const fmt = (v: unknown) =>
 /** As parcelas da decisão em uma linha: "afinidade 0,8 · atividade 0,9 · acaso -0,05 · nota 1,1". */
 export function reasonsText(d: PersonaDecision): string {
   const parts = Object.entries(d.reasons)
-    .filter(([k]) => k !== "video")
+    .filter(([k]) => k !== "video" && k !== "para" && k !== "acao")
     .map(([k, v]) => `${LABELS[k] ?? k} ${fmt(v)}`);
-  if (d.trigger === "video") parts.push(`nota ${fmt(d.score)}`);
+  if (d.trigger !== "mensagem") parts.push(`nota ${fmt(d.score)}`);
   return parts.join(" · ");
 }

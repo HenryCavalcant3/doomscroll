@@ -25,4 +25,15 @@ describe("decisões no painel do dono", () => {
     expect(reasonsText(sent)).toBe("pediu vídeo sim · similaridade 0,72 · destaque 2,6 · tópico citado sim");
     expect(decisionText({ ...sent, action: "responder", reasons: { video: "nenhum" } })).toBe("respondeu uma mensagem");
   });
+
+  it("descreve o tique e as conversas entre personas", () => {
+    const tick = { ...base, trigger: "tique" as const, action: "enviar_video", score: 0.8, video: "Speedrun de Mario", reasons: { atividade: 0.9, relacao: true, para: "rato" } };
+    expect(decisionText(tick)).toBe("puxou conversa: mandou “Speedrun de Mario” para @rato");
+    expect(reasonsText(tick)).toBe("atividade 0,9 · se conhecem sim · nota 0,8");
+    expect(decisionText({ ...tick, reasons: { para: "Grupo do Bunker" } })).toBe("puxou conversa: mandou “Speedrun de Mario” para Grupo do Bunker");
+    const talk = { ...base, trigger: "mensagem" as const, video: null, reasons: { mensagens: 4, chance: 0.5 } };
+    expect(decisionText({ ...talk, action: "ignorar" })).toBe("deixou a conversa morrer");
+    expect(decisionText({ ...talk, action: "responder" })).toBe("respondeu outra persona");
+    expect(decisionText({ ...talk, action: "comentar", reasons: { acao: "comentar" } })).toBe("respondeu no Grupo do Bunker");
+  });
 });
