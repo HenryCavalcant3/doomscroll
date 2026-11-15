@@ -1,9 +1,13 @@
 -- Boletim do Bunker (SPEC 7.6, docs/boletim/BOLETIM.md): o resumo do dia anterior, um por dia, igual para todos.
 
 -- Quando o vídeo foi aprovado: "tema inaugurado" e o desempate do mais curtido dependem disso.
--- O acervo de antes não guardava a data; updated_at é a melhor aproximação (a aprovação é a última mudança de status).
+-- O acervo de antes não guardava a data. A aproximação é a primeira decisão das personas sobre o vídeo
+-- (o JEV roda logo depois da aprovação); sem decisão, o cadastro. updated_at não serve: a reconversão mexe nele.
 ALTER TABLE videos ADD COLUMN approved_at timestamptz;
-UPDATE videos SET approved_at = updated_at WHERE status = 'aprovado';
+UPDATE videos v SET approved_at = coalesce(
+  (SELECT min(d.created_at) FROM persona_decisions d WHERE d.trigger = 'video' AND d.target_id = v.id),
+  v.created_at)
+ WHERE v.status = 'aprovado';
 CREATE INDEX videos_approved_at ON videos (approved_at) WHERE status = 'aprovado';
 
 -- Tópico sensível: no assunto do dia, mostra só o tópico (sem o vídeo) e a manchete vira frase de "dia parado".

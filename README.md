@@ -134,6 +134,12 @@ pnpm test
 pnpm build
 ```
 
+Os testes do SQL do Boletim do Bunker (`apps/worker/src/bulletinDb.test.ts`) precisam de um Postgres com as migrações aplicadas e só rodam com `TEST_DATABASE_URL`; sem ela, ficam de fora (o CI não tem banco). Tudo roda numa transação desfeita no fim. Com o banco do compose publicado numa porta local:
+
+```bash
+TEST_DATABASE_URL=postgres://doomscroll:doomscroll@127.0.0.1:55432/doomscroll pnpm --filter @doomscroll/worker test
+```
+
 Estrutura:
 
 ```
