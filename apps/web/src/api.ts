@@ -7,6 +7,17 @@ export interface Topic {
   id: number;
   name: string;
   slug: string;
+  /** Sensível: nunca vira assunto do dia nem mostra vídeo no Boletim do Bunker. */
+  sensitive: boolean;
+}
+
+/** Pauta de fofoca do boletim, no painel do dono. */
+export interface Pauta {
+  id: string;
+  texto: string;
+  ativa: boolean;
+  /** Última vez que entrou num boletim (ISO), ou null. */
+  usadaEm: string | null;
 }
 
 export interface VideoTopic {
@@ -295,7 +306,12 @@ export const api = {
     pending: () => request<Video[]>("/owner/videos?status=pendente"),
     approve: (id: string) => request<Video>(`/owner/videos/${id}/approve`, { method: "POST" }),
     reject: (id: string) => request<Video>(`/owner/videos/${id}/reject`, { method: "POST" }),
-    createTopic: (name: string) => request<Topic>("/owner/topics", { method: "POST", body: { name } }),
+    createTopic: (name: string, sensitive: boolean) => request<Topic>("/owner/topics", { method: "POST", body: { name, sensitive } }),
+    setSensitive: (id: number, sensitive: boolean) => request<Topic>(`/owner/topics/${id}`, { method: "PATCH", body: { sensitive } }),
+    pautas: () => request<Pauta[]>("/owner/pautas"),
+    createPauta: (texto: string) => request<Pauta>("/owner/pautas", { method: "POST", body: { texto } }),
+    updatePauta: (id: string, change: { texto?: string; ativa?: boolean }) =>
+      request<Pauta>(`/owner/pautas/${id}`, { method: "PATCH", body: change }),
     personas: () => request<PersonaPanel>("/owner/personas"),
   },
 };

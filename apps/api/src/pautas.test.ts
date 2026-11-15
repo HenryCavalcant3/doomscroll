@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_PAUTAS_FILE, loadPautas, parsePautas, pautaErrors } from "./pautas.js";
+import { DEFAULT_PAUTAS_FILE, loadPautas, parsePautas, pautaErrors, pautaId } from "./pautas.js";
 
 describe("pautas do boletim", () => {
   it("o pautas.json do repositório é válido, com ids únicos", async () => {
@@ -32,5 +32,18 @@ describe("pautas do boletim", () => {
     expect(run).toThrow(/ok: id repetido/);
     expect(run).toThrow(/ativa precisa ser true ou false/);
     expect(() => parsePautas({})).toThrow(/falta a lista/);
+  });
+});
+
+describe("pauta nova do painel", () => {
+  it("id vem das primeiras palavras, sem acento e sem o marcador", () => {
+    expect(pautaId("{persona} montou uma academia com latas de feijão.")).toBe("montou-uma-academia-com-latas");
+    expect(pautaId("Ação!")).toBe("acao");
+    expect(pautaId("???")).toBe("pauta");
+  });
+
+  it("recusa apelido de morador como palavra inteira, com ou sem acento", () => {
+    expect(pautaErrors("A Ána comeu o miojo.", ["ana"])).toEqual(["texto cita morador (ana): use {persona} ou ninguém"]);
+    expect(pautaErrors("Alguém deixou a banana no rádio.", ["ana"])).toEqual([]);
   });
 });

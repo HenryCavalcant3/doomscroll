@@ -11,6 +11,8 @@ export interface Topic {
   id: number;
   name: string;
   slug: string;
+  /** Tópico sensível: nunca vira assunto do dia nem mostra vídeo no Boletim do Bunker. */
+  sensitive: boolean;
 }
 
 export interface VideoTopic {
@@ -88,7 +90,9 @@ export type ConfirmResult = "ok" | "not_found" | "invalid_state" | "invalid_topi
 /** Acesso ao banco usado pelas rotas. As rotas dependem desta interface, o que facilita os testes. */
 export interface Store {
   listTopics(): Promise<Topic[]>;
-  createTopic(name: string, slug: string): Promise<Topic | null>;
+  createTopic(name: string, slug: string, sensitive?: boolean): Promise<Topic | null>;
+  /** Marca ou desmarca o tópico como sensível; null quando ele não existe. */
+  setTopicSensitive(id: number, sensitive: boolean): Promise<Topic | null>;
   findActiveVideoBySource(url: string): Promise<string | null>;
   createVideo(url: string, platform: string, submittedBy: string): Promise<string>;
   getVideo(id: string): Promise<VideoView | null>;
@@ -294,14 +298,19 @@ export class PgStore implements Store {
   }
 
   async listTopics() {
-    return (await this.pool.query<Topic>("SELECT id, name, slug FROM topics ORDER BY name")).rows;
+    return (await this.pool.query<Topic>("SELECT id, name, slug, sensitive FROM topics ORDER BY name")).rows;
   }
 
-  async createTopic(name: string, slug: string) {
+  async createTopic(name: string, slug: string, sensitive = false) {
     const res = await this.pool.query<Topic>(
-      "INSERT INTO topics (name, slug) VALUES ($1, $2) ON CONFLICT (slug) DO NOTHING RETURNING id, name, slug",
-      [name, slug],
+      "INSERT INTO topics (name, slug, sensitive) VALUES ($1, $2, $3) ON CONFLICT (slug) DO NOTHING RETURNING id, name, slug, sensitive",
+      [name, slug, sensitive],
     );
+    return res.rows[0] ?? null;
+  }
+
+  async setTopicSensitive(id: number, sensitive: boolean) {
+    const res = await this.pool.query<Topic>("UPDATE topics SET sensitive = $2 WHERE id = $1 RETURNING id, name, slug, sensitive", [id, sensitive]);
     return res.rows[0] ?? null;
   }
 

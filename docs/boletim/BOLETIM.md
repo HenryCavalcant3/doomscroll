@@ -46,7 +46,7 @@ Duas fontes, nesta ordem:
 1. **Fato curioso real.** Uma consulta em `persona_decisions` e nas ações das personas no dia procura o comportamento mais fora do padrão de cada uma (comparado com a média dela nos últimos 7 dias). Exemplos de detectores: persona que raramente curte e curtiu; persona com muito mais comentários que o normal; persona que enviou vídeo para muitos contatos; par de personas que trocou muitas mensagens; persona que ficou em silêncio o dia todo. O fato escolhido vai para a LLM como JSON (`quem`, `o_que`, `intensidade`), e ela reescreve na voz da persona de plantão. A persona de plantão não faz fofoca de si mesma.
 2. **Pauta fixa.** Sem fato curioso, sorteia uma pauta ativa de `pautas.json` que não tenha sido usada nos últimos 14 dias. `{persona}` é trocado por outra persona. A LLM reescreve a pauta na voz de quem está de plantão.
 
-As pautas são carregadas do arquivo para uma tabela na primeira subida (como as personas). O dono pode adicionar, editar e desativar pautas no painel.
+As pautas são carregadas do arquivo para uma tabela na primeira subida (como as personas). O dono pode adicionar, editar e desativar pautas no painel (aba Pautas), com as mesmas regras do arquivo e sem apelido de morador no texto.
 
 ## Voz
 
@@ -92,6 +92,7 @@ A publicação do boletim é um gatilho novo no ciclo das personas (`boletim_pub
 - Saída da LLM validada: JSON, limite de palavras, sem dígitos, sem apelido de morador. Uma nova tentativa; falhando, entra o modelo fixo (manchete) ou a pauta sem reescrita (fofoca).
 - Prompt recebe só o JSON de fatos, delimitado como dado.
 - Tópico sensível como assunto do dia: manchete usa frase de "dia parado".
+- Tópicos sensíveis: Política e Notícias vêm marcados. O dono marca ou desmarca qualquer tópico no painel (aba Tópicos), inclusive ao criar um novo; vale a partir do próximo boletim.
 - Anti-repetição: manchete e fofoca comparadas por embedding com as dos últimos 7 boletins.
 
 ## Dados

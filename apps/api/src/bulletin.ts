@@ -54,7 +54,30 @@ export interface BulletinStore {
   /** O morador já recebeu o cartão deste boletim no feed (uma vez por morador por boletim). */
   seen(date: string, userId: string): Promise<boolean>;
   markSeen(date: string, userId: string): Promise<void>;
+  /** Pautas de fofoca no painel do dono: lista, nova (false se o id já existe) e edição (null se não existe). */
+  pautas(): Promise<PautaView[]>;
+  createPauta(id: string, texto: string): Promise<boolean>;
+  updatePauta(id: string, change: { texto?: string; ativa?: boolean }): Promise<PautaView | null>;
+  /** Apelidos dos moradores (gente, não persona): pauta nunca cita morador (regra fixa 4). */
+  residentNicknames(): Promise<string[]>;
 }
+
+/** Pauta no painel do dono, com a última vez que entrou num boletim. */
+export interface PautaView {
+  id: string;
+  texto: string;
+  ativa: boolean;
+  usadaEm: string | null;
+}
+
+interface PautaRow {
+  id: string;
+  text: string;
+  active: boolean;
+  last_used_at: Date | null;
+}
+
+const toPauta = (r: PautaRow): PautaView => ({ id: r.id, texto: r.text, ativa: r.active, usadaEm: r.last_used_at?.toISOString() ?? null });
 
 /** Resumo para o cartão do feed e a mensagem do grupo: manchete, plantão e três números, sem vídeo. */
 export interface BulletinSummary {
@@ -185,5 +208,31 @@ export class PgBulletinStore implements BulletinStore {
 
   async markSeen(date: string, userId: string) {
     await this.pool.query("INSERT INTO bulletin_views (bulletin_date, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING", [date, userId]);
+  }
+
+  async pautas() {
+    const res = await this.pool.query<PautaRow>("SELECT id, text, active, last_used_at FROM gossip_topics ORDER BY active DESC, created_at, id");
+    return res.rows.map(toPauta);
+  }
+
+  async createPauta(id: string, texto: string) {
+    const res = await this.pool.query("INSERT INTO gossip_topics (id, text) VALUES ($1, $2) ON CONFLICT (id) DO NOTHING", [id, texto]);
+    return res.rowCount === 1;
+  }
+
+  async updatePauta(id: string, change: { texto?: string; ativa?: boolean }) {
+    const res = await this.pool.query<PautaRow>(
+      `UPDATE gossip_topics SET text = COALESCE($2, text), active = COALESCE($3, active) WHERE id = $1
+       RETURNING id, text, active, last_used_at`,
+      [id, change.texto ?? null, change.ativa ?? null],
+    );
+    return res.rows[0] ? toPauta(res.rows[0]) : null;
+  }
+
+  async residentNicknames() {
+    const res = await this.pool.query<{ nickname: string }>(
+      "SELECT u.nickname FROM users u WHERE NOT EXISTS (SELECT 1 FROM personas p WHERE p.user_id = u.id)",
+    );
+    return res.rows.map((r) => r.nickname);
   }
 }

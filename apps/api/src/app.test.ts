@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { BulletinRecord, BulletinStore, StoredFacts } from "./bulletin.js";
+import type { BulletinRecord, BulletinStore, PautaView, StoredFacts } from "./bulletin.js";
 import { buildApp, slugify, type JobQueue } from "./app.js";
 import { readConfig } from "./config.js";
 import {
@@ -38,9 +38,9 @@ function jsonResponse(body: unknown, status = 200) {
 /** Store em memória com o mesmo comportamento esperado do PgStore. */
 class MemoryStore implements Store {
   topics: Topic[] = [
-    { id: 1, name: "Humor", slug: "humor" },
-    { id: 2, name: "Animais", slug: "animais" },
-    { id: 3, name: "Dicas", slug: "dicas" },
+    { id: 1, name: "Humor", slug: "humor", sensitive: false },
+    { id: 2, name: "Animais", slug: "animais", sensitive: false },
+    { id: 3, name: "Dicas", slug: "dicas", sensitive: false },
   ];
   videos = new Map<string, VideoView & { submittedBy?: string; embedding?: number[] }>();
   users = new Map<string, { user: UserView; pinHash: string | null }>();
@@ -67,10 +67,16 @@ class MemoryStore implements Store {
   async listTopics() {
     return this.topics;
   }
-  async createTopic(name: string, slug: string) {
+  async createTopic(name: string, slug: string, sensitive = false) {
     if (this.topics.some((t) => t.slug === slug)) return null;
-    const topic = { id: this.topics.length + 1, name, slug };
+    const topic = { id: this.topics.length + 1, name, slug, sensitive };
     this.topics.push(topic);
+    return topic;
+  }
+  async setTopicSensitive(id: number, sensitive: boolean) {
+    const topic = this.topics.find((t) => t.id === id);
+    if (!topic) return null;
+    topic.sensitive = sensitive;
     return topic;
   }
   async findActiveVideoBySource(url: string) {
@@ -694,6 +700,22 @@ describe("painel do dono", () => {
     expect(res.json().slug).toBe("ciencia-maluca");
     const dup = await app().inject({ method: "POST", url: "/owner/topics", headers, payload: { name: "ciencia maluca" } });
     expect(dup.statusCode).toBe(409);
+    expect(res.json().sensitive).toBe(false);
+  });
+
+  it("o dono cria tópico sensível e marca ou desmarca os que já existem", async () => {
+    const headers = await auth();
+    const created = await app().inject({ method: "POST", url: "/owner/topics", headers, payload: { name: "Religião", sensitive: true } });
+    expect(created.json()).toMatchObject({ slug: "religiao", sensitive: true });
+    const marked = await app().inject({ method: "PATCH", url: "/owner/topics/1", headers, payload: { sensitive: true } });
+    expect(marked.json()).toEqual({ id: 1, name: "Humor", slug: "humor", sensitive: true });
+    const list = await app().inject({ method: "GET", url: "/topics", headers });
+    expect(list.json().filter((t: { sensitive: boolean }) => t.sensitive).map((t: { slug: string }) => t.slug)).toEqual(["humor", "religiao"]);
+    await app().inject({ method: "PATCH", url: "/owner/topics/1", headers, payload: { sensitive: false } });
+    expect(store.topics[0]!.sensitive).toBe(false);
+    expect((await app().inject({ method: "PATCH", url: "/owner/topics/99", headers, payload: { sensitive: true } })).statusCode).toBe(404);
+    const resident = await auth("morador", "111111");
+    expect((await app().inject({ method: "PATCH", url: "/owner/topics/1", headers: resident, payload: { sensitive: true } })).statusCode).toBe(403);
   });
 });
 
@@ -1760,6 +1782,25 @@ describe("Boletim do Bunker", () => {
     async markSeen(date: string, userId: string) {
       this.views.add(`${date}|${userId}`);
     }
+    pautaList: PautaView[] = [{ id: "miojo", texto: "Alguém acabou com o último miojo e não repôs.", ativa: true, usadaEm: null }];
+    async pautas() {
+      return this.pautaList;
+    }
+    async createPauta(id: string, texto: string) {
+      if (this.pautaList.some((p) => p.id === id)) return false;
+      this.pautaList.push({ id, texto, ativa: true, usadaEm: null });
+      return true;
+    }
+    async updatePauta(id: string, change: { texto?: string; ativa?: boolean }) {
+      const p = this.pautaList.find((x) => x.id === id);
+      if (!p) return null;
+      if (change.texto !== undefined) p.texto = change.texto;
+      if (change.ativa !== undefined) p.ativa = change.ativa;
+      return p;
+    }
+    async residentNicknames() {
+      return ["dono", "morador", "ana"];
+    }
   }
 
   let bulletins: MemoryBulletins;
@@ -1773,6 +1814,32 @@ describe("Boletim do Bunker", () => {
     Object.assign(store.videos.get(id)!, { status: "aprovado", videoUrl: `/media/${id}/video.mp4`, title: "Gato" });
     return id;
   }
+
+  it("o dono adiciona, edita e desativa pautas; pauta com número, @ ou apelido de morador não entra", async () => {
+    const headers = await auth();
+    const resident = await auth("morador", "111111");
+    const req = (method: "GET" | "POST" | "PATCH", url: string, payload?: object, h = headers) => bApp().inject({ method, url, headers: h, payload });
+    expect((await req("GET", "/owner/pautas", undefined, resident)).statusCode).toBe(403);
+    expect((await req("GET", "/owner/pautas")).json()).toHaveLength(1);
+
+    const created = await req("POST", "/owner/pautas", { texto: "  O gerador fez barulho de novo, e {persona} jura que não foi." });
+    expect(created.statusCode).toBe(201);
+    expect(created.json()).toEqual({ id: "o-gerador-fez-barulho-de-novo", texto: "O gerador fez barulho de novo, e {persona} jura que não foi.", ativa: true, usadaEm: null });
+    // Mesmo começo: id com sufixo, sem sobrescrever.
+    expect((await req("POST", "/owner/pautas", { texto: "O gerador fez barulho de novo à noite." })).json().id).toBe("o-gerador-fez-barulho-de-novo-2");
+
+    for (const texto of ["Sumiram 3 pacotes de bolacha.", "A Ana deixou a luz acesa.", "Alguém chamou @fulano no rádio.", "{persona} e {persona} brigaram.", "Faltou {nome}.", "   "]) {
+      const res = await req("POST", "/owner/pautas", { texto });
+      expect(res.statusCode, texto).toBe(400);
+    }
+    expect((await req("POST", "/owner/pautas", { texto: "A ana deixou a luz acesa." })).json().error).toContain("cita morador (ana)");
+
+    const edited = await req("PATCH", "/owner/pautas/miojo", { texto: "Alguém acabou com o último pacote de miojo.", ativa: false });
+    expect(edited.json()).toMatchObject({ id: "miojo", texto: "Alguém acabou com o último pacote de miojo.", ativa: false });
+    expect((await req("PATCH", "/owner/pautas/miojo", { texto: "Sobrou 1 miojo." })).statusCode).toBe(400);
+    expect((await req("PATCH", "/owner/pautas/nao-existe", { ativa: true })).statusCode).toBe(404);
+    expect((await req("PATCH", "/owner/pautas/miojo", {})).statusCode).toBe(400);
+  });
 
   it("sem boletim pronto, nada aparece (204) e o dia pedido não existe (404)", async () => {
     const headers = await auth();

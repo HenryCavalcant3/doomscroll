@@ -3,6 +3,7 @@ import fastifyWebsocket from "@fastify/websocket";
 import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
 import { GROUP_MAX_MEMBERS, MESSAGES_PAGE, REACTIONS, type ChatStore, type MessageContent } from "./chat.js";
 import { DATE, dayRange, fullView, summary, type BulletinStore } from "./bulletin.js";
+import { pautaErrors, pautaId } from "./pautas.js";
 import { bearerToken, hashToken, LoginLimiter, newToken, NICKNAME, normalizeNickname, PIN } from "./auth.js";
 import type { Config } from "./config.js";
 import { parseVideoLink } from "./links.js";
@@ -765,7 +766,7 @@ export function buildApp({
         return { rate: config.personaRate, lastHour: list.reduce((s, p) => s + p.lastHour, 0), personas: list, decisions };
       });
 
-      owner.post<{ Body: { name: string } }>(
+      owner.post<{ Body: { name: string; sensitive?: boolean } }>(
         "/owner/topics",
         {
           schema: {
@@ -773,7 +774,7 @@ export function buildApp({
               type: "object",
               required: ["name"],
               additionalProperties: false,
-              properties: { name: { type: "string", minLength: 2, maxLength: 40 } },
+              properties: { name: { type: "string", minLength: 2, maxLength: 40 }, sensitive: { type: "boolean" } },
             },
           },
         },
@@ -781,8 +782,69 @@ export function buildApp({
           const name = req.body.name.trim();
           const slug = slugify(name);
           if (!slug) return reply.code(400).send({ error: "Nome de tópico inválido." });
-          const topic = await store.createTopic(name, slug);
+          const topic = await store.createTopic(name, slug, req.body.sensitive ?? false);
           return topic ? reply.code(201).send(topic) : reply.code(409).send({ error: "Esse tópico já existe." });
+        },
+      );
+
+      // Tópico sensível: o worker lê na hora de montar o boletim, então vale a partir do próximo.
+      owner.patch<{ Params: { id: number }; Body: { sensitive: boolean } }>(
+        "/owner/topics/:id",
+        {
+          schema: {
+            params: { type: "object", required: ["id"], properties: { id: { type: "integer", minimum: 1 } } },
+            body: { type: "object", required: ["sensitive"], additionalProperties: false, properties: { sensitive: { type: "boolean" } } },
+          },
+        },
+        async (req, reply) => (await store.setTopicSensitive(req.params.id, req.body.sensitive)) ?? reply.code(404).send({ error: "Esse tópico não existe." }),
+      );
+
+      // Pautas de fofoca do boletim: o dono adiciona, edita e desativa (não apaga: o boletim guarda qual usou).
+      owner.get("/owner/pautas", async () => (bulletins ? bulletins.pautas() : []));
+
+      const pautaInvalid = async (texto: string) => {
+        const errors = pautaErrors(texto, bulletins ? await bulletins.residentNicknames() : []);
+        return errors.length ? `Pauta inválida: ${errors.join("; ")}.` : null;
+      };
+
+      owner.post<{ Body: { texto: string } }>(
+        "/owner/pautas",
+        { schema: { body: { type: "object", required: ["texto"], additionalProperties: false, properties: { texto: { type: "string", maxLength: 400 } } } } },
+        async (req, reply) => {
+          if (!bulletins) return reply.code(404).send({ error: "Boletim desligado." });
+          const texto = req.body.texto.trim();
+          const invalid = await pautaInvalid(texto);
+          if (invalid) return reply.code(400).send({ error: invalid });
+          const base = pautaId(texto);
+          for (let n = 1; n <= 50; n++) {
+            const id = n === 1 ? base : `${base}-${n}`;
+            if (await bulletins.createPauta(id, texto)) return reply.code(201).send({ id, texto, ativa: true, usadaEm: null });
+          }
+          return reply.code(409).send({ error: "Já tem pautas demais parecidas com essa." });
+        },
+      );
+
+      owner.patch<{ Params: { id: string }; Body: { texto?: string; ativa?: boolean } }>(
+        "/owner/pautas/:id",
+        {
+          schema: {
+            params: { type: "object", required: ["id"], properties: { id: { type: "string", pattern: "^[a-z0-9-]+$", maxLength: 60 } } },
+            body: {
+              type: "object",
+              additionalProperties: false,
+              minProperties: 1,
+              properties: { texto: { type: "string", maxLength: 400 }, ativa: { type: "boolean" } },
+            },
+          },
+        },
+        async (req, reply) => {
+          if (!bulletins) return reply.code(404).send({ error: "Boletim desligado." });
+          const texto = req.body.texto?.trim();
+          if (texto !== undefined) {
+            const invalid = await pautaInvalid(texto);
+            if (invalid) return reply.code(400).send({ error: invalid });
+          }
+          return (await bulletins.updatePauta(req.params.id, { texto, ativa: req.body.ativa })) ?? reply.code(404).send({ error: "Essa pauta não existe." });
         },
       );
     });

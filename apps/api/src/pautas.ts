@@ -16,8 +16,13 @@ export interface Pauta {
 
 const ID = /^[a-z0-9-]+$/;
 
-/** Problemas de uma pauta (texto do dono ou do arquivo); lista vazia quando está boa. */
-export function pautaErrors(texto: unknown): string[] {
+const plain = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+
+/**
+ * Problemas de uma pauta (texto do dono ou do arquivo); lista vazia quando está boa. Com os apelidos
+ * dos moradores, recusa pauta que cita alguém de verdade (regra fixa 4: a fofoca nunca é sobre morador).
+ */
+export function pautaErrors(texto: unknown, residents: string[] = []): string[] {
   if (typeof texto !== "string" || !texto.trim()) return ["texto vazio"];
   const errors: string[] = [];
   if (texto.length > 200) errors.push("texto com mais de 200 caracteres");
@@ -26,6 +31,10 @@ export function pautaErrors(texto: unknown): string[] {
   const rest = texto.split(PERSONA_SLOT).join("");
   if (/[{}]/.test(rest)) errors.push(`só o marcador ${PERSONA_SLOT} é aceito entre chaves`);
   if (texto.split(PERSONA_SLOT).length > 2) errors.push(`${PERSONA_SLOT} aparece mais de uma vez`);
+  if (rest.includes("@")) errors.push("texto com @ (pauta não chama ninguém)");
+  const words = new Set(plain(rest).split(/[^a-z0-9_]+/));
+  const named = residents.filter((n) => words.has(plain(n)));
+  if (named.length) errors.push(`texto cita morador (${named.join(", ")}): use ${PERSONA_SLOT} ou ninguém`);
   return errors;
 }
 
@@ -51,6 +60,17 @@ export function parsePautas(data: unknown): Pauta[] {
   });
   if (problems.length) throw new Error(`Pautas inválidas:\n- ${problems.join("\n- ")}`);
   return pautas;
+}
+
+/** Id de uma pauta nova, tirado das primeiras palavras do texto ("gerador-fez-barulho"). */
+export function pautaId(texto: string): string {
+  const words = plain(texto.split(PERSONA_SLOT).join(" ")).split(/[^a-z0-9]+/).filter(Boolean);
+  let id = "";
+  for (const w of words) {
+    if (id && (id + "-" + w).length > 30) break;
+    id = id ? `${id}-${w}` : w.slice(0, 30);
+  }
+  return id || "pauta";
 }
 
 export async function loadPautas(file: string): Promise<Pauta[]> {
