@@ -131,10 +131,12 @@ export interface Reaction {
 export interface Message {
   id: string;
   conversationId: string;
-  type: "text" | "video";
+  type: "text" | "video" | "bulletin";
   text: string | null;
   /** Vídeo compartilhado do feed. */
   video: SharedVideo | null;
+  /** Boletim do Bunker no grupo: o dia e a manchete. */
+  bulletin: { date: string; headline: string } | null;
   reactions: Reaction[];
   createdAt: string;
   sender: Author;
@@ -175,7 +177,7 @@ export interface PersonaPanel {
 export interface PersonaDecision {
   nickname: string;
   name: string;
-  trigger: "video" | "mensagem" | "tique";
+  trigger: "video" | "mensagem" | "tique" | "boletim";
   action: string;
   score: number;
   reasons: Record<string, unknown>;

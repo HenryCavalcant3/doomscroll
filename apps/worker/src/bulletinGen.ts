@@ -49,6 +49,8 @@ export interface BulletinGenDb {
   /** Alguma ação no dia (curtida, comentário, mensagem, visualização, decisão de persona). */
   hadActivity(day: DayWindow): Promise<boolean>;
   status(date: string): Promise<BulletinStatus | null>;
+  /** Pronto ou curto, mas ainda sem mensagem no Grupo do Bunker. */
+  unpublished(date: string): Promise<boolean>;
   /** Reserva o dia (status pendente); devolve false se outro job já concluiu. */
   begin(date: string, personaUserId: string): Promise<boolean>;
   save(row: BulletinRow): Promise<void>;
@@ -68,6 +70,8 @@ export interface BulletinGenDeps {
   /** Uma chamada à LLM com saída em JSON (já passa pelo portão, na prioridade do boletim). */
   generate(prompt: string, schema: object): Promise<string>;
   embed(text: string): Promise<number[]>;
+  /** Avisa a api (fila persona.talk) que o boletim pode ir para o grupo; ela publica uma vez só. */
+  publish?(date: string): Promise<void>;
   random?: () => number;
   log?: (msg: string) => void;
   now?: () => Date;
@@ -79,7 +83,11 @@ export async function runBulletinJob(deps: BulletinGenDeps): Promise<BulletinSta
   await deps.db.markDay(dayWindow(now, 0).date);
   const day = dayWindow(now, 1);
   const status = await deps.db.status(day.date);
-  if (status && status !== "pendente") return null;
+  if (status && status !== "pendente") {
+    // Pronto, mas fora do grupo (api fora do ar quando ficou pronto): avisa de novo.
+    if ((status === "pronto" || status === "curto") && (await deps.db.unpublished(day.date))) await deps.publish?.(day.date);
+    return null;
+  }
   // Recuperação: ligado ontem (marcado pelo agendador) ou, na primeira subida, com algum movimento.
   if (!(await deps.db.wasOn(day.date))) {
     if (!(await deps.db.hadActivity(day))) {
@@ -88,13 +96,16 @@ export async function runBulletinJob(deps: BulletinGenDeps): Promise<BulletinSta
     }
     await deps.db.markDay(day.date);
   }
+  let result: BulletinStatus | null;
   try {
-    return await generateBulletin(deps, day);
+    result = await generateBulletin(deps, day);
   } catch (err) {
     deps.log?.(`[worker] boletim de ${day.date} falhou: ${(err as Error).message}`);
     await deps.db.fail(day.date);
     return "falhou";
   }
+  if (result === "pronto" || result === "curto") await deps.publish?.(day.date);
+  return result;
 }
 
 const RECENT = 7;

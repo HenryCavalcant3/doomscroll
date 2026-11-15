@@ -218,6 +218,11 @@ export class PgBulletinDb implements BulletinGenDb {
     return res.rows[0]?.status ?? null;
   }
 
+  async unpublished(date: string) {
+    const res = await this.pool.query("SELECT 1 FROM daily_bulletins WHERE date = $1 AND status IN ('pronto', 'curto') AND message_id IS NULL", [date]);
+    return (res.rowCount ?? 0) > 0;
+  }
+
   async begin(date: string, personaUserId: string) {
     const res = await this.pool.query(
       `INSERT INTO daily_bulletins (date, persona_user_id) VALUES ($1, $2)

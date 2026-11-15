@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import { api, apiUrl, ApiError, REACTIONS, type Conversation, type Message, type SharedVideo, type User } from "../api";
 import { applyReactions, conversationTitle, groupReactions, mergeMessages, nextPersonaReply, shortTime, useRealtimeEvents, type PersonaReply } from "../chat";
+import { bulletinTag } from "../bulletin";
 import { Avatar } from "../components/Avatar";
 import { ConversationAvatar } from "../components/ConversationAvatar";
 import { OwnerKey } from "../components/OwnerKey";
 import { Player } from "../components/Player";
-import { profileHref } from "../router";
+import { bulletinHref, profileHref } from "../router";
 
 const PAGE = 50;
 /** Distância do fim (px) em que a conversa continua grudada nas mensagens novas. */
@@ -225,7 +226,14 @@ export function ChatScreen({ id, me, onRead }: Props) {
                   <OwnerKey who={m.sender} size={14} />
                 </a>
               )}
-              {m.video ? (
+              {m.bulletin ? (
+                <div className="msg-video-wrap">
+                  <BulletinBubble bulletin={m.bulletin} />
+                  <button className="msg-react-btn" onClick={() => setPickerFor(pickerFor === m.id ? null : m.id)} aria-label={label}>
+                    <span className="bubble-time">{shortTime(m.createdAt)}</span>
+                  </button>
+                </div>
+              ) : m.video ? (
                 <div className="msg-video-wrap">
                   <button
                     className="msg-video"
@@ -324,6 +332,22 @@ export function ChatScreen({ id, me, onRead }: Props) {
         </button>
       </form>
     </main>
+  );
+}
+
+/** Mensagem do Boletim do Bunker (docs/boletim/telas/boletim-grupo.html): faixa, manchete e o botão. Sem vídeo e sem números. */
+function BulletinBubble({ bulletin }: { bulletin: { date: string; headline: string } }) {
+  return (
+    <div className="msg-boletim">
+      <div className="faixa msg-boletim-faixa" aria-hidden="true" />
+      <div className="msg-boletim-corpo">
+        <div className="msg-boletim-tag">{bulletinTag(bulletin.date)}</div>
+        <div className="msg-boletim-manchete">{bulletin.headline}</div>
+        <a className="btn btn-primary msg-boletim-ler" href={bulletinHref(bulletin.date)}>
+          Ler o boletim
+        </a>
+      </div>
+    </div>
   );
 }
 

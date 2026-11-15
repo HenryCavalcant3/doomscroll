@@ -8,6 +8,7 @@ const msg = (id: string, createdAt: string, text = id): Message => ({
   type: "text",
   text,
   video: null,
+  bulletin: null,
   reactions: [],
   createdAt,
   sender: { nickname: "ana", avatarUrl: null, avatar: "padrao", isAi: false, owner: false },
@@ -68,7 +69,7 @@ describe("reações", () => {
 describe("resposta da persona em andamento", () => {
   const c = "c1";
   const msg = (nickname: string, conversationId = c) =>
-    ({ id: "m", conversationId, type: "text", text: "oi", video: null, reactions: [], createdAt: "", sender: { nickname, avatarUrl: null, avatar: null, isAi: true, owner: false } }) as Message;
+    ({ id: "m", conversationId, type: "text", text: "oi", video: null, bulletin: null, reactions: [], createdAt: "", sender: { nickname, avatarUrl: null, avatar: null, isAi: true, owner: false } }) as Message;
 
   it("digitando, texto parcial e a mensagem gravada que fecha", () => {
     let s = nextPersonaReply(null, { type: "typing", conversationId: c, nickname: "rato" }, c);

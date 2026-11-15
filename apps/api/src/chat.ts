@@ -23,13 +23,21 @@ export interface ReactionView {
   nickname: string;
 }
 
+/** Boletim do Bunker no grupo: só a manchete e o dia (o resto fica na tela do boletim). */
+export interface BulletinRef {
+  date: string;
+  headline: string;
+}
+
 export interface MessageView {
   id: string;
   conversationId: string;
-  type: "text" | "video";
+  type: "text" | "video" | "bulletin";
   text: string | null;
   /** Vídeo compartilhado do feed (mensagens de vídeo). */
   video: SharedVideo | null;
+  /** Mensagem do Boletim do Bunker, mandada pela persona de plantão. */
+  bulletin: BulletinRef | null;
   reactions: ReactionView[];
   createdAt: string;
   sender: AuthorView;
@@ -74,6 +82,11 @@ export interface ChatStore {
   listMessages(userId: string, conversationId: string, before: string | null, limit: number): Promise<MessageView[] | null>;
   /** Grava a mensagem (texto ou vídeo aprovado) e devolve quem precisa ser avisado. */
   sendMessage(userId: string, conversationId: string, content: MessageContent): Promise<SendResult>;
+  /**
+   * Mensagem do Boletim do Bunker no grupo, uma vez por boletim: grava e liga ao boletim na mesma
+   * transação. null quando o boletim não está publicável ou já tem mensagem (job repetido).
+   */
+  sendBulletin(personaId: string, conversationId: string, date: string): Promise<{ message: MessageView; memberIds: string[] } | null>;
   /** Põe, troca (emoji) ou tira (null) a reação; null quando não acha a conversa ou a mensagem. */
   setReaction(
     userId: string,
@@ -104,12 +117,13 @@ const toAuthor = (a: AuthorJson): AuthorView => authorView(a);
 interface MessageRow {
   id: string;
   conversation_id: string;
-  type: "text" | "video";
+  type: "text" | "video" | "bulletin";
   text: string | null;
   created_at: Date | string;
   sender: AuthorJson;
   video: { id: string; title: string | null; description: string | null; file_path: string | null; thumb_path: string | null } | null;
   reactions: ReactionView[];
+  bulletin: BulletinRef | null;
 }
 
 const toMessage = (r: MessageRow): MessageView => ({
@@ -126,6 +140,7 @@ const toMessage = (r: MessageRow): MessageView => ({
         thumbUrl: r.video.thumb_path ? `/media/${r.video.thumb_path}` : null,
       }
     : null,
+  bulletin: r.bulletin,
   reactions: r.reactions,
   createdAt: new Date(r.created_at).toISOString(),
   sender: toAuthor(r.sender),
@@ -142,10 +157,13 @@ const MESSAGE_SELECT = `
          CASE WHEN v.id IS NULL THEN NULL
               ELSE json_build_object('id', v.id, 'title', v.title, 'description', v.description,
                                      'file_path', v.file_path, 'thumb_path', v.thumb_path) END AS video,
+         CASE WHEN bl.date IS NULL THEN NULL
+              ELSE json_build_object('date', to_char(bl.date, 'YYYY-MM-DD'), 'headline', bl.headline) END AS bulletin,
          ${REACTIONS_OF("m.id")} AS reactions
     FROM messages m
     JOIN users u ON u.id = m.sender_id
-    LEFT JOIN videos v ON v.id = m.video_id`;
+    LEFT JOIN videos v ON v.id = m.video_id
+    LEFT JOIN daily_bulletins bl ON bl.date = m.bulletin_date`;
 
 interface ConversationRow {
   id: string;
@@ -184,6 +202,8 @@ const toConversation = (r: ConversationRow): ConversationView => ({
   lastMessage: r.last_message ? toMessage(r.last_message) : null,
   unread: r.unread,
 });
+
+class AlreadyPublished extends Error {}
 
 export class PgChatStore implements ChatStore {
   constructor(private readonly pool: Pool) {}
@@ -347,6 +367,36 @@ export class PgChatStore implements ChatStore {
       const msg = await c.query<MessageRow>(`${MESSAGE_SELECT} WHERE m.id = $1`, [id]);
       return { message: toMessage(msg.rows[0]!), memberIds: await this.idsOf(c, conversationId), firstShare };
     });
+  }
+
+  async sendBulletin(personaId: string, conversationId: string, date: string) {
+    if (!(await this.isMember(personaId, conversationId))) return null;
+    try {
+      return await this.tx(async (c) => {
+        const ins = await c.query<{ id: string; created_at: Date }>(
+          `INSERT INTO messages (conversation_id, sender_id, type, bulletin_date)
+           VALUES ($1, $2, 'bulletin', $3) RETURNING id, created_at`,
+          [conversationId, personaId, date],
+        );
+        const { id, created_at } = ins.rows[0]!;
+        // Uma mensagem por boletim: job repetido (pg-boss entrega pelo menos uma vez) desfaz tudo.
+        const linked = await c.query(
+          "UPDATE daily_bulletins SET message_id = $1 WHERE date = $2 AND message_id IS NULL AND status IN ('pronto', 'curto')",
+          [id, date],
+        );
+        if (!linked.rowCount) throw new AlreadyPublished();
+        await c.query("UPDATE conversations SET last_message_at = $2 WHERE id = $1", [conversationId, created_at]);
+        await c.query(
+          "UPDATE conversation_members SET last_read_at = GREATEST(last_read_at, $3) WHERE conversation_id = $1 AND user_id = $2",
+          [conversationId, personaId, created_at],
+        );
+        const msg = await c.query<MessageRow>(`${MESSAGE_SELECT} WHERE m.id = $1`, [id]);
+        return { message: toMessage(msg.rows[0]!), memberIds: await this.idsOf(c, conversationId) };
+      });
+    } catch (err) {
+      if (err instanceof AlreadyPublished) return null;
+      throw err;
+    }
   }
 
   async setReaction(userId: string, conversationId: string, messageId: string, emoji: string | null) {

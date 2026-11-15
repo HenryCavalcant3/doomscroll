@@ -7,11 +7,17 @@ const ACTIONS: Record<string, string> = {
   comentar: "comentou",
   responder: "respondeu uma mensagem",
   enviar_video: "respondeu e mandou um vídeo",
+  publicar: "publicou o Boletim do Bunker no Grupo do Bunker",
 };
 
 /** "comentou “Gato derruba copo”", "respondeu e mandou um vídeo (“Receita de bolo”)". */
 export function decisionText(d: PersonaDecision): string {
   const action = ACTIONS[d.action] ?? d.action;
+  if (d.trigger === "boletim") {
+    if (d.action === "publicar") return action;
+    if (d.action !== "comentar") return "reagiu à fofoca do boletim";
+    return d.reasons.direito_de_resposta ? "respondeu à fofoca do boletim (a fofoca citou o nome: direito de resposta)" : "respondeu à fofoca do boletim";
+  }
   if (d.trigger === "video") return `${action} “${d.video ?? "vídeo apagado"}”`;
   if (d.trigger === "tique") {
     const to = typeof d.reasons.para === "string" ? d.reasons.para : "outra persona";
@@ -54,6 +60,7 @@ const LABELS: Record<string, string> = {
   teto_da_conversa: "teto da conversa",
   resposta_garantida: "resposta garantida",
   cansaco: "cansaço",
+  direito_de_resposta: "direito de resposta",
 };
 
 const fmt = (v: unknown) =>
@@ -62,7 +69,7 @@ const fmt = (v: unknown) =>
 /** As parcelas da decisão em uma linha: "afinidade 0,8 · atividade 0,9 · acaso -0,05 · nota 1,1". */
 export function reasonsText(d: PersonaDecision): string {
   const parts = Object.entries(d.reasons)
-    .filter(([k]) => k !== "video" && k !== "para" && k !== "acao")
+    .filter(([k]) => k !== "video" && k !== "para" && k !== "acao" && k !== "boletim" && k !== "status")
     .map(([k, v]) => `${LABELS[k] ?? k} ${fmt(v)}`);
   if (d.trigger !== "mensagem") parts.push(`nota ${fmt(d.score)}`);
   return parts.join(" · ");

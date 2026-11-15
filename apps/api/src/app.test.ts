@@ -17,7 +17,7 @@ import {
 } from "./chat.js";
 import { Hub, WS_CLOSE } from "./realtime.js";
 import { MEMORY_EVERY, PersonaReplier, type ChatGenerator, type PersonaChatStore, type VideoMatch } from "./personaChat.js";
-import { PersonaTalker, type GroupCandidate, type TalkJob, type TalkPersona, type TalkStore } from "./personaTalk.js";
+import { PersonaTalker, type GroupCandidate, type TalkJob, type TalkPersona, type TalkStore, type BulletinToPublish } from "./personaTalk.js";
 import type { ChatDecision } from "./personaJev.js";
 import { QUEUES } from "./queues.js";
 import { clampScore, COMMENT_DELTA, LIKE_DELTA, SHARE_DELTA, viewDelta, type ViewInput } from "./affinity.js";
@@ -386,12 +386,30 @@ class MemoryChatStore implements ChatStore {
     const at = ++this.tick;
     const msg: StoredMessage = {
       id: uuid(++this.seq), conversationId: id, type: video ? "video" : "text", text: "text" in content ? content.text : null,
-      video, reactions: [], createdAt: new Date(at).toISOString(), sender: this.author(userId), senderId: userId, at,
+      video, bulletin: null, reactions: [], createdAt: new Date(at).toISOString(), sender: this.author(userId), senderId: userId, at,
     };
     this.messages.push(msg);
     this.conversations.find((c) => c.id === id)!.lastAt = at;
     me.lastRead = Math.max(me.lastRead, at);
     return { message: this.out(msg), memberIds: await this.memberIds(id), firstShare };
+  }
+  /** Boletins publicáveis (data → manchete); o que já tem mensagem fica em `published`. */
+  bulletins = new Map<string, string>();
+  published = new Set<string>();
+  async sendBulletin(personaId: string, id: string, date: string) {
+    const me = this.member(personaId, id);
+    const headline = this.bulletins.get(date);
+    if (!me || headline === undefined || this.published.has(date)) return null;
+    this.published.add(date);
+    const at = ++this.tick;
+    const msg: StoredMessage = {
+      id: uuid(++this.seq), conversationId: id, type: "bulletin", text: null, video: null, bulletin: { date, headline },
+      reactions: [], createdAt: new Date(at).toISOString(), sender: this.author(personaId), senderId: personaId, at,
+    };
+    this.messages.push(msg);
+    this.conversations.find((c) => c.id === id)!.lastAt = at;
+    me.lastRead = Math.max(me.lastRead, at);
+    return { message: this.out(msg), memberIds: await this.memberIds(id) };
   }
   async setReaction(userId: string, id: string, messageId: string, emoji: string | null) {
     if (!this.member(userId, id) || !this.messages.some((m) => m.id === messageId && m.conversationId === id)) return null;
@@ -1385,6 +1403,10 @@ describe("modo stalker", () => {
 
 class MemoryTalkStore implements TalkStore {
   personas = new Map<string, TalkPersona>();
+  bulletins = new Map<string, BulletinToPublish>();
+  async bulletin(date: string) {
+    return this.bulletins.get(date) ?? null;
+  }
   claims = new Map<string, { action: string }>();
   actions = 0;
   candidates: GroupCandidate[] = [];
@@ -1588,6 +1610,80 @@ describe("personas entre si", () => {
     talk.candidates = [{ persona: talk.personas.get("u-rato")!, affinity: null }];
     await talker(() => 0.01).handle({ kind: "group", conversationId: bunkerId, messageId: last, depth: 1, rootId: root.message.id });
     expect(jobs).toEqual([]);
+  });
+
+  describe("Boletim do Bunker no grupo", () => {
+    const pronto = (gossip: string | null = "O Rato está há três dias com a mesma fita no rádio."): BulletinToPublish => ({
+      date: "2026-11-14", personaId: "u-tio", status: gossip ? "pronto" : "curto", gossip, topics: ["musica"],
+    });
+
+    it("a persona de plantão manda o boletim uma vez só, e a fofoca logo depois, sem passar pela LLM", async () => {
+      const { anaId, bunkerId } = await bunkerWithAna();
+      talk.bulletins.set("2026-11-14", pronto());
+      chat.bulletins.set("2026-11-14", "Ontem o bunker só falou de música!");
+      const t = talker();
+      await t.handle({ kind: "bulletin", date: "2026-11-14" });
+      await t.handle({ kind: "bulletin", date: "2026-11-14" });
+      let msgs = (await chat.listMessages(anaId, bunkerId, null, 50))!;
+      expect(msgs.map((m) => [m.type, m.sender.nickname, m.bulletin])).toEqual([
+        ["bulletin", "tio_valdir", { date: "2026-11-14", headline: "Ontem o bunker só falou de música!" }],
+      ]);
+      // Regra fixa 2: a mensagem do grupo não leva vídeo nenhum; regra 5: nem o dia de ninguém.
+      expect(msgs[0]!.video).toBeNull();
+      expect(JSON.stringify(msgs[0])).not.toMatch(/seuDia|videosVistos/);
+      expect([...talk.claims.entries()]).toEqual([[`u-tio:boletim:${msgs[0]!.id}`, expect.objectContaining({ action: "publicar" })]]);
+      expect(jobs.map((j) => j.data)).toEqual([{ kind: "bulletin_gossip", date: "2026-11-14", conversationId: bunkerId, personaId: "u-tio", afterId: msgs[0]!.id }]);
+
+      const gossip = jobs.shift()!.data;
+      await t.handle(gossip);
+      await t.handle(gossip);
+      msgs = (await chat.listMessages(anaId, bunkerId, null, 50))!;
+      expect(msgs.map((m) => [m.type, m.text])).toEqual([
+        ["bulletin", null],
+        ["text", "O Rato está há três dias com a mesma fita no rádio."],
+      ]);
+      expect(generate).not.toHaveBeenCalled();
+      expect(jobs.map((j) => j.data)).toEqual([{ kind: "bulletin_replies", date: "2026-11-14", conversationId: bunkerId, messageId: msgs[1]!.id }]);
+    });
+
+    it("boletim curto: só a mensagem, sem fofoca e sem respostas", async () => {
+      await bunkerWithAna();
+      talk.bulletins.set("2026-11-14", pronto(null));
+      chat.bulletins.set("2026-11-14", "Dia parado no bunker.");
+      await talker().handle({ kind: "bulletin", date: "2026-11-14" });
+      expect(chat.messages.map((m) => m.type)).toEqual(["bulletin"]);
+      expect(jobs).toEqual([]);
+    });
+
+    it("quem a fofoca cita tem direito de resposta; de 1 a 3 respostas, com o gatilho do boletim e sem cadeia", async () => {
+      const { bunkerId } = await bunkerWithAna();
+      talk.bulletins.set("2026-11-14", pronto());
+      chat.bulletins.set("2026-11-14", "Ontem o bunker só falou de música!");
+      await chat.sendBulletin("u-tio", bunkerId, "2026-11-14");
+      const gossip = await chat.sendMessage("u-tio", bunkerId, { text: "O Rato está há três dias com a mesma fita no rádio." });
+      if (typeof gossip === "string") throw new Error(gossip);
+      talk.candidates = [{ persona: talk.personas.get("u-rato")!, affinity: null }];
+      const t = talker(() => 0.1);
+      await t.handle({ kind: "bulletin_replies", date: "2026-11-14", conversationId: bunkerId, messageId: gossip.message.id });
+      // O Rato quase nunca fala (atividade 0,2), mas foi citado: responde.
+      expect(jobs.map((j) => j.data)).toEqual([
+        expect.objectContaining({ kind: "group_reply", personaId: "u-rato", trigger: "boletim", reasons: expect.objectContaining({ acao: "comentar", direito_de_resposta: true, mencao: true }) }),
+      ]);
+      generate.mockResolvedValueOnce("Fita boa não se troca, Valdir.");
+      await t.handle(jobs.shift()!.data);
+      expect(generate.mock.calls[0]![0][0]!.content).toContain("@tio_valdir chamou você na última mensagem");
+      expect(generate.mock.calls[0]![0][0]!.content).toContain("fofoca do Boletim do Bunker de ontem, contada por @tio_valdir");
+      // A linha do boletim fica fora do prompt: o modelo copiava o colchete no lugar da resposta.
+      expect(JSON.stringify(generate.mock.calls[0]![0])).not.toContain("só falou de música");
+      // A decisão fica no gatilho do boletim, e a resposta não puxa mais ninguém.
+      expect([...talk.claims.keys()]).toEqual([`u-rato:boletim:${gossip.message.id}`]);
+      expect(jobs).toEqual([]);
+
+      // Acima do limite por hora, ninguém responde.
+      talk.actions = 30;
+      await t.handle({ kind: "bulletin_replies", date: "2026-11-14", conversationId: bunkerId, messageId: gossip.message.id });
+      expect(jobs).toEqual([]);
+    });
   });
 
   const a = () => app();

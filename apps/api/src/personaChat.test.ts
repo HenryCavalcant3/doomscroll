@@ -10,9 +10,25 @@ const msg = (nickname: string, text: string | null, video: MessageView["video"] 
   type: video ? "video" : "text",
   text,
   video,
+  bulletin: null,
   reactions: [],
   createdAt: "",
   sender: { nickname, avatarUrl: null, avatar: null, isAi: nickname === "tio_valdir", owner: false },
+});
+
+describe("boletim no histórico", () => {
+  it("resposta que imita a linha do histórico é recusada", () => {
+    const history = [msg("rato", "Kelly repetiu fita cassete no rádio por três dias.")];
+    expect(replyProblem("@rato [mandou o Boletim do Bunker de ontem, com a manchete: calmaria.] 💪", [], history)).toBe("formato");
+    expect(replyProblem("[dona_neide: [mandou um vídeo: Bolo de cenoura]", [], history)).toBe("formato");
+    expect(replyProblem("@rato [Boletim do Bunker de ontem, manchete certa: calmaria.]", [], history)).toBe("formato");
+    expect(replyProblem("Fita boa não se troca [risos]", [], history)).toBeNull();
+  });
+
+  it("entra entre colchetes, como o vídeo, para a persona não copiar", () => {
+    const m = { ...msg("tio_valdir", null), type: "bulletin" as const, bulletin: { date: "2026-11-14", headline: "Ontem o bunker só falou de música!" } };
+    expect(messageLine(m)).toBe("[mandou o Boletim do Bunker de ontem, com a manchete: Ontem o bunker só falou de música!]");
+  });
 });
 
 describe("chat com persona", () => {

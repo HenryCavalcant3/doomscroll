@@ -3,7 +3,7 @@ import type { Pool } from "pg";
 import type { ChatStore, MessageView } from "./chat.js";
 import type { ChatMessage } from "./ollama.js";
 import { generateReply, HISTORY, messageLine, timeLine, type ChatGenerator, type PersonaProfile } from "./personaChat.js";
-import { decideGroup, decideTalk, GROUP_JEV, mentionsIn, quickPause, reactionFor, talkPause } from "./personaJev.js";
+import { decideBulletinReplies, decideGroup, decideTalk, GROUP_JEV, mentionsIn, quickPause, reactionFor, talkPause } from "./personaJev.js";
 import { QUEUES } from "./queues.js";
 import type { Hub } from "./realtime.js";
 import { localHour, rhythm } from "./ritmo.js";
@@ -38,11 +38,21 @@ export type TalkJob =
       reasons: Reasons;
       depth?: number;
       rootId?: string;
-    };
+      /** Resposta à fofoca do boletim: decisão com o gatilho "boletim" e sem cadeia depois. */
+      trigger?: "boletim";
+    }
+  /** Boletim pronto (o worker avisa): a persona de plantão manda a mensagem do boletim no grupo. */
+  | { kind: "bulletin"; date: string }
+  /** Logo depois, a fofoca do plantão como texto (só boletim "pronto" com fofoca). */
+  | { kind: "bulletin_gossip"; date: string; conversationId: string; personaId: string; afterId: string }
+  /** Quem responde à fofoca: de 1 a 3 personas, e acabou. */
+  | { kind: "bulletin_replies"; date: string; conversationId: string; messageId: string };
 
 export interface TalkPersona extends PersonaProfile {
   /** Como ela vê outras personas (apelido → frase), de `relacoes` no JSON. */
   relations: Record<string, string>;
+  /** Afinidade por tópico (slug → 0 a 1), de `afinidade` no JSON. */
+  affinity?: Record<string, number>;
   /** Faixas de hora em que costuma estar ativa (ritmo.ts). */
   ritmo?: string[];
 }
@@ -53,12 +63,25 @@ export interface GroupCandidate {
   affinity: number | null;
 }
 
+/** O boletim a publicar no grupo (só "pronto" ou "curto"). */
+export interface BulletinToPublish {
+  date: string;
+  personaId: string;
+  status: "pronto" | "curto";
+  gossip: string | null;
+  /** Assunto do dia e tópicos do estoque: a afinidade de quem responde vem deles. */
+  topics: string[];
+}
+
+export type TalkTrigger = "tique" | "mensagem" | "boletim";
+
 export interface TalkStore {
   persona(id: string): Promise<TalkPersona | null>;
+  bulletin(date: string): Promise<BulletinToPublish | null>;
   /** Comentários e mensagens de personas na última hora (PERSONA_RATE). */
   actionsLastHour(): Promise<number>;
   /** Grava a decisão se ainda não existe; false quando outro job já decidiu (repetição segura). */
-  claim(personaId: string, trigger: "tique" | "mensagem", targetId: string, decision: { action: string; score: number; reasons: Reasons }): Promise<boolean>;
+  claim(personaId: string, trigger: TalkTrigger, targetId: string, decision: { action: string; score: number; reasons: Reasons }): Promise<boolean>;
   /** Personas do grupo, menos quem mandou a mensagem, com a afinidade pelo vídeo dela. */
   groupCandidates(conversationId: string, messageId: string): Promise<GroupCandidate[]>;
   /** O Grupo do Bunker. */
@@ -99,6 +122,8 @@ export function buildGroupMessages(
   retry: boolean,
   /** Quem chamou a persona na mensagem que ela responde. */
   mentionedBy?: string,
+  /** Resposta à fofoca do boletim: quem contou. */
+  gossipBy?: string,
 ): ChatMessage[] {
   const system = `Você é ${persona.name}, numa rede social brasileira de vídeos curtos, no grupo "${groupName}", com várias pessoas e outras personas.
 Quem você é: ${persona.bio}
@@ -115,14 +140,18 @@ Regras:
 - Você é uma pessoa do grupo, não um assistente: não ofereça ajuda.
 - Copie o jeito das frases acima, nunca o assunto.
 - Não invente o que aparece num vídeo além do título e da descrição.
-- Escreva só a sua mensagem, sem o seu nome na frente e sem aspas.${mentionedBy ? `\n- @${mentionedBy} chamou você na última mensagem: responda direto para @${mentionedBy}.` : ""}${
+- Escreva só a sua mensagem, sem o seu nome na frente e sem aspas.${
+    gossipBy ? `
+- A última mensagem é a fofoca do Boletim do Bunker de ontem, contada por @${gossipBy}. Comente a fofoca com as suas palavras.` : ""
+  }${mentionedBy ? `\n- @${mentionedBy} chamou você na última mensagem: responda direto para @${mentionedBy}.` : ""}${
     retry
       ? "\n\nAviso só para você (não fale dele na resposta): sua resposta anterior foi descartada (repetia a mensagem, copiava uma frase, repetia palavras sem parar ou não estava em português). Escreva outra, com suas palavras."
       : ""
   }`;
   return [
     { role: "system", content: system },
-    ...history.map((m): ChatMessage =>
+    // O boletim fica fora: a linha dele entre colchetes era copiada pelo modelo no lugar da resposta.
+    ...history.filter((m) => m.type !== "bulletin").map((m): ChatMessage =>
       m.sender.nickname === persona.nickname ? { role: "assistant", content: messageLine(m) } : { role: "user", content: `@${m.sender.nickname}: ${messageLine(m)}` },
     ),
   ];
@@ -173,6 +202,12 @@ export class PersonaTalker {
         return this.group(job);
       case "group_reply":
         return this.groupReply(job);
+      case "bulletin":
+        return this.bulletin(job);
+      case "bulletin_gossip":
+        return this.bulletinGossip(job);
+      case "bulletin_replies":
+        return this.bulletinReplies(job);
     }
   }
 
@@ -337,24 +372,116 @@ export class PersonaTalker {
     const comment = job.reasons.acao === "comentar" && !full && !(await this.overLimit());
     const action = comment ? "comentar" : "reagir";
     const reasons = full && job.reasons.acao === "comentar" ? { ...job.reasons, teto_da_conversa: true } : job.reasons;
-    if (!(await store.claim(persona.id, "mensagem", job.messageId, { action, score: job.score, reasons }))) return;
+    // Resposta ao boletim fica no gatilho dele, fora do ciclo de "mensagem".
+    if (!(await store.claim(persona.id, job.trigger ?? "mensagem", job.messageId, { action, score: job.score, reasons }))) return;
     if (!comment) return this.react(persona, job.conversationId, target.id, reactionFor(target.text ?? "", this.random));
     // Responde à mensagem que a chamou, com o que veio depois dela como contexto.
     const upTo = history.slice(0, history.findLastIndex((m) => m.sender.nickname !== persona.nickname) + 1);
     const mentionedBy = job.reasons.mencao === true ? target.sender.nickname : undefined;
     const sent = await this.say(persona, job.conversationId, upTo, (onDraft, signal) =>
       generateReply(this.deps.generate, persona, target.sender.nickname, "", upTo, onDraft, signal, {
-        build: (examples, retry) => buildGroupMessages(persona, "Grupo do Bunker", upTo, examples, retry, mentionedBy),
+        build: (examples, retry) => buildGroupMessages(persona, "Grupo do Bunker", upTo, examples, retry, mentionedBy, job.trigger === "boletim" ? target.sender.nickname : undefined),
         stop: groupStopWords(upTo, persona.nickname),
         strictEcho: true,
       }),
     );
-    // A fala pode chamar outra persona (cadeia): quem responde é decidido no próximo job.
-    if (sent) {
+    // A fala pode chamar outra persona (cadeia): quem responde é decidido no próximo job. Na conversa
+    // do boletim não: de 1 a 3 respostas e silêncio.
+    if (sent && job.trigger !== "boletim") {
       await queue.send(
         QUEUES.personaTalk,
         { kind: "group", conversationId: job.conversationId, messageId: sent.id, depth: depth + 1, rootId, repliedTo: target.sender.nickname } satisfies TalkJob,
         { startAfter: 1 },
+      );
+    }
+  }
+
+  /** A mensagem do boletim no grupo, pela persona de plantão. Uma vez por boletim (sendBulletin). */
+  private async bulletin(job: Extract<TalkJob, { kind: "bulletin" }>) {
+    const { chat, store, hub, queue } = this.deps;
+    const b = await store.bulletin(job.date);
+    const conversationId = await store.bunkerId();
+    const persona = b && (await store.persona(b.personaId));
+    if (!b || !conversationId || !persona) return;
+    const posted = await chat.sendBulletin(persona.id, conversationId, b.date);
+    if (!posted) return this.log(`boletim de ${b.date} já estava no grupo`);
+    hub.send(posted.memberIds, { type: "message", message: posted.message });
+    await store.claim(persona.id, "boletim", posted.message.id, { action: "publicar", score: 1, reasons: { boletim: b.date, status: b.status } });
+    // Boletim curto (dia parado): sem fofoca e sem respostas.
+    if (b.status !== "pronto" || !b.gossip) return;
+    await queue.send(
+      QUEUES.personaTalk,
+      { kind: "bulletin_gossip", date: b.date, conversationId, personaId: persona.id, afterId: posted.message.id } satisfies TalkJob,
+      { startAfter: this.quick() },
+    );
+  }
+
+  /** A fofoca, já escrita pelo worker: vai como texto, sem passar de novo pela LLM. */
+  private async bulletinGossip(job: Extract<TalkJob, { kind: "bulletin_gossip" }>) {
+    const { chat, store, hub, queue } = this.deps;
+    const b = await store.bulletin(job.date);
+    const persona = await store.persona(job.personaId);
+    if (!b?.gossip || !persona) return;
+    const history = (await chat.listMessages(persona.id, job.conversationId, null, HISTORY)) ?? [];
+    const at = history.findIndex((m) => m.id === job.afterId);
+    // Job repetido: a fofoca já foi.
+    if (at >= 0 && history.slice(at + 1).some((m) => m.sender.nickname === persona.nickname && m.text === b.gossip)) return;
+    const members = await chat.memberIds(job.conversationId);
+    hub.send(members, { type: "typing", conversationId: job.conversationId, nickname: persona.nickname });
+    const sent = await chat.sendMessage(persona.id, job.conversationId, { text: b.gossip });
+    if (typeof sent === "string") return this.log(`${persona.nickname} não mandou a fofoca (${sent})`);
+    hub.send(sent.memberIds, { type: "message", message: sent.message });
+    await queue.send(
+      QUEUES.personaTalk,
+      { kind: "bulletin_replies", date: b.date, conversationId: job.conversationId, messageId: sent.message.id } satisfies TalkJob,
+      { startAfter: this.pause() },
+    );
+  }
+
+  /** Quem responde à fofoca (BULLETIN_JEV): cada uma vira um group_reply com o gatilho do boletim. */
+  private async bulletinReplies(job: Extract<TalkJob, { kind: "bulletin_replies" }>) {
+    const { store, queue } = this.deps;
+    if (await this.overLimit()) return this.log("limite de ações por hora: ninguém responde ao boletim");
+    const b = await store.bulletin(job.date);
+    const candidates = await store.groupCandidates(job.conversationId, job.messageId);
+    if (!b || !candidates.length) return;
+    const recent = (await this.deps.chat.listMessages(candidates[0]!.persona.id, job.conversationId, null, HISTORY)) ?? [];
+    const target = recent.find((m) => m.id === job.messageId);
+    if (!target) return;
+    const mentioned = new Set(mentionsIn(target.text ?? "", candidates.map((c) => c.persona)));
+    const hour = (this.deps.hour ?? localHour)();
+    const decisions = decideBulletinReplies(
+      candidates.map((c) => ({
+        id: c.persona.id,
+        activity: c.persona.activity ?? 0.5,
+        affinity: topicAffinity(c.persona, b.topics),
+        rhythm: rhythm(c.persona.ritmo, hour),
+        mentioned: mentioned.has(c.persona.id),
+        recent: recent.filter((m) => m.sender.nickname === c.persona.nickname).length,
+      })),
+      this.random,
+    );
+    let delay = 1;
+    for (const d of decisions) {
+      if (d.action === "ignorar") continue;
+      let startAfter = 1;
+      if (d.action === "comentar") {
+        startAfter = delay;
+        delay += this.pause();
+      }
+      await queue.send(
+        QUEUES.personaTalk,
+        {
+          kind: "group_reply",
+          conversationId: job.conversationId,
+          personaId: d.id,
+          messageId: job.messageId,
+          score: d.score,
+          reasons: { ...d.reasons, acao: d.action },
+          rootId: job.messageId,
+          trigger: "boletim",
+        } satisfies TalkJob,
+        { startAfter },
       );
     }
   }
@@ -399,6 +526,12 @@ export class PersonaTalker {
   }
 }
 
+/** Afinidade média da persona com os tópicos do boletim; null sem tópico (vale a afinidade padrão). */
+export function topicAffinity(persona: TalkPersona, topics: string[]): number | null {
+  if (!topics.length) return null;
+  return topics.reduce((sum, t) => sum + (persona.affinity?.[t] ?? GROUP_JEV.unknownAffinity), 0) / topics.length;
+}
+
 interface PersonaRow {
   user_id: string;
   nickname: string;
@@ -418,6 +551,7 @@ const toPersona = (r: PersonaRow): TalkPersona => ({
   examples: r.examples,
   activity: r.activity_level,
   relations: r.config.relacoes ?? {},
+  affinity: r.config.afinidade ?? {},
   ritmo: r.config.ritmo ?? [],
 });
 
@@ -440,7 +574,21 @@ export class PgTalkStore implements TalkStore {
     return res.rows[0]!.n;
   }
 
-  async claim(personaId: string, trigger: "tique" | "mensagem", targetId: string, d: { action: string; score: number; reasons: Reasons }) {
+  async bulletin(date: string): Promise<BulletinToPublish | null> {
+    const res = await this.pool.query<{ date: string; persona_user_id: string; status: "pronto" | "curto"; gossip: string | null; topics: string[] }>(
+      `SELECT to_char(date, 'YYYY-MM-DD') AS date, persona_user_id, status, gossip,
+              ARRAY(SELECT DISTINCT s FROM (
+                      SELECT facts->'assunto'->>'slug' AS s
+                      UNION ALL SELECT t->>'slug' FROM jsonb_array_elements(facts->'estoque'->'topicos') t) x
+                     WHERE s IS NOT NULL) AS topics
+         FROM daily_bulletins WHERE date = $1 AND status IN ('pronto', 'curto')`,
+      [date],
+    );
+    const r = res.rows[0];
+    return r ? { date: r.date, personaId: r.persona_user_id, status: r.status, gossip: r.gossip, topics: r.topics } : null;
+  }
+
+  async claim(personaId: string, trigger: TalkTrigger, targetId: string, d: { action: string; score: number; reasons: Reasons }) {
     const res = await this.pool.query(
       `INSERT INTO persona_decisions (persona_user_id, trigger, target_id, action, score, reasons)
        VALUES ($1, $2, $3, $4, $5, $6)

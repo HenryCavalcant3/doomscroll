@@ -43,7 +43,7 @@ export type VideoShare = Pick<VideoMatch, "title" | "description"> | "nenhum";
 export interface DecisionView {
   nickname: string;
   name: string;
-  trigger: "video" | "mensagem" | "tique";
+  trigger: "video" | "mensagem" | "tique" | "boletim";
   action: string;
   score: number;
   reasons: Record<string, unknown>;
@@ -100,6 +100,8 @@ export function pickExamples(examples: string[], n = EXAMPLES_PER_PROMPT, random
 
 /** Como uma mensagem aparece no prompt: texto, ou o vídeo compartilhado descrito em uma linha. */
 export function messageLine(m: MessageView): string {
+  // Entre colchetes, como o vídeo: é o que aconteceu no grupo, não uma fala para a persona imitar.
+  if (m.bulletin) return `[mandou o Boletim do Bunker de ontem, com a manchete: ${m.bulletin.headline}]`;
   if (m.video) {
     const about = [m.video.title, m.video.description].filter(Boolean).join(" — ");
     return about ? `[mandou um vídeo: ${about}]` : "[mandou um vídeo sem título nem descrição: você não sabe o que tem nele]";
@@ -242,8 +244,10 @@ function copies(words: string[], example: string, talk: Set<string>): boolean {
  * Por que a resposta não serve. As graves (vazia, eco, gagueira) nunca são mandadas; as leves
  * (cópia de exemplo, inglês) são mandadas se nenhuma tentativa sair melhor: é pior a persona ficar muda.
  */
-export type ReplyProblem = "vazia" | "eco" | "gagueira" | "cópia" | "inglês";
+export type ReplyProblem = "vazia" | "eco" | "gagueira" | "cópia" | "inglês" | "formato";
 const SOFT: ReadonlySet<ReplyProblem> = new Set(["cópia", "inglês"]);
+
+const HISTORY_FORMAT = /\[\s*(mandou\b|boletim\b|@?[a-z0-9_]+:)/i;
 
 export function replyProblem(text: string, examples: string[], history: MessageView[]): ReplyProblem | null {
   const words = normalize(text);
@@ -254,6 +258,8 @@ export function replyProblem(text: string, examples: string[], history: MessageV
     if (said && said === words.join(" ")) return "eco";
   }
   if (stutters(words)) return "gagueira";
+  // Imitou a linha do histórico ("[mandou um vídeo: ...]", "[dona_neide: ...") em vez de falar.
+  if (HISTORY_FORMAT.test(text)) return "formato";
   const talk = talkWords(history);
   if (examples.some((ex) => copies(words, ex, talk))) return "cópia";
   if (english(words)) return "inglês";
@@ -694,7 +700,7 @@ export class PgPersonaChatStore implements PersonaChatStore {
     const res = await this.pool.query<{
       nickname: string;
       config: { nome?: string };
-      trigger: "video" | "mensagem" | "tique";
+      trigger: "video" | "mensagem" | "tique" | "boletim";
       action: string;
       score: number;
       reasons: Record<string, unknown>;

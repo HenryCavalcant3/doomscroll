@@ -101,6 +101,10 @@ await boss.work(QUEUES.bulletin, { batchSize: 1, pollingIntervalSeconds: 10 }, a
     generate: (prompt, schema) => gate.run(PRIORITY.bulletin, () => ollama.line(prompt, schema)),
     // Mesmo prefixo dos dois lados: só compara boletim com boletim.
     embed: (text) => gate.run(PRIORITY.bulletin, () => ollama.embed(`clustering: ${text}`)),
+    // A api manda a mensagem no Grupo do Bunker (ela avisa quem está com o app aberto).
+    publish: async (date) => {
+      await boss.send(QUEUES.personaTalk, { kind: "bulletin", date });
+    },
     log: (msg) => console.log(msg),
   });
 });

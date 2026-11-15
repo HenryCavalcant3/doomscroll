@@ -41,4 +41,14 @@ describe("decisões no painel do dono", () => {
     );
     expect(decisionText({ ...talk, action: "reagir", reasons: { acao: "comentar", teto_da_conversa: true } })).toBe("só reagiu no Grupo do Bunker (a conversa chegou ao teto)");
   });
+
+  it("boletim: quem publicou e quem respondeu à fofoca, com o direito de resposta", () => {
+    const pub = { ...base, trigger: "boletim" as const, action: "publicar", score: 1, reasons: { boletim: "2026-11-14", status: "pronto" } };
+    expect(decisionText(pub)).toBe("publicou o Boletim do Bunker no Grupo do Bunker");
+    expect(reasonsText(pub)).toBe("nota 1");
+    const reply = { ...base, trigger: "boletim" as const, action: "comentar", reasons: { acao: "comentar", direito_de_resposta: true, mencao: true } };
+    expect(decisionText(reply)).toBe("respondeu à fofoca do boletim (a fofoca citou o nome: direito de resposta)");
+    expect(reasonsText(reply)).toBe("direito de resposta sim · nome citado sim · nota 0,5");
+    expect(decisionText({ ...reply, action: "reagir", reasons: { acao: "reagir" } })).toBe("reagiu à fofoca do boletim");
+  });
 });

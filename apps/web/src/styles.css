@@ -1072,3 +1072,11 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
   .boletim-feed-manchete { margin-top: 14px; font-size: 26px; }
   .boletim-feed-tiles { margin-top: 16px; }
 }
+
+/* Boletim do Bunker no grupo (docs/boletim/telas/boletim-grupo.html) */
+.msg-boletim { width: min(262px, 100%); border: 1px solid var(--accent); border-radius: 16px; overflow: hidden; background: var(--surface); }
+.msg-boletim-faixa { height: 8px; }
+.msg-boletim-corpo { padding: 12px 14px 14px; }
+.msg-boletim-tag { font-size: 11px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--accent); }
+.msg-boletim-manchete { margin-top: 6px; font-size: 17px; font-weight: 700; line-height: 1.25; overflow-wrap: anywhere; }
+.msg-boletim-ler { margin-top: 12px; height: 44px; border-radius: 10px; font-size: 14px; display: flex; align-items: center; justify-content: center; text-decoration: none; }

@@ -104,7 +104,7 @@ export function Messages({ me }: { me: User }) {
                       <OwnerKey who={c.type === "direct" ? c.members[0] : undefined} />
                     </span>
                     <span className="inbox-preview">
-                      {last ? `${mine ? "Você: " : c.type === "group" ? `@${last.sender.nickname}: ` : ""}${last.video ? "mandou um vídeo" : (last.text ?? "")}` : c.bunker ? "Todo mundo da rede está aqui" : "Sem mensagens"}
+                      {last ? `${mine ? "Você: " : c.type === "group" ? `@${last.sender.nickname}: ` : ""}${last.bulletin ? `Boletim do Bunker: ${last.bulletin.headline}` : last.video ? "mandou um vídeo" : (last.text ?? "")}` : c.bunker ? "Todo mundo da rede está aqui" : "Sem mensagens"}
                     </span>
                   </span>
                   <span className="inbox-meta">

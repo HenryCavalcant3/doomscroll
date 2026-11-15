@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dateLabel, isLatest, newVideosLabel, rollTime, shortDate, splitLabel } from "./bulletin";
+import { bulletinTag, dateLabel, isLatest, newVideosLabel, rollTime, shortDate, splitLabel } from "./bulletin";
 import { parseRoute } from "./router";
 
 const now = new Date(2026, 10, 14, 9, 30);
@@ -12,6 +12,8 @@ describe("textos do boletim", () => {
     expect(isLatest("2026-11-12", now)).toBe(false);
     expect(isLatest("2026-12-31", new Date(2027, 0, 1, 8))).toBe(true);
     expect(shortDate("2026-11-13")).toBe("13 de novembro");
+    expect(bulletinTag("2026-11-13", now)).toBe("Boletim do Bunker · ontem");
+    expect(bulletinTag("2026-11-10", now)).toBe("Boletim do Bunker · 10 de novembro");
   });
 
   it("autonomia do estoque", () => {

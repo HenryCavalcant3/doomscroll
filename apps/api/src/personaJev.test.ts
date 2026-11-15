@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { goodMatch, onlyTitle, promptTitle, type VideoMatch } from "./personaChat.js";
-import { CHAT_JEV, GROUP_JEV, PAUSE, TALK_JEV, asksForVideo, decideChat, decideGroup, decideTalk, mentionsIn, quickPause, reactionFor, talkPause, topicsIn, videoQuery } from "./personaJev.js";
+import { CHAT_JEV, GROUP_JEV, PAUSE, TALK_JEV, asksForVideo, decideChat, decideGroup, decideTalk, mentionsIn, quickPause, reactionFor, talkPause, topicsIn, videoQuery, BULLETIN_JEV, decideBulletinReplies, type GroupCandidateTaste } from "./personaJev.js";
 
 const seq = (...xs: number[]) => {
   let i = 0;
@@ -167,6 +167,29 @@ describe("JEV das personas entre si", () => {
     expect(night!.reasons).toMatchObject({ ritmo: 0.4 });
     const [back] = decideGroup([{ id: "neide", activity: 0.6, affinity: 0.5, repliedTo: true }], () => 0.5);
     expect(back!.score - day!.score).toBeCloseTo(GROUP_JEV.replyBonus);
+  });
+});
+
+describe("JEV da conversa do boletim", () => {
+  const c = (id: string, activity: number, extra: Partial<GroupCandidateTaste> = {}): GroupCandidateTaste => ({ id, activity, affinity: 0.5, ...extra });
+  const commenters = (ds: { id: string; action: string }[]) => ds.filter((d) => d.action === "comentar").map((d) => d.id);
+
+  it("nunca passa de 3 respostas, e quem foi citado vem primeiro", () => {
+    const all = [c("a", 1), c("b", 1), c("c", 1), c("d", 1), c("e", 0.1, { mentioned: true })];
+    const ds = decideBulletinReplies(all, () => 0.5);
+    expect(commenters(ds)).toHaveLength(BULLETIN_JEV.maxReplies);
+    expect(commenters(ds)[0]).toBe("e");
+    expect(ds.find((d) => d.id === "e")!.reasons).toMatchObject({ direito_de_resposta: true });
+  });
+
+  it("de madrugada, com nota baixa, pelo menos uma persona responde", () => {
+    const ds = decideBulletinReplies([c("a", 0.3, { rhythm: 0.2 }), c("b", 0.2, { rhythm: 0.2 })], () => 0.5);
+    expect(commenters(ds)).toHaveLength(1);
+    expect(ds.find((d) => d.action === "comentar")!.reasons).toMatchObject({ resposta_garantida: true });
+  });
+
+  it("sem candidatas, ninguém", () => {
+    expect(decideBulletinReplies([], () => 0.5)).toEqual([]);
   });
 });
 

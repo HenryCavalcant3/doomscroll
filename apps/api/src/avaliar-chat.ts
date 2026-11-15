@@ -134,6 +134,7 @@ function message(from: string, isAi: boolean, turn: Turn): MessageView {
     id: String(++seq),
     conversationId: "bancada",
     type: video ? "video" : "text",
+    bulletin: null,
     text: typeof turn === "string" ? turn : null,
     video,
     reactions: [],

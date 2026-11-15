@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import type { GossipTopic, RawDay } from "./bulletin.js";
 import { runBulletinJob, type BulletinGenDb, type BulletinRow, type BulletinStatus } from "./bulletinGen.js";
 import type { BulletinVoice } from "./bulletinText.js";
@@ -67,6 +67,11 @@ class FakeDb implements BulletinGenDb {
   async fail(date: string) {
     this.rows.set(date, { status: "falhou" });
   }
+  published = new Set<string>();
+  async unpublished(date: string) {
+    const s = this.rows.get(date)?.status;
+    return (s === "pronto" || s === "curto") && !this.published.has(date);
+  }
   async voices() {
     return VOICES;
   }
@@ -108,8 +113,9 @@ function llm(...answers: string[]) {
 }
 const j = (key: string, text: string) => JSON.stringify({ [key]: text });
 
+let announced: string[] = [];
 function run(db: FakeDb, model = llm(), embed: (t: string) => Promise<number[]> = async () => [Math.random(), Math.random(), 1]) {
-  return runBulletinJob({ db, generate: model.generate, embed, now: () => NOW, random: () => 0 });
+  return runBulletinJob({ db, generate: model.generate, embed, now: () => NOW, random: () => 0, publish: async (d) => void announced.push(d) });
 }
 
 const historyFor = (id: string, name: string, today: Partial<PersonaActivity["today"]>): PersonaActivity => {
@@ -118,6 +124,28 @@ const historyFor = (id: string, name: string, today: Partial<PersonaActivity["to
 };
 
 describe("job do boletim", () => {
+  beforeEach(() => {
+    announced = [];
+  });
+
+  it("pronto ou curto, avisa a api para publicar no grupo; se ainda não está lá, avisa de novo no próximo job", async () => {
+    const db = new FakeDb();
+    db.activity = true;
+    expect(await run(db, llm(j("manchete", "dia de esporte no bunker"), j("fofoca", "o gerador roncou de novo")))).toBe("pronto");
+    expect(announced).toEqual(["2026-11-13"]);
+    await run(db);
+    expect(announced).toEqual(["2026-11-13", "2026-11-13"]);
+    db.published.add("2026-11-13");
+    await run(db);
+    expect(announced).toHaveLength(2);
+    // Falhou: nada a publicar.
+    const failed = new FakeDb();
+    failed.rows.set("2026-11-13", { status: "falhou" });
+    announced = [];
+    await run(failed);
+    expect(announced).toEqual([]);
+  });
+
   it("marca hoje como ligado e não gera nada se ontem esteve desligado", async () => {
     const db = new FakeDb();
     expect(await run(db)).toBeNull();

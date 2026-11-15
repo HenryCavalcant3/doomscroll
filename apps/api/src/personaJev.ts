@@ -284,6 +284,56 @@ export function decideGroup(
   }));
 }
 
+/**
+ * Conversa do boletim no grupo (BOLETIM.md, "Conversa no grupo"): depois da fofoca, de 1 a 3
+ * personas respondem e acabou. Quem a fofoca cita tem direito de resposta (responde sempre); os
+ * outros entram pela nota de sempre, com a afinidade pelo assunto do dia.
+ */
+export const BULLETIN_JEV = {
+  minReplies: 1,
+  maxReplies: 3,
+  /** Bônus na nota de quem a fofoca cita (só ordena: essa persona responde de qualquer jeito). */
+  rightOfReply: 0.5,
+};
+
+export function decideBulletinReplies(candidates: GroupCandidateTaste[], random: () => number = Math.random): GroupDecision[] {
+  const scored = candidates.map((c) => {
+    const affinity = c.affinity ?? GROUP_JEV.unknownAffinity;
+    const rhythm = c.rhythm ?? 1;
+    const acaso = round((random() - 0.5) * GROUP_JEV.chance);
+    const tired = Math.min(GROUP_JEV.maxRecentPenalty, (c.recent ?? 0) * GROUP_JEV.recentPenalty);
+    const score = round((0.5 * c.activity + 0.4 * affinity) * rhythm + acaso + (c.mentioned ? BULLETIN_JEV.rightOfReply : 0) - tired);
+    const reasons: GroupDecision["reasons"] = { atividade: c.activity, afinidade: round(affinity), acaso, boletim: true };
+    if (rhythm !== 1) reasons.ritmo = rhythm;
+    if (c.mentioned) {
+      reasons.mencao = true;
+      reasons.direito_de_resposta = true;
+    }
+    if (tired) reasons.cansaco = round(-tired);
+    return { c, score, reasons };
+  });
+  const commenters = scored
+    .filter((s) => s.c.mentioned || s.score >= GROUP_JEV.commentAt)
+    .sort((a, b) => Number(b.c.mentioned === true) - Number(a.c.mentioned === true) || b.score - a.score)
+    .slice(0, BULLETIN_JEV.maxReplies);
+  // Ninguém chegou na nota (madrugada, ritmo baixo): uma persona responde mesmo assim, sorteada pela nota.
+  if (commenters.length < BULLETIN_JEV.minReplies && scored.length) {
+    const weight = (s: (typeof scored)[number]) => Math.max(0.01, s.score) ** GROUP_JEV.lotteryPower;
+    let roll = random() * scored.reduce((sum, s) => sum + weight(s), 0);
+    const picked = scored.find((s) => (roll -= weight(s)) < 0) ?? scored.at(-1)!;
+    picked.reasons.resposta_garantida = true;
+    commenters.push(picked);
+  }
+  // Quem comenta vem primeiro, na ordem em que fala (o citado abre a conversa).
+  const ids = new Set(commenters.map((s) => s.c.id));
+  return [...commenters, ...scored.filter((s) => !ids.has(s.c.id))].map(({ c, score, reasons }) => ({
+    id: c.id,
+    action: ids.has(c.id) ? "comentar" : score >= GROUP_JEV.reactAt ? "reagir" : "ignorar",
+    score,
+    reasons,
+  }));
+}
+
 const foldText = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
 /** Palavras do nome que não identificam ninguém ("Dona Neide" → só "neide"). */

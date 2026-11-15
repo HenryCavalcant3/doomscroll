@@ -50,3 +50,6 @@ export function splitLabel(s: { moradores: number; personas: number }): string {
 }
 
 export const residentsLabel = (n: number) => (n === 1 ? "morador" : "moradores");
+
+/** Etiqueta da mensagem no grupo: "Boletim do Bunker · ontem", ou com o dia nos mais antigos. */
+export const bulletinTag = (date: string, now: Date = new Date()) => `Boletim do Bunker · ${isLatest(date, now) ? "ontem" : shortDate(date)}`;
