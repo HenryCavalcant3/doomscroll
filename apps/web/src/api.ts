@@ -278,6 +278,8 @@ export const api = {
   video: (id: string) => request<Video>(`/videos/${id}`),
   confirmTopics: (id: string, topics: string[]) => request<Video>(`/videos/${id}/topics`, { method: "PUT", body: { topics } }),
   conversations: () => request<Conversation[]>("/conversations"),
+  /** Personas do bunker, para a caixa de entrada mostrar quem ainda não teve conversa. */
+  personas: () => request<Author[]>("/personas"),
   conversation: (id: string) => request<Conversation>(`/conversations/${id}`),
   openDirect: (nickname: string) => request<Conversation>("/conversations", { method: "POST", body: { nickname } }),
   /** Página de mensagens antes da mensagem `before` (ou as últimas), em ordem cronológica. */

@@ -321,6 +321,8 @@ export function buildApp({
     });
 
     priv.get("/topics", async () => store.listTopics());
+    // Personas para a caixa de entrada: aparecem mesmo sem conversa, que só nasce no primeiro toque.
+    priv.get("/personas", async () => store.personas());
 
     priv.post<{ Body: { url: string } }>(
       "/videos",

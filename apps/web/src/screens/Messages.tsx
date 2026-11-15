@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type RefObject } from "react";
-import { api, type Conversation, type User } from "../api";
+import { api, type Author, type Conversation, type User } from "../api";
 import { conversationTitle, shortTime, useRealtimeEvents } from "../chat";
+import { Avatar } from "../components/Avatar";
 import { ConversationAvatar } from "../components/ConversationAvatar";
 import { Selo } from "../components/Selo";
 import { chatHref } from "../router";
@@ -8,6 +9,7 @@ import { chatHref } from "../router";
 /** Tela 4 do SPEC (caixa de entrada): conversas, da mais recente para a mais antiga. */
 export function Messages({ me }: { me: User }) {
   const [list, setList] = useState<Conversation[] | null>(null);
+  const [personas, setPersonas] = useState<Author[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [nickname, setNickname] = useState("");
   const [opening, setOpening] = useState(false);
@@ -25,6 +27,11 @@ export function Messages({ me }: { me: User }) {
     [],
   );
 
+  // Lista de personas muda só quando o dono mexe na pasta; basta buscar ao abrir a tela.
+  useEffect(() => {
+    api.personas().then(setPersonas, () => setPersonas([]));
+  }, []);
+
   useEffect(() => {
     load();
     const onVisible = () => !document.hidden && load();
@@ -41,12 +48,11 @@ export function Messages({ me }: { me: User }) {
   }, []);
   useRealtimeEvents(() => load());
 
-  const open = (e: FormEvent) => {
-    e.preventDefault();
-    if (!nickname.trim() || opening) return;
+  const openWith = (who: string) => {
+    if (opening) return;
     setOpening(true);
     setOpenError(null);
-    api.openDirect(nickname).then(
+    api.openDirect(who).then(
       (c) => {
         if (mounted.current) window.location.hash = chatHref(c.id);
       },
@@ -56,6 +62,11 @@ export function Messages({ me }: { me: User }) {
         setOpening(false);
       },
     );
+  };
+
+  const open = (e: FormEvent) => {
+    e.preventDefault();
+    if (nickname.trim()) openWith(nickname);
   };
 
   return (
@@ -87,7 +98,7 @@ export function Messages({ me }: { me: User }) {
       {error && <p className="error">Não deu para carregar as conversas: {error}</p>}
       {list === null ? (
         !error && <p className="hint">Carregando…</p>
-      ) : list.length === 0 ? (
+      ) : list.length === 0 && personas.length === 0 ? (
         <p className="hint">Ninguém no rádio ainda. Abra o perfil de alguém ou digite um apelido acima.</p>
       ) : (
         <ul className="inbox-list">
@@ -119,6 +130,23 @@ export function Messages({ me }: { me: User }) {
               </li>
             );
           })}
+          {/* Personas ainda sem conversa: depois das conversas, e a conversa só nasce no toque. */}
+          {personas
+            .filter((p) => !list.some((c) => c.type === "direct" && c.members[0]?.nickname === p.nickname))
+            .map((p) => (
+              <li key={`persona-${p.nickname}`}>
+                <button className="inbox-row inbox-row-persona" onClick={() => openWith(p.nickname)} disabled={opening}>
+                  <Avatar who={p} size={48} />
+                  <span className="inbox-text">
+                    <span className="inbox-name">
+                      {p.nickname}
+                      <Selo who={p} />
+                    </span>
+                    <span className="inbox-preview">Sem mensagens</span>
+                  </span>
+                </button>
+              </li>
+            ))}
         </ul>
       )}
     </main>

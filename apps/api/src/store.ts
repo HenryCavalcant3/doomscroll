@@ -90,6 +90,8 @@ export type ConfirmResult = "ok" | "not_found" | "invalid_state" | "invalid_topi
 /** Acesso ao banco usado pelas rotas. As rotas dependem desta interface, o que facilita os testes. */
 export interface Store {
   listTopics(): Promise<Topic[]>;
+  /** Personas carregadas da pasta personas, por apelido (lista de mensagens, para puxar conversa). */
+  personas(): Promise<AuthorView[]>;
   createTopic(name: string, slug: string, sensitive?: boolean): Promise<Topic | null>;
   /** Marca ou desmarca o tópico como sensível; null quando ele não existe. */
   setTopicSensitive(id: number, sensitive: boolean): Promise<Topic | null>;
@@ -295,6 +297,13 @@ export class PgStore implements Store {
     } finally {
       client.release();
     }
+  }
+
+  async personas() {
+    const res = await this.pool.query<AuthorRow>(
+      "SELECT u.nickname, u.avatar, u.is_ai, u.role FROM users u JOIN personas p ON p.user_id = u.id WHERE u.is_ai ORDER BY u.nickname",
+    );
+    return res.rows.map(authorView);
   }
 
   async listTopics() {

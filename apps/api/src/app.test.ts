@@ -67,6 +67,9 @@ class MemoryStore implements Store {
   async listTopics() {
     return this.topics;
   }
+  async personas() {
+    return [...this.users.values()].filter((u) => u.user.isAi).map((u) => authorOf(u.user)).sort((a, b) => a.nickname.localeCompare(b.nickname));
+  }
   async createTopic(name: string, slug: string, sensitive = false) {
     if (this.topics.some((t) => t.slug === slug)) return null;
     const topic = { id: this.topics.length + 1, name, slug, sensitive };
@@ -1001,6 +1004,14 @@ describe("chat", () => {
     expect((await open("ninguem")).statusCode).toBe(404);
     expect((await open("bia")).statusCode).toBe(400);
     expect((await open("tio_valdir")).statusCode).toBe(200);
+  });
+
+  it("lista as personas para puxar conversa, sem gente", async () => {
+    const ana = await auth("ana", "111111");
+    const res = await app().inject({ method: "GET", url: "/personas", headers: ana });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual([{ nickname: "tio_valdir", avatarUrl: "/avatars/tio-valdir.svg", avatar: null, isAi: true, owner: false }]);
+    expect((await app().inject({ method: "GET", url: "/personas" })).statusCode).toBe(401);
   });
 
   it("só mostra na caixa de entrada conversas com mensagem e conta as não lidas", async () => {
