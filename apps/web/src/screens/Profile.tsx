@@ -81,6 +81,7 @@ export function ProfileScreen({ nickname, me, onLogout }: Props) {
         {profile.isAi && <span className="badge">persona de IA</span>}
         {profile.role === "owner" && <span className="badge">dono do bunker</span>}
         {profile.bio && <p className="profile-bio">{profile.bio}</p>}
+        {profile.isAi && <p className="aviso-ia">Persona de IA: pode errar ou inventar detalhes.</p>}
         {own ? (
           <div className="profile-actions">
             <a className="btn btn-small btn-link" href="#/perfil/foto">

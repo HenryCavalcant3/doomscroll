@@ -1109,3 +1109,6 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
 .pessoa-texto { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .pessoa-nome { font-size: 15px; font-weight: 700; }
 .chat-who-btn { background: none; border: 0; padding: 0; font: inherit; text-align: left; cursor: pointer; }
+
+/* Aviso literal sobre o que a IA escreve (perfil de persona e boletim) */
+.aviso-ia { margin: 6px 0 0; font-size: 12px; line-height: 1.4; color: var(--muted); }

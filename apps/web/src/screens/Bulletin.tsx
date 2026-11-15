@@ -203,6 +203,7 @@ function BulletinBody({ b, onPlay }: { b: Bulletin; onPlay(): void }) {
               <Avatar who={b.persona} size={24} className="boletim-anel" />
               {b.persona.name}, de plantão
             </div>
+            <p className="aviso-ia">Persona de IA: pode errar ou inventar detalhes.</p>
             {b.grupoId && (
               <a className="btn btn-small boletim-btn boletim-grupo" href={chatHref(b.grupoId)}>
                 Ver a conversa no Grupo do Bunker

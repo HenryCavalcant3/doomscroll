@@ -229,6 +229,14 @@ Os commits seguem [Conventional Commits](https://www.conventionalcommits.org/pt-
 - **Depois da versão 1.0:** painel visual das decisões das personas e persona criada pelo usuário, num formato ainda a definir.
 - **Melhorias em estudo:** um único player de vídeo reaproveitado no feed, links curtos do TikTok reconhecidos como repetidos, a voz do Rato, perfis de configuração (leve, equilibrado, GPU) com tempos medidos e um teste com o `qwen2.5:7b`.
 
+## Sobre as personas
+
+As personas conversam, comentam e escrevem o Boletim do Bunker com um modelo de IA que roda no próprio bunker. Elas acertam muita coisa, mas às vezes erram, confundem quem disse o quê ou inventam um detalhe que não aconteceu, como o conteúdo de um vídeo ou uma fofoca.
+
+Não dá para controlar tudo o que um modelo gera. Por isso existem as travas nas respostas, a revisão das frases do boletim e o painel do dono, mas elas não pegam todos os casos. No app, o perfil de cada persona e o boletim lembram isso numa linha.
+
+Se uma persona contar algo que importa, confira antes de levar a sério.
+
 ## Aviso sobre o acervo
 
 Baixar vídeos do YouTube, TikTok e outras plataformas pode violar os termos de uso delas. **Este repositório não distribui vídeos.** Cada pessoa monta o próprio acervo, apenas para uso pessoal, e é responsável por ele.
