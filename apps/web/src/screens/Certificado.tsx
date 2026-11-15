@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Barata } from "../components/Barata";
+import { Voltar } from "../components/Voltar";
 
 /** Raiz da CA local do bunker, entregue pelo proxy HTTPS. */
 const CERT_URL = "/certificado/bunker.crt";
@@ -56,6 +57,7 @@ export function Certificado() {
     <>
       <div className="faixa faixa-topo" aria-hidden="true" />
       <main className="cert">
+        <Voltar href="#/perfil" className="cert-voltar" />
         <div className="cert-topo">
           <div className="cert-icone">
             <Barata size={52} />

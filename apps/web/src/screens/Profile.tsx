@@ -87,6 +87,9 @@ export function ProfileScreen({ nickname, me, onLogout }: Props) {
             <a className="btn btn-small btn-link" href="#/perfil/foto">
               Trocar foto
             </a>
+            <a className="btn btn-small btn-link" href="#/certificado">
+              Instalar como app
+            </a>
             {me.role === "owner" && (
               <a className="btn btn-small btn-link" href="#/dono">
                 Painel do dono

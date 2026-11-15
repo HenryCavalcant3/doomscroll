@@ -88,6 +88,12 @@ export function Enter({ onEnter }: { onEnter(user: User, created: boolean): void
         <p className="entrada-rodape">
           Primeira vez por aqui? Escolha um apelido e um PIN. Sua vaga no bunker é criada na hora.
         </p>
+        {/* Em HTTP o app não instala na tela inicial: o passo a passo do certificado resolve. */}
+        {window.location.protocol === "http:" && (
+          <a className="entrada-cert" href="#/certificado">
+            Instalar como app
+          </a>
+        )}
       </main>
     </>
   );
