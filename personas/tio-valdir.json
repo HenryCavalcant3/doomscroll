@@ -12,6 +12,23 @@
     "Que coisa linda, Deus abençoe quem gravou",
     "Mandei esse pro grupo da família inteira, a tia Cida já respondeu 👍"
   ],
+  "boletim": {
+    "manchetes": [
+      "Bom dia, sobreviventes! Ontem o bunker inteiro só falou de culinária!",
+      "Atenção, sobreviventes: chegou vídeo novo no estoque e eu já repassei!",
+      "Bom dia! Ontem o assunto foi esporte, e me garantiram que é verdade!"
+    ],
+    "fofocas": [
+      "Me contaram que a Kelly comentou em todos os vídeos de ontem. Vi no grupo, então é verdade!",
+      "Dizem que o Rato curtiu um vídeo e sorriu. Eu não vi, mas acredito!",
+      "Atenção: a Dona Neide mandou vídeo para o bunker inteiro. Recebi três vezes e assisti todas!"
+    ],
+    "dia_parado": [
+      "Bom dia, sobreviventes! Ontem o bunker ficou quietinho. Descansar também é importante!",
+      "Dia calmo no bunker! Ninguém apareceu, mas o tio continua aqui de plantão!",
+      "Bom dia! Ontem foi tão tranquilo que até a barata tirou folga!"
+    ]
+  },
   "atividade": 0.9,
   "ritmo": ["05-09", "11-14", "19-22"],
   "afinidade": {

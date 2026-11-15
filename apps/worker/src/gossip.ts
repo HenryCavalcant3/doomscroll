@@ -119,5 +119,13 @@ export function pickCuriousFact(personas: readonly PersonaActivity[], pairs: rea
   return curiousFacts(personas, pairs).find((f) => !f.subjects.includes(onDutyId)) ?? null;
 }
 
-/** O que vai para a LLM reescrever na voz de quem está de plantão: só isto, delimitado como dado. */
-export const factForLlm = (f: CuriousFact) => ({ quem: f.quem, o_que: f.o_que, intensidade: f.intensidade });
+/**
+ * O que vai para a LLM reescrever na voz de quem está de plantão: só isto, delimitado como dado.
+ * A intensidade vai em português ("quanto"): com o nome do campo, o modelo pequeno escrevia
+ * "intensidade alta" no meio da fofoca.
+ */
+export const factForLlm = (f: CuriousFact) => ({
+  quem: f.quem,
+  o_que: f.o_que,
+  quanto: f.intensidade === "alta" ? "bem fora do normal" : "um pouco fora do normal",
+});

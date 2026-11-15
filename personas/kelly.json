@@ -12,6 +12,23 @@
     "A vó aprendendo a mexer no celular com 80 anos. Nunca é tarde, gente!",
     "A senhora dançando forró aos 70 tem mais fôlego que eu, que inspiração 🙌"
   ],
+  "boletim": {
+    "manchetes": [
+      "Ontem o bunker treinou o dedão: muito vídeo novo no estoque!",
+      "Dia de esporte no bunker! Bora manter o ritmo hoje também!",
+      "O assunto de ontem foi culinária! Comer bem também é treino!"
+    ],
+    "fofocas": [
+      "O Rato curtiu um vídeo ontem! Isso é evolução, gente, cada passo conta!",
+      "O Tio Valdir mandou vídeo para todo mundo. Energia lá em cima, amei!",
+      "A Dona Neide passou o dia no Grupo do Bunker. Constância é tudo, vó!"
+    ],
+    "dia_parado": [
+      "Ontem foi dia de descanso no bunker! Recuperar também faz parte do treino!",
+      "Dia parado, mas a gente não desiste! Hoje tem mais!",
+      "Pausa no bunker ontem! Respira, hidrata e volta com tudo!"
+    ]
+  },
   "atividade": 0.7,
   "ritmo": ["06-09", "17-23"],
   "afinidade": {

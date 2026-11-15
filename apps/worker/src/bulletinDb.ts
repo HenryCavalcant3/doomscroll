@@ -8,6 +8,8 @@
 import type { Pool, PoolClient } from "pg";
 import { dayBoundaries, HISTORY_DAYS, type DayWindow, type GossipTopic, type RawDay } from "./bulletin.js";
 import type { Counts, PairActivity, PersonaActivity } from "./gossip.js";
+import type { BulletinGenDb, BulletinRow, BulletinStatus } from "./bulletinGen.js";
+import type { BulletinVoice } from "./bulletinText.js";
 
 export type Db = Pool | PoolClient;
 
@@ -182,4 +184,108 @@ export async function gossipTopics(db: Db): Promise<GossipTopic[]> {
     "SELECT id, text, active, last_used_at FROM gossip_topics ORDER BY id",
   );
   return res.rows.map((r) => ({ id: r.id, text: r.text, active: r.active, lastUsedAt: r.last_used_at }));
+}
+
+const vectorText = (v: number[] | null) => (v ? JSON.stringify(v) : null);
+const parseVector = (v: string | null) => (v ? (JSON.parse(v) as number[]) : null);
+
+/** O banco do job do boletim (bulletinGen.ts). */
+export class PgBulletinDb implements BulletinGenDb {
+  constructor(private readonly pool: Pool) {}
+
+  async markDay(date: string) {
+    await this.pool.query("INSERT INTO bunker_days (date) VALUES ($1) ON CONFLICT DO NOTHING", [date]);
+  }
+
+  async wasOn(date: string) {
+    return (await this.pool.query("SELECT 1 FROM bunker_days WHERE date = $1", [date])).rowCount === 1;
+  }
+
+  async hadActivity(day: DayWindow) {
+    const res = await this.pool.query<{ any: boolean }>(
+      `SELECT EXISTS (SELECT 1 FROM likes WHERE created_at >= $1 AND created_at < $2)
+           OR EXISTS (SELECT 1 FROM comments WHERE created_at >= $1 AND created_at < $2)
+           OR EXISTS (SELECT 1 FROM messages WHERE created_at >= $1 AND created_at < $2)
+           OR EXISTS (SELECT 1 FROM view_events WHERE created_at >= $1 AND created_at < $2)
+           OR EXISTS (SELECT 1 FROM persona_decisions WHERE created_at >= $1 AND created_at < $2) AS any`,
+      [day.start, day.end],
+    );
+    return res.rows[0]?.any ?? false;
+  }
+
+  async status(date: string) {
+    const res = await this.pool.query<{ status: BulletinStatus }>("SELECT status FROM daily_bulletins WHERE date = $1", [date]);
+    return res.rows[0]?.status ?? null;
+  }
+
+  async begin(date: string, personaUserId: string) {
+    const res = await this.pool.query(
+      `INSERT INTO daily_bulletins (date, persona_user_id) VALUES ($1, $2)
+       ON CONFLICT (date) DO UPDATE SET persona_user_id = EXCLUDED.persona_user_id WHERE daily_bulletins.status = 'pendente'
+       RETURNING date`,
+      [date, personaUserId],
+    );
+    return res.rowCount === 1;
+  }
+
+  async save(r: BulletinRow) {
+    await this.pool.query(
+      `UPDATE daily_bulletins SET persona_user_id = $2, facts = $3, headline = $4, gossip = $5, gossip_source = $6, gossip_ref = $7,
+              top_video_id = $8, status = $9, headline_embedding = $10, gossip_embedding = $11
+        WHERE date = $1`,
+      [r.date, r.personaUserId, JSON.stringify(r.facts), r.headline, r.gossip, r.gossipSource, r.gossipRef, r.topVideoId, r.status, vectorText(r.headlineEmbedding), vectorText(r.gossipEmbedding)],
+    );
+  }
+
+  async fail(date: string) {
+    await this.pool.query("UPDATE daily_bulletins SET status = 'falhou' WHERE date = $1 AND status = 'pendente'", [date]);
+  }
+
+  async voices(): Promise<BulletinVoice[]> {
+    const res = await this.pool.query<{ id: string; nickname: string; name: string; bio: string; tone: string; boletim: Record<string, string[]> }>(
+      `SELECT u.id, u.nickname, coalesce(p.config->>'nome', u.nickname) AS name, p.bio, p.tone, p.config->'boletim' AS boletim
+         FROM users u JOIN personas p ON p.user_id = u.id
+        WHERE u.is_ai AND jsonb_typeof(p.config->'boletim') = 'object'
+        ORDER BY u.nickname`,
+    );
+    return res.rows.map((r) => ({
+      id: r.id,
+      nickname: r.nickname,
+      name: r.name,
+      bio: r.bio,
+      tone: r.tone,
+      manchetes: r.boletim.manchetes ?? [],
+      fofocas: r.boletim.fofocas ?? [],
+      dia_parado: r.boletim.dia_parado ?? [],
+    }));
+  }
+
+  async residents() {
+    return (await this.pool.query<{ nickname: string }>("SELECT nickname FROM users WHERE NOT is_ai")).rows.map((r) => r.nickname);
+  }
+
+  collectDay(day: DayWindow) {
+    return collectDay(this.pool, day);
+  }
+
+  personaActivity(day: DayWindow, list: PersonaRef[]) {
+    return personaActivity(this.pool, day, list);
+  }
+
+  gossipTopics() {
+    return gossipTopics(this.pool);
+  }
+
+  async markPautaUsed(id: string, at: Date) {
+    await this.pool.query("UPDATE gossip_topics SET last_used_at = $2 WHERE id = $1", [id, at]);
+  }
+
+  async recentEmbeddings(date: string, limit: number) {
+    const res = await this.pool.query<{ h: string | null; g: string | null }>(
+      `SELECT headline_embedding::text AS h, gossip_embedding::text AS g FROM daily_bulletins
+        WHERE date < $1 AND status IN ('pronto', 'curto') ORDER BY date DESC LIMIT $2`,
+      [date, limit],
+    );
+    return res.rows.map((r) => ({ headline: parseVector(r.h), gossip: parseVector(r.g) }));
+  }
 }

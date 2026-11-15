@@ -5,6 +5,8 @@ import { OllamaClient } from "./ai.js";
 import { readConfig } from "./config.js";
 import { LlmGate, PRIORITY } from "./gate.js";
 import { PgMemoryDb, PgTickDb, PgVideoDb } from "./db.js";
+import { PgBulletinDb } from "./bulletinDb.js";
+import { runBulletinJob } from "./bulletinGen.js";
 import * as ffmpeg from "./ffmpeg.js";
 import { runStep, type JobData, type PipelineDeps } from "./pipeline.js";
 import { updateMemory } from "./memory.js";
@@ -89,6 +91,21 @@ if (config.personaTick) {
   await boss.unschedule(QUEUES.personaTick);
   console.log("[worker] agendador das personas desligado (PERSONA_TICK=off)");
 }
+// Boletim do Bunker: a cada 15 minutos marca o dia como ligado e, depois da virada, gera o de ontem.
+// O job da subida é a recuperação (servidor desligado na virada). Prioridade mais baixa na IA.
+const bulletinDb = new PgBulletinDb(pool);
+await boss.work(QUEUES.bulletin, { batchSize: 1, pollingIntervalSeconds: 10 }, async ([job]) => {
+  if (!job) return;
+  await runBulletinJob({
+    db: bulletinDb,
+    generate: (prompt, schema) => gate.run(PRIORITY.bulletin, () => ollama.line(prompt, schema)),
+    // Mesmo prefixo dos dois lados: só compara boletim com boletim.
+    embed: (text) => gate.run(PRIORITY.bulletin, () => ollama.embed(`clustering: ${text}`)),
+    log: (msg) => console.log(msg),
+  });
+});
+await boss.schedule(QUEUES.bulletin, "*/15 * * * *");
+await boss.send(QUEUES.bulletin, {});
 console.log(`[worker] ouvindo as filas: ${Object.values(QUEUES).join(", ")}`);
 
 const shutdown = async () => {

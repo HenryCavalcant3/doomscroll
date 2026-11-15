@@ -204,13 +204,19 @@ O modo stalker (perfil da persona → Modo stalker) lista as conversas dela com 
 
 Para ver uma conversa sem esperar o próximo tique, o dono pode chamar `POST /api/owner/personas/tique` (com a sessão de dono).
 
-Quatro bancadas ajudam a calibrar. `avaliar:jev` simula as decisões de cada persona sobre o acervo, sem gravar nada, e mostra quanto cada uma ignoraria, curtiria e comentaria. `avaliar:rag` roda pedidos e conversas pela busca do chat e marca se o vídeo mandado tem o tópico esperado. `avaliar:busca` roda buscas no acervo e mostra o que voltaria e o destaque de cada vídeo, para recalibrar o corte da busca quando o acervo mudar. As três precisam do banco e do Ollama acessíveis como acima. `avaliar:grupo` não precisa de nada: simula milhares de mensagens no Grupo do Bunker e mostra, por hora do dia, quantas falas cada uma gera e quem fala mais:
+Cinco bancadas ajudam a calibrar (a quinta, do boletim, vem logo abaixo). `avaliar:jev` simula as decisões de cada persona sobre o acervo, sem gravar nada, e mostra quanto cada uma ignoraria, curtiria e comentaria. `avaliar:rag` roda pedidos e conversas pela busca do chat e marca se o vídeo mandado tem o tópico esperado. `avaliar:busca` roda buscas no acervo e mostra o que voltaria e o destaque de cada vídeo, para recalibrar o corte da busca quando o acervo mudar. As três precisam do banco e do Ollama acessíveis como acima. `avaliar:grupo` não precisa de nada: simula milhares de mensagens no Grupo do Bunker e mostra, por hora do dia, quantas falas cada uma gera e quem fala mais:
 
 ```bash
 DATABASE_URL=... pnpm --filter @doomscroll/worker avaliar:jev
 DATABASE_URL=... OLLAMA_URL=http://127.0.0.1:11434 pnpm --filter @doomscroll/api avaliar:rag -- --persona rato
 DATABASE_URL=... OLLAMA_URL=http://127.0.0.1:11434 pnpm --filter @doomscroll/api avaliar:busca -- --buscas "gato,receita de bolo"
 pnpm --filter @doomscroll/api avaliar:grupo
+```
+
+A bancada do Boletim do Bunker usa os fatos de um dia de verdade e gera manchetes e fofocas (de fato curioso e de pauta) na voz de cada persona, sem gravar nada. O relatório em `avaliacao/` mostra quantas passaram na validação de primeira, os motivos das recusas (dígito, palavras demais, morador citado, fofoca sem a persona) e todos os textos:
+
+```bash
+DATABASE_URL=... OLLAMA_URL=http://127.0.0.1:11434 pnpm --filter @doomscroll/worker avaliar:boletim -- --dia 2026-11-13 --amostras 3
 ```
 
 Dicas que a bancada mostrou com o modelo pequeno: frases de exemplo genéricas ("que vídeo bom") são copiadas inteiras, então prefira exemplos ligados a um vídeo concreto e com começos variados; deixe o tema fim do mundo fora dos exemplos (o app sorteia quando ele aparece); e descreva no `tom` o que a persona repara num vídeo.

@@ -6,6 +6,7 @@
 import { describe, expect, it } from "vitest";
 import { buildFacts, pickPauta, dayWindow, type BulletinFacts, type RawDay } from "./bulletin.js";
 import { curiousFacts, factForLlm, pickCuriousFact, type Counts, type PersonaActivity } from "./gossip.js";
+import { buildHeadlinePrompt, checkLine, headlineFacts } from "./bulletinText.js";
 
 const raw = (over: Partial<RawDay> = {}): RawDay => ({
   novos: 2,
@@ -64,9 +65,9 @@ describe("Regra fixa 1: só entra o que qualquer morador já poderia ver", () =>
     expect(JSON.stringify(facts)).not.toMatch(/mensag|message|conversa/i);
   });
 
-  it("para a LLM, o fato curioso leva só quem, o quê e a intensidade", () => {
+  it("para a LLM, o fato curioso leva só quem, o quê e quanto", () => {
     const [f] = curiousFacts([persona("rato", { likes: 5 })], []);
-    expect(Object.keys(factForLlm(f!)).sort()).toEqual(["intensidade", "o_que", "quem"]);
+    expect(Object.keys(factForLlm(f!)).sort()).toEqual(["o_que", "quanto", "quem"]);
   });
 
   it("par com alguém que não é persona é ignorado", () => {
@@ -100,6 +101,16 @@ describe("Regra fixa 3: todo número vem do SQL", () => {
     for (const n of numbers) expect(Number.isInteger(n)).toBe(true);
   });
 
+  it("texto da LLM com dígito é recusado", () => {
+    const o = { key: "manchete" as const, maxWords: 14, residents: [] };
+    expect(checkLine(JSON.stringify({ manchete: "o bunker teve 42 curtidas" }), o)).toEqual({ ok: false, reason: "tem dígito" });
+    expect(checkLine(JSON.stringify({ manchete: "o bunker teve muitas curtidas" }), o).ok).toBe(true);
+  });
+
+  it("os fatos da manchete chegam à LLM sem nenhum número", () => {
+    expect(JSON.stringify(headlineFacts(buildFacts("2026-11-13", raw())))).not.toMatch(/\d/);
+  });
+
   it("o que vai para a LLM reescrever não tem dígito", () => {
     const facts = curiousFacts([persona("rato", { likes: 99, comments: 99, groupMessages: 99, videoTargets: 99 })], []);
     for (const f of facts) expect(JSON.stringify(factForLlm(f))).not.toMatch(/\d/);
@@ -121,6 +132,12 @@ describe("Regra fixa 4: a fofoca fala só de personas e do bunker", () => {
     }
   });
 
+  it("texto que cita morador é recusado", () => {
+    const o = { key: "fofoca" as const, maxWords: 25, residents: ["ana", "joao_pedro"] };
+    expect(checkLine(JSON.stringify({ fofoca: "A Ana passou o dia no feed." }), o)).toEqual({ ok: false, reason: "cita morador" });
+    expect(checkLine(JSON.stringify({ fofoca: "o joao_pedro sumiu" }), o)).toEqual({ ok: false, reason: "cita morador" });
+  });
+
   it("o fato curioso só cita personas e nunca a de plantão", () => {
     const ps = [persona("rato", { likes: 9 }), persona("kelly", { comments: 9 })];
     const f = pickCuriousFact(ps, [{ a: "rato", b: "kelly", today: 30, pastTotal: 0, pastDays: 7 }], "rato");
@@ -129,6 +146,12 @@ describe("Regra fixa 4: a fofoca fala só de personas e do bunker", () => {
 });
 
 describe("Regra fixa 5: consumo individual é privado", () => {
+  it("quem abasteceu aparece na tela, mas não vai para a LLM", () => {
+    const facts = buildFacts("2026-11-13", raw({ abastecedores: ["ana_do_bunker"] }));
+    expect(facts.estoque.abastecedores).toEqual(["ana_do_bunker"]);
+    expect(buildHeadlinePrompt({ id: "x", nickname: "rato", name: "Rato", bio: "b", tone: "t", manchetes: [], fofocas: [], dia_parado: [] }, headlineFacts(facts))).not.toContain("ana_do_bunker");
+  });
+
   it("nenhum dado por morador além de quem abasteceu", () => {
     const facts = buildFacts("2026-11-13", raw());
     // Lista de pessoas: só quem cadastrou vídeo (ação pública). Moradores ativos é só uma contagem.

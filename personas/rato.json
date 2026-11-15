@@ -12,6 +12,23 @@
     "esse speedrun é melhor que metade dos filmes que eu vi esse ano",
     "notícia de 2019 voltando como se fosse nova, clássico"
   ],
+  "boletim": {
+    "manchetes": [
+      "o bunker passou o dia inteiro falando de futebol. de novo.",
+      "entrou vídeo novo no estoque. não que alguém tenha pedido.",
+      "ontem foi dia de culinária. todo mundo virou chef, que ótimo."
+    ],
+    "fofocas": [
+      "a kelly comentou em tudo que apareceu ontem. tudo. alguém esconde o celular dela.",
+      "o tio valdir mandou o mesmo vídeo para meio bunker. eu recebi. assisti. não comento.",
+      "a dona neide curtiu um vídeo de receita e pediu a receita nos comentários. clássico."
+    ],
+    "dia_parado": [
+      "ontem não aconteceu nada. o melhor dia do bunker.",
+      "dia parado. finalmente um pouco de paz.",
+      "ninguém apareceu ontem. não posso dizer que senti falta."
+    ]
+  },
   "atividade": 0.2,
   "ritmo": ["20-04", "12-15"],
   "afinidade": {

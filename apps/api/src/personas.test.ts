@@ -10,6 +10,11 @@ const valid: Persona = {
   exemplos: ["Bom dia!", "KKKK", "Repassem!"],
   atividade: 0.9,
   afinidade: { humor: 0.9 },
+  boletim: {
+    manchetes: ["Bom dia, sobreviventes!", "Estoque novo!", "Dia de futebol!"],
+    fofocas: ["A Kelly comentou em tudo.", "O Rato curtiu um vídeo.", "A Neide mandou vídeo."],
+    dia_parado: ["Dia calmo.", "Ninguém apareceu.", "Bunker quietinho."],
+  },
 };
 const avatars = new Set(["tio-valdir.svg"]);
 
@@ -24,6 +29,19 @@ describe("personas", () => {
     for (const p of await loadPersonas(DEFAULT_PERSONAS_DIR)) {
       expect(Object.keys(p.afinidade).filter((t) => !topics.includes(t)), p.apelido).toEqual([]);
     }
+  });
+
+  it("boletim: três tipos de frase, sem número e no limite de palavras", () => {
+    const b = valid.boletim;
+    expect(validatePersona({ ...valid, boletim: undefined }, "tio-valdir.json", avatars)).toEqual(["boletim: objeto { manchetes, fofocas, dia_parado }"]);
+    expect(validatePersona({ ...valid, boletim: { ...b, fofocas: ["Uma.", "Duas."] } }, "tio-valdir.json", avatars)).toEqual(["boletim.fofocas: de 3 a 10 frases"]);
+    expect(validatePersona({ ...valid, boletim: { ...b, manchetes: [...b.manchetes, "O bunker ganhou 7 vídeos."] } }, "tio-valdir.json", avatars)).toEqual([
+      "boletim.manchetes: sem números (escreva por extenso)",
+    ]);
+    const longa = "uma duas três quatro cinco seis sete oito nove dez onze doze treze catorze quinze";
+    expect(validatePersona({ ...valid, boletim: { ...b, dia_parado: [...b.dia_parado, longa] } }, "tio-valdir.json", avatars)).toEqual([
+      "boletim.dia_parado: até 14 palavras por frase",
+    ]);
   });
 
   it("ritmo é opcional e, quando vem, são faixas de hora HH-HH", () => {

@@ -12,6 +12,23 @@
     "Notícia boa assim eu confiro duas vezes antes de comemorar.",
     "Violão não precisa de tomada. Instrumento mais confiável que existe."
   ],
+  "boletim": {
+    "manchetes": [
+      "Relatório do dia: estoque reforçado, prateleiras em ordem.",
+      "Ontem o bunker falou de culinária. Anotado para o racionamento.",
+      "Estoque novo recebido e conferido. Moradores em atividade normal."
+    ],
+    "fofocas": [
+      "Registro de ocorrência: a Kelly comentou acima do previsto. Situação sob observação.",
+      "O Tio Valdir mandou vídeo para meio bunker. Consumo de banda acima do aceitável.",
+      "Relatório confidencial: o Rato curtiu um vídeo. Ninguém está autorizado a comentar."
+    ],
+    "dia_parado": [
+      "Relatório do dia: nada a declarar. Prateleiras intactas.",
+      "Dia sem movimento. Estoque preservado, como manda o protocolo.",
+      "Silêncio total no bunker. Bom para economizar energia."
+    ]
+  },
   "atividade": 0.6,
   "ritmo": ["05-10", "18-22"],
   "afinidade": {

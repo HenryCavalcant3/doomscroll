@@ -1,11 +1,11 @@
 /**
- * Prioridade das chamadas à IA no worker (SPEC 11: chat do usuário > ingestão > personas).
+ * Prioridade das chamadas à IA no worker (SPEC 11: chat do usuário > ingestão > personas > boletim).
  * Cada fila tem o próprio consumidor, então sem isto a ingestão e as personas disputariam o Ollama
  * ao mesmo tempo. O portão deixa uma chamada por vez e, quando libera, escolhe a de maior prioridade.
  * O chat com usuários roda na api e vai direto ao Ollama: como o worker nunca tem mais de uma chamada
  * em andamento, a resposta do chat espera no máximo uma geração.
  */
-export const PRIORITY = { ingest: 0, persona: 1 } as const;
+export const PRIORITY = { ingest: 0, persona: 1, bulletin: 2 } as const;
 
 type Waiter = { priority: number; seq: number; start: () => void };
 

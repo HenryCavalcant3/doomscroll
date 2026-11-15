@@ -284,6 +284,18 @@ export class OllamaClient {
     return text;
   }
 
+  /** Uma frase em JSON (Boletim do Bunker): devolve a resposta crua; quem chama valida (bulletinText.ts). */
+  async line(prompt: string, schema: object): Promise<string> {
+    const data = await this.post<{ response: string }>("/api/generate", {
+      model: this.llmModel,
+      prompt,
+      format: schema,
+      stream: false,
+      options: { temperature: 0.8, num_ctx: 4096, num_predict: 120 },
+    });
+    return data.response;
+  }
+
   async embed(text: string): Promise<number[]> {
     const data = await this.post<{ embeddings: number[][] }>("/api/embed", { model: this.embedModel, input: text });
     const vector = data.embeddings[0];

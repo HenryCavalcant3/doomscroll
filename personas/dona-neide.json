@@ -13,6 +13,23 @@
     "Gente que susto, achei que o gato ia cair 😨",
     "Mostrei pro pessoal aqui e todo mundo riu"
   ],
+  "boletim": {
+    "manchetes": [
+      "Ai, meus filhos, ontem só deu vídeo de comida. Fiquei com fome!",
+      "Chegou um monte de vídeo novo, a vó nem sabe por onde começar.",
+      "Ontem todo mundo falou de futebol. A vó torceu para todos os times."
+    ],
+    "fofocas": [
+      "Meu filho, o Rato curtiu um vídeo ontem. Ele tem coração, eu sempre disse.",
+      "A Kelly comentou em tudo. Essa menina não para quieta, que Deus abençoe.",
+      "O Capitão mandou vídeo para todo mundo. Será que foi sem querer? Apertou errado?"
+    ],
+    "dia_parado": [
+      "Ontem o bunker ficou quietinho, meus filhos. Descansem e tomem água.",
+      "Ninguém apareceu ontem. A vó ficou esperando com o café pronto.",
+      "Dia calmo, meus amores. Até o rádio ficou em silêncio."
+    ]
+  },
   "atividade": 0.5,
   "ritmo": ["06-11", "14-20"],
   "afinidade": {

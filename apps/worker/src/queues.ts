@@ -14,6 +14,8 @@ export const QUEUES = {
   personaTick: "persona.tick",
   /** Uma fala de persona com outra persona ou no Grupo do Bunker (api). */
   personaTalk: "persona.talk",
+  /** Boletim do Bunker (worker, a cada 15 minutos e na subida): marca o dia ligado e gera o boletim de ontem. */
+  bulletin: "bulletin.daily",
 } as const;
 
 export type QueueName = (typeof QUEUES)[keyof typeof QUEUES];
