@@ -210,6 +210,7 @@ export async function generateBulletin(deps: BulletinGenDeps, day: DayWindow): P
         maxWords: GOSSIP_WORDS,
         mustMention: mention,
         mustNotMention: [nameKey(duty.name)],
+        strangers: others.filter((o) => !mention.includes(o.name)).map((o) => nameKey(o.name)),
         examples: duty.fofocas,
         source: "fofoca" in input ? input.fofoca : input.o_que,
       },

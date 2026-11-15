@@ -65,9 +65,9 @@ describe("Regra fixa 1: só entra o que qualquer morador já poderia ver", () =>
     expect(JSON.stringify(facts)).not.toMatch(/mensag|message|conversa/i);
   });
 
-  it("para a LLM, o fato curioso leva só quem, o quê e quanto", () => {
+  it("para a LLM, o fato curioso leva só quem e o quê", () => {
     const [f] = curiousFacts([persona("rato", { likes: 5 })], []);
-    expect(Object.keys(factForLlm(f!)).sort()).toEqual(["o_que", "quanto", "quem"]);
+    expect(Object.keys(factForLlm(f!)).sort()).toEqual(["o_que", "quem"]);
   });
 
   it("par com alguém que não é persona é ignorado", () => {

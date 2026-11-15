@@ -4,7 +4,10 @@
  * das recusas e todos os textos. Serve para ajustar os prompts e as frases de exemplo das personas.
  *
  * Uso (com o banco e o Ollama acessíveis):
- *   DATABASE_URL=... OLLAMA_URL=... pnpm --filter @doomscroll/worker avaliar:boletim -- [--dia 2026-11-13] [--amostras 3] [--so rato,kelly]
+ *   DATABASE_URL=... OLLAMA_URL=... pnpm --filter @doomscroll/worker avaliar:boletim -- [--dia 2026-11-13] [--amostras 2] [--so rato,kelly]
+ *
+ * Por persona e amostra: 4 cenários de manchete, os 6 detectores de fato curioso (com o "quanto"
+ * alternando) e 5 pautas sorteadas. Duas amostras com as cinco personas dão 150 textos.
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { parseArgs } from "node:util";
@@ -30,7 +33,7 @@ import {
 const { values: args } = parseArgs({
   options: {
     dia: { type: "string" },
-    amostras: { type: "string", default: "3" },
+    amostras: { type: "string", default: "2" },
     so: { type: "string" },
   },
 });
@@ -73,35 +76,72 @@ async function attempt(prompt: () => string, schema: object, o: Omit<CheckOption
   return out;
 }
 
+/**
+ * Cenários de manchete. A LLM só escreve manchete em dia normal com assunto não sensível (dia
+ * parado, fraco ou sensível usa a frase fixa de "dia parado"), então os cenários variam o tamanho
+ * do estoque, o movimento e os temas novos, mais os fatos reais do dia pedido.
+ */
+const headlineScenarios: [string, object][] = [
+  ["dia real", hf],
+  ["calmo", { assunto_do_dia: "Culinária", estoque: "pouco vídeo novo", temas_novos: [], movimento: "calmo" }],
+  ["agitado", { assunto_do_dia: "Esporte", estoque: "muito vídeo novo", temas_novos: ["Games"], movimento: "agitado" }],
+  ["temas novos", { assunto_do_dia: "Música", estoque: "bastante vídeo novo", temas_novos: ["Ciência", "Dicas", "Animais"], movimento: "normal" }],
+];
+/** Os seis detectores de fato curioso, como saem de gossip.ts. */
+const detectors = [
+  "quase nunca curte nada e ontem saiu curtindo vídeo",
+  "comentou muito mais do que costuma",
+  "falou muito mais que o normal no Grupo do Bunker",
+  "mandou vídeo para meio bunker",
+  "ficou em silêncio o dia todo",
+  "passaram o dia trocando mensagens",
+];
+
+const gossipCheck = (v: BulletinVoice, input: GossipInput, mention: string[]) => ({
+  key: "fofoca" as const,
+  maxWords: GOSSIP_WORDS,
+  mustMention: mention,
+  mustNotMention: [nameKey(v.name)],
+  strangers: voices.filter((o) => o.id !== v.id && !mention.includes(o.name)).map((o) => nameKey(o.name)),
+  examples: v.fofocas,
+  source: "fofoca" in input ? input.fofoca : input.o_que,
+});
+
 for (const v of voices.filter((x) => !only || only.includes(x.nickname))) {
   const others = voices.filter((o) => o.id !== v.id);
   for (let s = 0; s < samples; s++) {
-    lines.push({
-      persona: v.name,
-      kind: "manchete",
-      input: JSON.stringify(hf),
-      attempts: await attempt(() => buildHeadlinePrompt(v, hf, pickExamples(v.manchetes)), headlineSchema, { key: "manchete", maxWords: HEADLINE_WORDS, sameAs: v.manchetes }),
-    });
-    // Uma fofoca de fato curioso (de outra persona) e uma de pauta, por amostra.
-    const other = others[s % others.length] as BulletinVoice;
-    const fact: GossipInput = { quem: other.name, o_que: ["comentou muito mais do que costuma", "quase nunca curte nada e ontem saiu curtindo vídeo", "ficou em silêncio o dia todo"][s % 3]!, quanto: "bem fora do normal" };
-    const pauta = pickPauta(topics, day, others);
-    for (const [kind, input, mention] of [
-      ["fofoca (fato)", fact, [other.name]],
-      ["fofoca (pauta)", { fofoca: pauta?.text ?? "" }, pauta?.personaId ? [others.find((o) => o.id === pauta.personaId)!.name] : []],
-    ] as const) {
+    for (const [name, scenario] of headlineScenarios) {
       lines.push({
         persona: v.name,
-        kind,
+        kind: `manchete (${name})`,
+        input: JSON.stringify(scenario),
+        attempts: await attempt(() => buildHeadlinePrompt(v, scenario, pickExamples(v.manchetes)), headlineSchema, { key: "manchete", maxWords: HEADLINE_WORDS, sameAs: v.manchetes }),
+      });
+    }
+    // Cada detector, com outra persona (ou um par) como assunto.
+    for (const [i, o_que] of detectors.entries()) {
+      const a = others[(s + i) % others.length]!;
+      const b = others[(s + i + 1) % others.length]!;
+      const pair = o_que.startsWith("passaram");
+      const input: GossipInput = { quem: pair ? `${a.name} e ${b.name}` : a.name, o_que };
+      lines.push({
+        persona: v.name,
+        kind: "fofoca (fato)",
         input: JSON.stringify(input),
-        attempts: await attempt(() => buildGossipPrompt(v, input, pickExamples(v.fofocas)), gossipSchema, {
-          key: "fofoca",
-          maxWords: GOSSIP_WORDS,
-          mustMention: mention,
-          mustNotMention: [nameKey(v.name)],
-          examples: v.fofocas,
-          source: "fofoca" in input ? input.fofoca : input.o_que,
-        }),
+        attempts: await attempt(() => buildGossipPrompt(v, input, pickExamples(v.fofocas)), gossipSchema, gossipCheck(v, input, pair ? [a.name, b.name] : [a.name])),
+      });
+    }
+    // Pautas sorteadas como na geração (sem o intervalo de 14 dias: aqui nada é gravado).
+    for (let k = 0; k < 5; k++) {
+      const pauta = pickPauta(topics.map((t) => ({ ...t, lastUsedAt: null })), day, others);
+      if (!pauta) break;
+      const input: GossipInput = { fofoca: pauta.text };
+      const named = others.find((o) => o.id === pauta.personaId);
+      lines.push({
+        persona: v.name,
+        kind: "fofoca (pauta)",
+        input: JSON.stringify(input),
+        attempts: await attempt(() => buildGossipPrompt(v, input, pickExamples(v.fofocas)), gossipSchema, gossipCheck(v, input, named ? [named.name] : [])),
       });
     }
     process.stdout.write(".");
@@ -114,6 +154,21 @@ const any = lines.filter((l) => l.attempts.some((a) => a.reason === null)).lengt
 const reasons = new Map<string, number>();
 for (const l of lines) for (const a of l.attempts) if (a.reason) reasons.set(a.reason, (reasons.get(a.reason) ?? 0) + 1);
 
+function summary(): string[] {
+  const groups = new Map<string, Line[]>();
+  for (const l of lines) {
+    const k = `${l.persona} | ${l.kind.replace(/ \(.*\)$/, "")}`;
+    groups.set(k, [...(groups.get(k) ?? []), l]);
+  }
+  return [...groups].map(([k, ls]) => {
+    const why = new Map<string, number>();
+    for (const l of ls) for (const a of l.attempts) if (a.reason) why.set(a.reason, (why.get(a.reason) ?? 0) + 1);
+    const ok1 = ls.filter((l) => l.attempts[0]!.reason === null).length;
+    const ok2 = ls.filter((l) => l.attempts.some((a) => a.reason === null)).length;
+    return `| ${k} | ${ls.length} | ${ok1} | ${ok2} | ${[...why].map(([r, n]) => `${r} (${n})`).join(", ") || "—"} |`;
+  });
+}
+
 const md = [
   `# Boletim do Bunker: bancada de ${day.date}`,
   "",
@@ -122,10 +177,14 @@ const md = [
   `- Textos: ${lines.length}; válidos de primeira: ${first}; válidos em até duas tentativas: ${any}`,
   `- Recusas: ${[...reasons].map(([r, n]) => `${r} (${n})`).join(", ") || "nenhuma"}`,
   "",
+  "| Persona | Tipo | Textos | De primeira | Em até duas | Recusas |",
+  "|---|---|---|---|---|---|",
+  ...summary(),
+  "",
   ...lines.flatMap((l) => [
     `## ${l.persona} · ${l.kind}`,
     "",
-    l.kind === "manchete" ? "" : `Entrada: \`${l.input}\``,
+    `Entrada: \`${l.input}\``,
     "",
     ...l.attempts.map((a, i) => `${i + 1}. ${a.reason ? `~~${a.text}~~ (${a.reason})` : a.text}`),
     "",

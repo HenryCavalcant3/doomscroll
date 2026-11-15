@@ -200,14 +200,14 @@ describe("job do boletim", () => {
     expect(db.row().headline).toBe("esporte o dia todo");
   });
 
-  it("fato curioso: vai para a LLM só quem, o quê e quanto, e a fofoca precisa citar a persona", async () => {
+  it("fato curioso: vai para a LLM só quem e o quê, e a fofoca precisa citar a persona", async () => {
     const db = new FakeDb();
     db.days.add("2026-11-13");
     db.acts = { personas: [historyFor("p-rato", "Rato", { likes: 6 })], pairs: [] };
     const model = llm(j("manchete", "dia de esporte"), j("fofoca", "alguém curtiu tudo"), j("fofoca", "o Rato quase nunca curte e ontem curtiu vídeo, gente!"));
     await run(db, model);
     expect(db.row()).toMatchObject({ gossip: "o Rato quase nunca curte e ontem curtiu vídeo, gente!", gossipSource: "fato", gossipRef: "curtiu_raro" });
-    expect(model.prompts[1]).toContain('<fofoca>{"quem":"Rato","o_que":"quase nunca curte nada e ontem saiu curtindo vídeo","quanto":"bem fora do normal"}</fofoca>');
+    expect(model.prompts[1]).toContain('<fofoca>{"quem":"Rato","o_que":"quase nunca curte nada e ontem saiu curtindo vídeo"}</fofoca>');
     expect(db.usedPautas).toEqual([]);
   });
 

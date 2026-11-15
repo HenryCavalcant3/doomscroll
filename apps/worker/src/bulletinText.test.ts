@@ -104,6 +104,22 @@ describe("validação da resposta", () => {
     expect(checkLine(ok("manchete", "não rolou nada ontem"), o).ok).toBe(true);
   });
 
+  it("número por extenso só se já estava na pauta", () => {
+    const o = { key: "manchete" as const, maxWords: 14, residents: [] };
+    expect(checkLine(ok("manchete", "onze vídeo novo no estoque."), o)).toEqual({ ok: false, reason: "número por extenso" });
+    expect(checkLine(ok("manchete", "Um dia de vídeo novo no estoque."), o).ok).toBe(true);
+    const f = { key: "fofoca" as const, maxWords: 25, residents: [], source: "O Rato está há três dias com a mesma fita no rádio." };
+    expect(checkLine(ok("fofoca", "Três dias com a mesma fita no rádio, Rato. Três!"), f).ok).toBe(true);
+    expect(checkLine(ok("fofoca", "Dez dias com a mesma fita no rádio do Rato."), f)).toEqual({ ok: false, reason: "número por extenso" });
+  });
+
+  it("fofoca: não devolve a pauta igual nem acrescenta outra persona", () => {
+    const o = { key: "fofoca" as const, maxWords: 25, residents: [], source: "Alguém acabou com o último miojo e não repôs.", strangers: ["rato", "kelly"] };
+    expect(checkLine(ok("fofoca", "alguém acabou com o último miojo e não repôs"), o)).toEqual({ ok: false, reason: "repetiu a pauta" });
+    expect(checkLine(ok("fofoca", "O ajudante do Rato acabou com o último miojo."), o)).toEqual({ ok: false, reason: "acrescentou persona" });
+    expect(checkLine(ok("fofoca", "Acabou o último miojo e ninguém repôs. Vergonha."), o).ok).toBe(true);
+  });
+
   it("a persona de plantão não fala de si", () => {
     expect(nameKey("Tio Valdir")).toBe("valdir");
     expect(nameKey("Capitão Enlatado")).toBe("enlatado");
@@ -143,6 +159,6 @@ describe("reservas", () => {
 
   it("fofoca sem reescrita", () => {
     expect(fallbackGossip({ fofoca: "O gerador roncou." })).toBe("O gerador roncou.");
-    expect(fallbackGossip({ quem: "Kelly", o_que: "comentou muito mais do que costuma", quanto: "bem fora do normal" })).toBe("Kelly comentou muito mais do que costuma.");
+    expect(fallbackGossip({ quem: "Kelly", o_que: "comentou muito mais do que costuma" })).toBe("Kelly comentou muito mais do que costuma.");
   });
 });

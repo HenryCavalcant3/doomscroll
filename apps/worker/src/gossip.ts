@@ -121,11 +121,7 @@ export function pickCuriousFact(personas: readonly PersonaActivity[], pairs: rea
 
 /**
  * O que vai para a LLM reescrever na voz de quem está de plantão: só isto, delimitado como dado.
- * A intensidade vai em português ("quanto"): com o nome do campo, o modelo pequeno escrevia
- * "intensidade alta" no meio da fofoca.
+ * A intensidade fica de fora: como campo, o modelo pequeno a copiava ("intensidade alta", depois
+ * "um pouco fora do normal" no fim de quase toda fofoca). O "o_que" já diz o tamanho da coisa.
  */
-export const factForLlm = (f: CuriousFact) => ({
-  quem: f.quem,
-  o_que: f.o_que,
-  quanto: f.intensidade === "alta" ? "bem fora do normal" : "um pouco fora do normal",
-});
+export const factForLlm = (f: CuriousFact) => ({ quem: f.quem, o_que: f.o_que });
