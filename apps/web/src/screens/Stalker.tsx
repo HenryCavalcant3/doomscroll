@@ -7,6 +7,7 @@ import { ConversationAvatar } from "../components/ConversationAvatar";
 import { Player } from "../components/Player";
 import { PlayIcon } from "./Chat";
 import { chatHref, profileHref, stalkerHref } from "../router";
+import { Voltar } from "../components/Voltar";
 
 const PAGE = 50;
 
@@ -140,11 +141,7 @@ export function StalkerChat({ nickname, id }: { nickname: string; id: string }) 
   return (
     <main className="chat">
       <header className="chat-head">
-        <a className="icon-btn" href={profileHref(nickname)} aria-label="Voltar para o perfil">
-          <svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M15 5l-7 7 7 7" />
-          </svg>
-        </a>
+        <Voltar href={profileHref(nickname)} />
         <span className="chat-who-text">
           <span className="chat-title">
             @{nickname}

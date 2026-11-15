@@ -36,11 +36,41 @@ export const bulletinHref = (date: string) => `#/boletim/${date}`;
 export const profileHref = (nickname: string) => `#/u/${encodeURIComponent(nickname)}`;
 export const stalkerHref = (nickname: string, id: string) => `#/espiar/${encodeURIComponent(nickname)}/${id}`;
 
+/**
+ * Profundidade da entrada no histórico, guardada no próprio history.state: a primeira tela aberta é 0 e
+ * cada troca de hash dentro do app soma 1. Voltar pelo gesto restaura a entrada com a profundidade dela.
+ */
+const depth = (): number => {
+  const d = (window.history.state as { depth?: unknown } | null)?.depth;
+  return typeof d === "number" ? d : 0;
+};
+let lastDepth = 0;
+// A primeira tela aberta ganha a marca 0, para voltar até ela não contar como tela nova.
+if (typeof window !== "undefined") {
+  const state = window.history.state as { depth?: unknown } | null;
+  if (typeof state?.depth === "number") lastDepth = state.depth;
+  else window.history.replaceState({ ...(state ?? {}), depth: 0 }, "");
+}
+function markDepth() {
+  const state = window.history.state as { depth?: unknown } | null;
+  if (typeof state?.depth === "number") lastDepth = state.depth;
+  else {
+    lastDepth += 1;
+    window.history.replaceState({ ...(state ?? {}), depth: lastDepth }, "");
+  }
+}
+
+/** Dá para voltar no histórico sem sair do app. */
+export const canGoBack = () => depth() > 0;
+
 /** Rotas por hash (#/feed, #/u/apelido...): simples e funciona servido por qualquer servidor estático. */
 export function useRoute(): Route {
   const [route, setRoute] = useState(() => parseRoute(window.location.hash));
   useEffect(() => {
-    const onChange = () => setRoute(parseRoute(window.location.hash));
+    const onChange = () => {
+      markDepth();
+      setRoute(parseRoute(window.location.hash));
+    };
     window.addEventListener("hashchange", onChange);
     return () => window.removeEventListener("hashchange", onChange);
   }, []);

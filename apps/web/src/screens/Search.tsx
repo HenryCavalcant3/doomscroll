@@ -3,6 +3,7 @@ import { api, apiUrl, ApiError, type FeedVideo } from "../api";
 import { Barata } from "../components/Barata";
 import { session } from "../router";
 import { VideoViewer } from "./VideoViewer";
+import { Voltar } from "../components/Voltar";
 
 /** A última busca volta ao reabrir a tela (fechou o vídeo, voltou do perfil de alguém). */
 const LAST_QUERY = "doomscroll.busca";
@@ -68,11 +69,7 @@ export function SearchScreen() {
   return (
     <main className="screen busca">
       <form className="busca-topo" onSubmit={submit} role="search">
-        <a className="icon-btn busca-voltar" href="#/feed" aria-label="Voltar ao feed">
-          <svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M15 5l-7 7 7 7" />
-          </svg>
-        </a>
+        <Voltar href="#/feed" className="busca-voltar" />
         <input
           ref={input}
           className="input busca-campo"

@@ -10,6 +10,7 @@ import { Selo } from "../components/Selo";
 import { Player } from "../components/Player";
 import { CloseIcon } from "./Feed";
 import { bulletinHref, profileHref } from "../router";
+import { Voltar } from "../components/Voltar";
 
 const PAGE = 50;
 /** Distância do fim (px) em que a conversa continua grudada nas mensagens novas. */
@@ -207,11 +208,7 @@ export function ChatScreen({ id, me, onRead }: Props) {
   return (
     <main className="chat">
       <header className="chat-head">
-        <a className="icon-btn" href="#/mensagens" aria-label="Voltar para as mensagens">
-          <svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M15 5l-7 7 7 7" />
-          </svg>
-        </a>
+        <Voltar href="#/mensagens" />
         {conv &&
           (group ? (
             <button className="chat-who chat-who-btn" onClick={() => setMembersOpen(true)} aria-haspopup="dialog">

@@ -454,7 +454,8 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
 .entrada-rodape { margin: 16px 0 0; font-size: 13px; line-height: 1.45; color: var(--muted); text-align: center; }
 
 /* Perfil (wireframe persona) */
-.profile { gap: 0; padding-top: 28px; }
+.profile { gap: 0; padding-top: 28px; position: relative; }
+.profile-voltar { position: absolute; top: 8px; left: 8px; color: var(--fg); }
 .profile-head {
   display: flex;
   flex-direction: column;
@@ -977,6 +978,7 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
   .foto-op img { transition: none; }
 }
 .dono-topo { display: flex; align-items: center; gap: 14px; }
+.dono-voltar { flex: none; margin-left: -12px; margin-right: -6px; color: var(--fg); }
 
 /* Selo ao lado do apelido (Selo.tsx), como um "verificado": chave do dono, robô das personas */
 .selo { display: inline-block; flex: none; margin-left: 4px; vertical-align: -0.15em; border-radius: 50%; }

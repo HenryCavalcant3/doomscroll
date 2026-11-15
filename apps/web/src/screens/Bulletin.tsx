@@ -5,6 +5,7 @@ import { Avatar } from "../components/Avatar";
 import { Barata } from "../components/Barata";
 import { chatHref } from "../router";
 import { VideoViewer } from "./VideoViewer";
+import { Voltar } from "../components/Voltar";
 
 type State = { state: "loading" } | { state: "missing" } | { state: "error" } | { state: "ok"; bulletin: Bulletin };
 
@@ -43,11 +44,7 @@ export function BulletinScreen({ date }: { date: string }) {
   return (
     <div className="boletim">
       <header className="foto-topo">
-        <a className="icon-btn" href="#/feed" aria-label="Voltar ao feed">
-          <svg width={24} height={24} viewBox="0 0 24 24" aria-hidden="true">
-            <polyline points="15,5 8,12 15,19" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </a>
+        <Voltar href="#/feed" />
         <div className="foto-topo-titulo">Boletim do Bunker</div>
       </header>
 

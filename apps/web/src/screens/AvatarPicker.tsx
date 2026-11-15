@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { api, ApiError, type User } from "../api";
 import { avatarSrc, DEFAULT_AVATAR, MORADOR_AVATARS } from "../avatars";
 import { Avatar } from "../components/Avatar";
+import { Voltar } from "../components/Voltar";
 
 interface Props {
   me: User;
@@ -34,11 +35,7 @@ export function AvatarPicker({ me, submitLabel, backHref, onSaved }: Props) {
     <div className="foto">
       <header className="foto-topo">
         {backHref && (
-          <a className="icon-btn" href={backHref} aria-label="Voltar">
-            <svg width={24} height={24} viewBox="0 0 24 24" aria-hidden="true">
-              <polyline points="15,5 8,12 15,19" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </a>
+          <Voltar href={backHref} />
         )}
         <div className="foto-topo-titulo">Foto de perfil</div>
       </header>

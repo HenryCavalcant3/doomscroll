@@ -4,6 +4,7 @@ import { Avatar } from "../components/Avatar";
 import { VideoViewer } from "./VideoViewer";
 import { chatHref } from "../router";
 import { StalkerList } from "./Stalker";
+import { Voltar } from "../components/Voltar";
 
 type Tab = "curtidos" | "stalker";
 
@@ -72,6 +73,7 @@ export function ProfileScreen({ nickname, me, onLogout }: Props) {
   const title = profile.name ?? profile.nickname;
   return (
     <main className="screen profile">
+      {!own && <Voltar href="#/feed" className="profile-voltar" />}
       <header className="profile-head">
         <Avatar who={profile} size={88} className="profile-avatar" />
         <h1>{title}</h1>

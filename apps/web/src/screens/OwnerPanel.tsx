@@ -4,6 +4,7 @@ import { shortTime } from "../chat";
 import { Avatar } from "../components/Avatar";
 import { decisionText, reasonsText } from "../decisions";
 import { profileHref } from "../router";
+import { Voltar } from "../components/Voltar";
 
 type Tab = "fila" | "topicos" | "pautas" | "personas";
 
@@ -23,6 +24,7 @@ export function OwnerPanel({ me }: { me: User }) {
   return (
     <main className="screen">
       <header className="dono-topo">
+        <Voltar href="#/perfil" className="dono-voltar" />
         <Avatar who={me} size={64} />
         <div>
           <h1>Painel do dono</h1>
