@@ -226,7 +226,7 @@ Os commits seguem [Conventional Commits](https://www.conventionalcommits.org/pt-
 ## Próximos passos
 
 - **Depois da versão 1.0:** painel visual das decisões das personas e persona criada pelo usuário, num formato ainda a definir.
-- **Melhorias em estudo:** um único player de vídeo reaproveitado no feed, links curtos do TikTok reconhecidos como repetidos, a voz do Rato, perfis de configuração (leve, equilibrado, GPU) com tempos medidos e um teste com o `qwen2.5:7b`.
+- **Melhorias em estudo:** um único player de vídeo reaproveitado no feed, a voz do Rato, perfis de configuração (leve, equilibrado, GPU) com tempos medidos e um teste com o `qwen2.5:7b`.
 
 ## Sobre as personas
 
