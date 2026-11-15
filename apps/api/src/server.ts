@@ -15,6 +15,7 @@ import { PgChatStore } from "./chat.js";
 import { chatStream, embed } from "./ollama.js";
 import { CHAT_OPTIONS, PersonaReplier, PgPersonaChatStore, type ChatGenerator } from "./personaChat.js";
 import { PersonaTalker, PgTalkStore, type TalkJob } from "./personaTalk.js";
+import { PgBulletinStore } from "./bulletin.js";
 import { Hub } from "./realtime.js";
 
 const config = readConfig();
@@ -104,6 +105,7 @@ const app = buildApp({
   removeMedia: (id) => removeVideoMedia(config.mediaDir, id),
   // Busca: curta, quem buscou está esperando; sem resposta a tempo, vai só pelas palavras.
   embed: (text) => embed({ baseUrl: config.ollamaUrl, model: config.embedModel, text, timeoutMs: 5_000 }),
+  bulletins: new PgBulletinStore(pool),
 });
 
 const shutdown = async () => {

@@ -2,6 +2,7 @@ import fastifyStatic from "@fastify/static";
 import fastifyWebsocket from "@fastify/websocket";
 import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
 import { GROUP_MAX_MEMBERS, MESSAGES_PAGE, REACTIONS, type ChatStore, type MessageContent } from "./chat.js";
+import { DATE, dayRange, fullView, summary, type BulletinStore } from "./bulletin.js";
 import { bearerToken, hashToken, LoginLimiter, newToken, NICKNAME, normalizeNickname, PIN } from "./auth.js";
 import type { Config } from "./config.js";
 import { parseVideoLink } from "./links.js";
@@ -49,6 +50,8 @@ export interface AppDeps {
   personas?: PersonaChatStore;
   /** Embedding da frase buscada (sem ele, ou se falhar, a busca usa só as palavras). */
   embed?: (text: string) => Promise<number[]>;
+  /** Boletim do Bunker (sem ele, não há boletim). */
+  bulletins?: BulletinStore;
 }
 
 const LOGIN_WINDOW_MS = 15 * 60_000;
@@ -88,6 +91,7 @@ export function buildApp({
   replier,
   personas,
   embed,
+  bulletins,
 }: AppDeps) {
   const app = Fastify({ logger });
   app.addHook("onClose", async () => replier?.close());
@@ -256,6 +260,25 @@ export function buildApp({
     });
 
     priv.get("/auth/eu", async (req) => req.user);
+
+    // Boletim do Bunker: o mais recente (cartão do feed) e a tela completa de um dia.
+    // Enquanto não está pronto, nada aparece: 204 sem corpo.
+    priv.get("/boletim", async (_req, reply) => {
+      const b = await bulletins?.latest();
+      return b ? summary(b) : reply.code(204).send();
+    });
+
+    priv.get<{ Params: { date: string } }>(
+      "/boletim/:date",
+      { schema: { params: { type: "object", required: ["date"], properties: { date: { type: "string", pattern: DATE.source } } } } },
+      async (req, reply) => {
+        const b = await bulletins?.get(req.params.date);
+        if (!bulletins || !b) return reply.code(404).send({ error: "Esse boletim não existe." });
+        const { start, end } = dayRange(b.date);
+        const [top] = b.facts.maisCurtido ? await store.feedVideos(req.user.id, [b.facts.maisCurtido.videoId]) : [];
+        return fullView(b, top ?? null, await bulletins.myDay(req.user.id, start, end), await bulletins.bunkerId());
+      },
+    );
 
     // Foto de perfil do morador: só o nome do item (avatars.ts). Personas não entram (não têm sessão).
     priv.put<{ Body: { avatar: string } }>(

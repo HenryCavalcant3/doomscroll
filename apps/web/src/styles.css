@@ -971,3 +971,76 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
 /* Chave do dono ao lado do apelido (OwnerKey.tsx), como um "verificado" */
 .owner-key { display: inline-block; flex: none; margin-left: 4px; vertical-align: -0.15em; border-radius: 50%; }
 .msg-sender .owner-key { margin-left: -2px; }
+
+/* Boletim do Bunker, tela completa (docs/boletim/telas/boletim.html) */
+.boletim { flex: 1; display: flex; flex-direction: column; }
+.boletim .estado { justify-content: center; }
+.boletim-estado-titulo { margin: 20px 0 0; font-size: 22px; font-weight: 700; line-height: 1.2; }
+.boletim-estado-btn { margin-top: 20px; display: inline-flex; align-items: center; text-decoration: none; }
+.boletim-main { display: flex; flex-direction: column; padding: 20px 24px calc(28px + var(--safe-bottom)); }
+.boletim-data { margin: 0; font-size: 14px; line-height: 1.4; color: var(--muted); }
+.boletim-plantao { margin-top: 16px; display: flex; align-items: center; gap: 12px; }
+.boletim-anel { box-shadow: 0 0 0 1px var(--field-line); }
+.boletim-plantao-rotulo { font-size: 13px; line-height: 1.3; color: var(--muted); }
+.boletim-plantao-nome { font-size: 16px; font-weight: 700; line-height: 1.3; }
+.boletim-ia {
+  margin-left: 4px;
+  padding: 2px 8px;
+  background: var(--accent);
+  color: var(--on-accent);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  vertical-align: 2px;
+}
+.boletim-manchete { margin: 16px 0 0; font-size: 28px; font-weight: 700; line-height: 1.12; letter-spacing: -0.8px; overflow-wrap: anywhere; }
+.boletim-secao { margin: 28px 0 10px; font-size: 13px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); }
+.boletim-cartao { padding: 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; }
+.boletim-grande { display: flex; align-items: baseline; gap: 10px; }
+.boletim-grande-num { font-size: 44px; font-weight: 700; line-height: 1; color: var(--accent); letter-spacing: -1.5px; }
+.boletim-grande-rotulo { font-size: 16px; font-weight: 700; }
+.boletim-vazio { margin: 0; font-size: 16px; font-weight: 700; line-height: 1.3; }
+.boletim-chips { margin: 12px 0 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 8px; }
+.boletim-chips li { padding: 5px 12px; border: 1px solid var(--fg); border-radius: 999px; font-size: 13px; }
+.boletim-chips strong { color: var(--accent); }
+.boletim-dl { margin: 14px 0 0; display: flex; flex-direction: column; gap: 8px; font-size: 14px; line-height: 1.4; }
+.boletim-dl > div { display: flex; justify-content: space-between; gap: 12px; }
+.boletim-dl dt { color: var(--muted); }
+.boletim-dl dd { margin: 0; font-weight: 700; text-align: right; overflow-wrap: anywhere; }
+.boletim-divisao { margin-top: 10px; font-size: 13px; }
+.boletim-divisao dd { font-weight: 400; color: var(--muted); }
+.boletim-tiles { display: flex; gap: 8px; }
+.boletim-tiles-dentro { margin-top: 12px; }
+.boletim-tile { flex: 1; min-width: 0; padding: 12px 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; text-align: center; }
+.boletim-tile-num { font-size: 26px; font-weight: 700; line-height: 1.1; color: var(--accent); letter-spacing: -0.5px; }
+.boletim-tile-texto { font-size: 18px; line-height: 1.6; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.boletim-tile-rotulo { margin-top: 2px; font-size: 12px; line-height: 1.3; color: var(--muted); }
+.boletim-assunto { font-size: 22px; font-weight: 700; line-height: 1.2; }
+.boletim-sub { margin: 2px 0 0; font-size: 14px; line-height: 1.4; color: var(--muted); }
+.boletim-video { margin-top: 14px; display: flex; gap: 14px; }
+.boletim-thumb {
+  position: relative;
+  width: 84px;
+  height: 148px;
+  flex: none;
+  padding: 0;
+  background: var(--bg);
+  border: 1px solid var(--field-line);
+  border-radius: 12px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.boletim-thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.boletim-thumb svg { position: relative; filter: drop-shadow(0 0 4px rgb(0 0 0 / 0.6)); }
+.boletim-video-info { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.boletim-video-rotulo { font-size: 12px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--accent); }
+.boletim-video-desc { flex: 1; margin: 4px 0 8px; font-size: 14px; line-height: 1.4; }
+.boletim-btn { margin-top: auto; width: 100%; border-radius: 10px; display: flex; align-items: center; justify-content: center; color: var(--fg); text-decoration: none; }
+.boletim-nota { margin: 10px 0 0; font-size: 13px; line-height: 1.4; color: var(--muted); }
+.boletim-aspas { display: block; }
+.boletim-fofoca { margin: 10px 0 0; font-size: 18px; font-weight: 700; line-height: 1.3; }
+.boletim-assinatura { margin-top: 12px; display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+.boletim-grupo { margin-top: 14px; }
+.boletim-privado { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }

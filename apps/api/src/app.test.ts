@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { BulletinRecord, BulletinStore, StoredFacts } from "./bulletin.js";
 import { buildApp, slugify, type JobQueue } from "./app.js";
 import { readConfig } from "./config.js";
 import {
@@ -1596,5 +1597,123 @@ describe("personas entre si", () => {
     expect(res.statusCode).toBe(202);
     expect(queue.send).toHaveBeenCalledWith(QUEUES.personaTick, {});
     expect((await a().inject({ method: "POST", url: "/owner/personas/tique", headers: await auth("bia", "555555") })).statusCode).toBe(403);
+  });
+});
+
+describe("Boletim do Bunker", () => {
+  const facts = (videoId: string | null, sensitive = false): StoredFacts => ({
+    estoque: {
+      novos: 7,
+      topicos: [{ slug: "humor", name: "Humor", count: 3 }],
+      abastecedores: ["dono"],
+      inaugurados: [{ slug: "comida", name: "Comida" }],
+      autonomiaSegundos: 13_200,
+    },
+    movimento: { curtidas: { total: 42, moradores: 30, personas: 12 }, comentarios: { total: 18, moradores: 10, personas: 8 }, moradores: 5 },
+    assunto: { slug: sensitive ? "politica" : "humor", name: sensitive ? "Política" : "Humor", sensitive },
+    maisCurtido: videoId ? { videoId } : null,
+  });
+  const record = (date: string, f: StoredFacts): BulletinRecord => ({
+    date,
+    status: "pronto",
+    persona: { nickname: "rato", avatar: "rato.svg", is_ai: true, role: "resident", name: "Rato" },
+    facts: f,
+    headline: "o bunker falou de futebol. de novo.",
+    gossip: "a kelly comentou em tudo.",
+  });
+
+  class MemoryBulletins implements BulletinStore {
+    list: BulletinRecord[] = [];
+    days: { userId: string; start: Date; end: Date }[] = [];
+    async latest() {
+      return [...this.list].sort((a, b) => b.date.localeCompare(a.date))[0] ?? null;
+    }
+    async get(date: string) {
+      return this.list.find((b) => b.date === date) ?? null;
+    }
+    async myDay(userId: string, start: Date, end: Date) {
+      this.days.push({ userId, start, end });
+      return { videosVistos: userId === "u-dono" ? 23 : 1, curtidas: 6, tema: "Humor" };
+    }
+    async bunkerId() {
+      return "c-bunker";
+    }
+  }
+
+  let bulletins: MemoryBulletins;
+  const bApp = () => buildApp({ config, store, chat, hub, queue, bulletins });
+  beforeEach(() => {
+    bulletins = new MemoryBulletins();
+  });
+
+  async function topVideo() {
+    const id = await store.createVideo("https://youtu.be/boletim", "youtube", "u-dono");
+    Object.assign(store.videos.get(id)!, { status: "aprovado", videoUrl: `/media/${id}/video.mp4`, title: "Gato" });
+    return id;
+  }
+
+  it("sem boletim pronto, nada aparece (204) e o dia pedido não existe (404)", async () => {
+    const headers = await auth();
+    expect((await bApp().inject({ method: "GET", url: "/boletim", headers })).statusCode).toBe(204);
+    expect((await bApp().inject({ method: "GET", url: "/boletim/2026-11-13", headers })).statusCode).toBe(404);
+    expect((await bApp().inject({ method: "GET", url: "/boletim/ontem", headers })).statusCode).toBe(400);
+    expect((await buildApp({ config, store, chat, hub, queue }).inject({ method: "GET", url: "/boletim", headers })).statusCode).toBe(204);
+  });
+
+  it("o resumo (cartão e grupo) traz manchete, plantão e três números, sem vídeo", async () => {
+    const headers = await auth();
+    bulletins.list.push(record("2026-11-12", facts(null)), record("2026-11-13", facts(await topVideo())));
+    const res = await bApp().inject({ method: "GET", url: "/boletim", headers });
+    expect(res.json()).toEqual({
+      date: "2026-11-13",
+      status: "pronto",
+      persona: { nickname: "rato", avatarUrl: "/avatars/rato.svg", avatar: null, isAi: true, owner: false, name: "Rato" },
+      headline: "o bunker falou de futebol. de novo.",
+      numeros: { videosNovos: 7, curtidas: 42, moradores: 5 },
+    });
+  });
+
+  it("tela completa: fatos, o mais curtido como vídeo do feed, o grupo e o seu dia de quem pede", async () => {
+    const headers = await auth();
+    const id = await topVideo();
+    bulletins.list.push(record("2026-11-13", facts(id)));
+    const b = (await bApp().inject({ method: "GET", url: "/boletim/2026-11-13", headers })).json();
+    expect(b).toMatchObject({
+      gossip: "a kelly comentou em tudo.",
+      estoque: { novos: 7, topicos: [{ name: "Humor", count: 3 }], abastecedores: ["dono"], inaugurados: ["Comida"], autonomiaSegundos: 13_200 },
+      movimento: { curtidas: { total: 42, moradores: 30, personas: 12 } },
+      assunto: { name: "Humor" },
+      maisCurtido: { id, videoUrl: `/media/${id}/video.mp4`, liked: false },
+      seuDia: { videosVistos: 23, curtidas: 6, tema: "Humor" },
+      grupoId: "c-bunker",
+    });
+    // O "Seu dia" cobre o dia do boletim, da meia-noite local à seguinte.
+    expect(bulletins.days).toEqual([{ userId: "u-dono", start: new Date(2026, 10, 13), end: new Date(2026, 10, 14) }]);
+  });
+
+  it("Regra fixa 2: o único vídeo é o mais curtido, e nenhum quando o assunto é sensível", async () => {
+    const headers = await auth();
+    const id = await topVideo();
+    bulletins.list.push(record("2026-11-13", facts(id)), record("2026-11-14", facts(id, true)));
+    const uuids = (body: string) => new Set(body.match(/[0-9a-f-]{36}/g) ?? []);
+    expect(uuids((await bApp().inject({ method: "GET", url: "/boletim/2026-11-13", headers })).body)).toEqual(new Set([id]));
+    const sensitive = (await bApp().inject({ method: "GET", url: "/boletim/2026-11-14", headers })).json();
+    expect(sensitive.maisCurtido).toBeNull();
+    expect(sensitive.assunto).toEqual({ name: "Política" });
+    expect((await bApp().inject({ method: "GET", url: "/boletim", headers })).body).not.toContain(id);
+  });
+
+  it("Regra fixa 5: o seu dia é de quem pede, e o resumo não leva consumo de ninguém", async () => {
+    bulletins.list.push(record("2026-11-13", facts(null)));
+    const dono = (await bApp().inject({ method: "GET", url: "/boletim/2026-11-13", headers: await auth() })).json();
+    const outro = (await bApp().inject({ method: "GET", url: "/boletim/2026-11-13", headers: await auth("morador", "111111") })).json();
+    expect(dono.seuDia.videosVistos).toBe(23);
+    expect(outro.seuDia.videosVistos).toBe(1);
+    expect(bulletins.days.map((d) => d.userId)).toEqual(["u-dono", expect.not.stringMatching("u-dono")]);
+    expect((await bApp().inject({ method: "GET", url: "/boletim", headers: await auth() })).json()).not.toHaveProperty("seuDia");
+  });
+
+  it("precisa de sessão", async () => {
+    expect((await bApp().inject({ method: "GET", url: "/boletim" })).statusCode).toBe(401);
   });
 });

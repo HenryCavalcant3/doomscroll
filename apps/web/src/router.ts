@@ -11,7 +11,9 @@ export type Route =
   /** Perfil de outra pessoa ou persona: #/u/<apelido>. */
   | { name: "usuario"; nickname: string }
   /** Modo stalker, conversa entre personas: #/espiar/<apelido>/<id>. */
-  | { name: "espiar"; nickname: string; id: string };
+  | { name: "espiar"; nickname: string; id: string }
+  /** Boletim do Bunker de um dia: #/boletim/AAAA-MM-DD. */
+  | { name: "boletim"; date: string };
 
 const SIMPLE = ["feed", "adicionar", "mensagens", "perfil", "dono", "buscar", "certificado"] as const;
 
@@ -22,12 +24,15 @@ export function parseRoute(hash: string): Route {
   if (user) return { name: "usuario", nickname: decodeURIComponent(user[1]!) };
   const spy = /^espiar\/([^/]+)\/([0-9a-f-]{36})$/i.exec(path);
   if (spy) return { name: "espiar", nickname: decodeURIComponent(spy[1]!), id: spy[2]! };
+  const bulletin = /^boletim\/(\d{4}-\d{2}-\d{2})$/.exec(path);
+  if (bulletin) return { name: "boletim", date: bulletin[1]! };
   const chat = /^chat\/([0-9a-f-]{36})$/i.exec(path);
   if (chat) return { name: "chat", id: chat[1]! };
   return (SIMPLE as readonly string[]).includes(path) ? { name: path as (typeof SIMPLE)[number] } : { name: "feed" };
 }
 
 export const chatHref = (id: string) => `#/chat/${id}`;
+export const bulletinHref = (date: string) => `#/boletim/${date}`;
 export const profileHref = (nickname: string) => `#/u/${encodeURIComponent(nickname)}`;
 export const stalkerHref = (nickname: string, id: string) => `#/espiar/${encodeURIComponent(nickname)}/${id}`;
 

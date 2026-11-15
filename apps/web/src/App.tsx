@@ -8,6 +8,7 @@ import { Realtime, wsUrl } from "./realtime";
 import { useRoute } from "./router";
 import { AddVideo } from "./screens/AddVideo";
 import { AvatarPicker } from "./screens/AvatarPicker";
+import { BulletinScreen } from "./screens/Bulletin";
 import { Certificado } from "./screens/Certificado";
 import { ChatScreen } from "./screens/Chat";
 import { Enter } from "./screens/Enter";
@@ -161,6 +162,7 @@ export function App() {
         {route.name === "mensagens" && <Messages me={me} />}
         {route.name === "chat" && <ChatScreen key={route.id} id={route.id} me={me} onRead={refreshUnread} />}
         {route.name === "dono" && <OwnerPanel me={me} />}
+        {route.name === "boletim" && <BulletinScreen key={route.date} date={route.date} />}
         {route.name === "foto" && (
           <AvatarPicker
             me={me}
@@ -177,8 +179,8 @@ export function App() {
           <ProfileScreen key={route.nickname} nickname={route.nickname} me={me} onLogout={logout} />
         )}
         {route.name === "espiar" && <StalkerChat key={route.id} nickname={route.nickname} id={route.id} />}
-        {/* A conversa ocupa a tela toda, com o campo de mensagem no lugar da navegação. */}
-        {route.name !== "chat" && route.name !== "espiar" && route.name !== "foto" && <BottomNav route={route} unread={unread} />}
+        {/* A conversa e o boletim ocupam a tela toda, sem a navegação. */}
+        {route.name !== "chat" && route.name !== "espiar" && route.name !== "foto" && route.name !== "boletim" && <BottomNav route={route} unread={unread} />}
       </div>
     </RealtimeContext.Provider>
   );

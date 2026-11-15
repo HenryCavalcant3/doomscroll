@@ -63,6 +63,36 @@ export interface Profile extends User {
   liked: FeedVideo[];
 }
 
+/** Contagem com a divisão entre moradores e personas. */
+export interface Split {
+  total: number;
+  moradores: number;
+  personas: number;
+}
+
+/** Boletim do Bunker, resumo (cartão do feed e mensagem do grupo). */
+export interface BulletinSummary {
+  /** AAAA-MM-DD, o dia coberto (ontem, quando sai). */
+  date: string;
+  status: "pronto" | "curto";
+  persona: Author & { name: string };
+  headline: string;
+  numeros: { videosNovos: number; curtidas: number; moradores: number };
+}
+
+/** Boletim do Bunker, tela completa. */
+export interface Bulletin extends BulletinSummary {
+  gossip: string | null;
+  estoque: { novos: number; topicos: { name: string; count: number }[]; abastecedores: string[]; inaugurados: string[]; autonomiaSegundos: number };
+  movimento: { curtidas: Split; comentarios: Split; moradores: number };
+  assunto: { name: string } | null;
+  /** O mais curtido do dia: o único vídeo do boletim (null se não houve ou se o tema é sensível). */
+  maisCurtido: FeedVideo | null;
+  /** Só de quem está lendo; não fica guardado no boletim. */
+  seuDia: { videosVistos: number; curtidas: number; tema: string | null };
+  grupoId: string | null;
+}
+
 export interface Login {
   token: string;
   user: User;
@@ -213,6 +243,9 @@ export const api = {
   logout: () => request<void>("/auth/sair", { method: "POST" }),
   setAvatar: (avatar: string) => request<User>("/auth/eu/avatar", { method: "PUT", body: { avatar } }),
   topics: () => request<Topic[]>("/topics"),
+  /** O boletim mais recente; null enquanto nenhum ficou pronto (a api responde 204). */
+  latestBulletin: () => request<BulletinSummary | Record<string, never>>("/boletim").then((b) => ("date" in b ? (b as BulletinSummary) : null)),
+  bulletin: (date: string) => request<Bulletin>(`/boletim/${date}`),
   feed: (exclude: string[]) => request<FeedPage>("/feed", { method: "POST", body: { exclude } }),
   search: (q: string) => request<{ videos: FeedVideo[]; semantic: boolean }>(`/videos/busca?q=${encodeURIComponent(q)}`),
   comments: (videoId: string) => request<Comment[]>(`/videos/${videoId}/comments`),
