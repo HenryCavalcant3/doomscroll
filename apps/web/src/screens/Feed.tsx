@@ -4,7 +4,7 @@ import { conversationTitle } from "../chat";
 import { Avatar } from "../components/Avatar";
 import { BulletinCard } from "../components/BulletinCard";
 import { ConversationAvatar } from "../components/ConversationAvatar";
-import { OwnerKey } from "../components/OwnerKey";
+import { Selo } from "../components/Selo";
 import { Zerou } from "../components/Zerou";
 import { appendPage, initialFeed, needsMore, patchVideo, withBulletin, type FeedState } from "../feedQueue";
 import { profileHref } from "../router";
@@ -390,7 +390,7 @@ export function FeedItem({ index, video, active, mounted, muted, onUnmute, onSta
         {video.author && (
           <a className="feed-author" href={profileHref(video.author.nickname)}>
             @{video.author.nickname}
-            <OwnerKey who={video.author} size={18} />
+            <Selo who={video.author} size={18} />
           </a>
         )}
         {video.description && <p className="feed-desc">{video.description}</p>}
@@ -479,7 +479,7 @@ export function CommentsDrawer({ video, onClose, onCommented }: DrawerProps) {
                 <div>
                   <a className="comment-author" href={profileHref(c.author.nickname)}>
                     @{c.author.nickname}
-                    <OwnerKey who={c.author} size={14} />
+                    <Selo who={c.author} size={14} />
                   </a>
                   <p>{c.text}</p>
                 </div>

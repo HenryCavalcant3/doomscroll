@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, apiUrl, ApiError, type Conversation, type Message, type SharedVideo } from "../api";
 import { groupReactions, mergeMessages, shortTime } from "../chat";
 import { Avatar } from "../components/Avatar";
+import { Selo } from "../components/Selo";
 import { ConversationAvatar } from "../components/ConversationAvatar";
 import { Player } from "../components/Player";
 import { PlayIcon } from "./Chat";
@@ -48,6 +49,7 @@ export function StalkerList({ nickname, name }: { nickname: string; name: string
                 <span className="inbox-text">
                   <span className="inbox-name">
                     {name} e @{other?.nickname ?? "?"}
+                    <Selo who={other} />
                   </span>
                   <span className="inbox-preview">{stalkerPreview(c)}</span>
                 </span>
@@ -168,6 +170,7 @@ export function StalkerChat({ nickname, id }: { nickname: string; id: string }) 
               {showSender && (
                 <a className="msg-sender" href={profileHref(m.sender.nickname)}>
                   <Avatar who={m.sender} size={20} />@{m.sender.nickname}
+                  <Selo who={m.sender} size={14} />
                 </a>
               )}
               {m.video ? (

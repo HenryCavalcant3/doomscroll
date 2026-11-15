@@ -27,3 +27,4 @@ export const avatarSrc = (name: string | null | undefined) => `/avatares/${name 
 
 export const OWNER_FRAME_SRC = "/avatares/dono/moldura.svg";
 export const OWNER_KEY_SRC = "/avatares/dono/selo-chave.svg";
+export const PERSONA_ROBOT_SRC = "/avatares/persona/selo-robo.svg";

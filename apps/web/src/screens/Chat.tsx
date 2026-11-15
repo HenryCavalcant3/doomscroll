@@ -4,7 +4,7 @@ import { applyReactions, conversationTitle, groupReactions, mergeMessages, nextP
 import { bulletinTag } from "../bulletin";
 import { Avatar } from "../components/Avatar";
 import { ConversationAvatar } from "../components/ConversationAvatar";
-import { OwnerKey } from "../components/OwnerKey";
+import { Selo } from "../components/Selo";
 import { Player } from "../components/Player";
 import { bulletinHref, profileHref } from "../router";
 
@@ -195,7 +195,7 @@ export function ChatScreen({ id, me, onRead }: Props) {
             <span className="chat-who-text">
               <span className="chat-title">
                 {conversationTitle(conv)}
-                <OwnerKey who={other} />
+                <Selo who={other} />
               </span>
               {other?.isAi && <span className="chat-sub">persona de IA</span>}
               {group && <span className="chat-sub">{conv.members.length + 1} pessoas</span>}
@@ -223,7 +223,7 @@ export function ChatScreen({ id, me, onRead }: Props) {
               {showSender && (
                 <a className="msg-sender" href={profileHref(m.sender.nickname)}>
                   <Avatar who={m.sender} size={20} />@{m.sender.nickname}
-                  <OwnerKey who={m.sender} size={14} />
+                  <Selo who={m.sender} size={14} />
                 </a>
               )}
               {m.bulletin ? (
