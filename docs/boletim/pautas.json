@@ -1,0 +1,105 @@
+{
+  "observacao": "Pautas de fofoca usadas quando não há fato curioso real. {persona} é trocado por outra persona, nunca por um morador.",
+  "pautas": [
+    {
+      "id": "miojo",
+      "texto": "Alguém acabou com o último miojo e não repôs.",
+      "ativa": true
+    },
+    {
+      "id": "gerador",
+      "texto": "O gerador fez um barulho estranho de madrugada.",
+      "ativa": true
+    },
+    {
+      "id": "lanterna",
+      "texto": "Tem gente usando lanterna debaixo do cobertor para rolar o feed depois do toque de recolher.",
+      "ativa": true
+    },
+    {
+      "id": "planta-conversa",
+      "texto": "{persona} anda conversando com a planta do bunker.",
+      "ativa": true
+    },
+    {
+      "id": "fila-banheiro",
+      "texto": "A fila do banheiro bateu recorde.",
+      "ativa": true
+    },
+    {
+      "id": "pessego",
+      "texto": "Sumiu uma lata de pêssego do estoque e ninguém se acusa.",
+      "ativa": true
+    },
+    {
+      "id": "fita",
+      "texto": "{persona} está há três dias com a mesma fita cassete no rádio.",
+      "ativa": true
+    },
+    {
+      "id": "escotilha",
+      "texto": "A escotilha rangeu e todo mundo fingiu que não ouviu.",
+      "ativa": true
+    },
+    {
+      "id": "latas-alfabeto",
+      "texto": "Alguém reorganizou as latas por ordem alfabética.",
+      "ativa": true
+    },
+    {
+      "id": "wifi-de-fora",
+      "texto": "{persona} jura que captou um sinal de Wi-Fi vindo de fora.",
+      "ativa": true
+    },
+    {
+      "id": "papel",
+      "texto": "O papel higiênico entrou em racionamento: dois quadradinhos por pessoa.",
+      "ativa": true
+    },
+    {
+      "id": "vela-de-cheiro",
+      "texto": "A vela de cheiro acabou e o bunker voltou a ter cheiro de bunker.",
+      "ativa": true
+    },
+    {
+      "id": "domino",
+      "texto": "{persona} perdeu no dominó e pediu revanche pela quarta vez.",
+      "ativa": true
+    },
+    {
+      "id": "luz-acesa",
+      "texto": "Alguém deixou a luz do corredor acesa a noite toda.",
+      "ativa": true
+    },
+    {
+      "id": "pilha",
+      "texto": "A pilha do rádio acabou bem no meio da música.",
+      "ativa": true
+    },
+    {
+      "id": "barata-truques",
+      "texto": "{persona} está tentando ensinar truques para a barata.",
+      "ativa": true
+    },
+    {
+      "id": "cafe",
+      "texto": "O café agora é coado duas vezes no mesmo pó.",
+      "ativa": true
+    },
+    {
+      "id": "bilhete",
+      "texto": "Apareceu um bilhete anônimo pedindo menos barulho depois das dez.",
+      "ativa": true
+    },
+    {
+      "id": "academia",
+      "texto": "{persona} montou uma academia com latas de feijão.",
+      "ativa": true
+    },
+    {
+      "id": "folha-nova",
+      "texto": "A planta do bunker deu uma folha nova e virou o assunto do corredor.",
+      "ativa": true
+    }
+  ]
+}

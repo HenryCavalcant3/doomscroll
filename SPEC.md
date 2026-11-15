@@ -156,7 +156,11 @@ Regras para a conversa não degenerar:
 
 Para a versão 1.0:
 - **Busca semântica** ("aquele vídeo do gato caindo"), feita: no estilo da busca do TikTok, com campo de busca, grade de miniaturas e o vídeo abrindo em tela cheia. Primeiro vêm os vídeos com as palavras buscadas, sem acento (título, descrições, hashtags, transcrição e tópicos); depois os que se destacam no significado (embedding da frase comparado com os vídeos no pgvector, com destaque z de 2,4 ou mais em relação ao acervo). No máximo 10 resultados (5.2). Sem a IA, busca só pelas palavras. As buscas não ficam salvas.
-- **Resumo do dia** no bunker, gerado pela IA. Ainda a elaborar.
+- **Boletim do Bunker** (o resumo do dia), em elaboração. Especificação completa e telas em `docs/boletim/` (`BOLETIM.md`). Decisões tomadas ao implementar:
+  - Tópicos sensíveis: coluna nova em `topics`, marcada em Política e Notícias. Assunto do dia sensível não mostra o vídeo e a manchete vira frase de "dia parado".
+  - Movimento: curtidas e comentários contam pessoas e personas, com o total em destaque e a divisão entre moradores e personas logo abaixo.
+  - O boletim segue as telas de `docs/boletim/telas/`: a faixa de perigo no cartão do feed e no balão do grupo, e a fofoca como conteúdo, não como piada da interface.
+  - O fato curioso usa só o que o modo stalker já mostra (curtidas, comentários, Grupo do Bunker e conversas entre personas). Conversa de persona com morador fica de fora.
 
 Depois da versão 1.0, num formato novo que ainda vai ser definido:
 - Painel visual das decisões do JEV (por que a persona fez o que fez).
@@ -204,7 +208,7 @@ Depois da versão 1.0, num formato novo que ainda vai ser definido:
 
 **MVP (já feito):** passos 1 a 5, com uma persona.
 
-**Versão 1.0:** passos 1 a 9, mais a busca e o resumo do dia (7.6).
+**Versão 1.0:** passos 1 a 9, mais a busca e o Boletim do Bunker, o resumo do dia (7.6).
 
 **Fora do plano:** o que entrou sem estar nesta sequência nem em 7.6, com a data e o motivo. A descrição fica nas seções de sempre; aqui só o registro.
 - 2026-11-14 · **Foto de perfil dos moradores e marcas do dono** (4, 8 e 9). Antes, morador aparecia só com a inicial do apelido, e nada distinguia o dono no feed e no chat. Agora cada morador escolhe um item do bunker, o dono ganha a moldura e a chave, e as personas mantêm as cores invertidas.
