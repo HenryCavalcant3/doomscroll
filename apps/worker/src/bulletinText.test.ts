@@ -97,6 +97,13 @@ describe("validação da resposta", () => {
     expect(checkLine(ok("fofoca", "A Kelly curtiu tudo. Intensidade alta."), o)).toEqual({ ok: false, reason: "escreveu o nome do campo" });
   });
 
+  it("conta o dia de ontem: \"hoje\" é recusado", () => {
+    const o = { key: "manchete" as const, maxWords: 14, residents: [] };
+    expect(checkLine(ok("manchete", "não rolou hoje"), o)).toEqual({ ok: false, reason: "fala de hoje" });
+    expect(checkLine(ok("manchete", "Hoje? Nada."), o)).toEqual({ ok: false, reason: "fala de hoje" });
+    expect(checkLine(ok("manchete", "não rolou nada ontem"), o).ok).toBe(true);
+  });
+
   it("a persona de plantão não fala de si", () => {
     expect(nameKey("Tio Valdir")).toBe("valdir");
     expect(nameKey("Capitão Enlatado")).toBe("enlatado");

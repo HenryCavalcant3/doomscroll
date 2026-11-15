@@ -152,6 +152,8 @@ export function checkLine(raw: string, o: CheckOptions): Check {
   if (mentionsResident(text, o.residents)) return { ok: false, reason: "cita morador" };
   const folded = fold(text);
   if (/(^|[^\p{L}])intensidade($|[^\p{L}])/u.test(folded)) return { ok: false, reason: "escreveu o nome do campo" };
+  // O boletim sai de manhã e conta o dia anterior: "hoje" ali seria o dia errado ("não rolou hoje").
+  if (/(^|[^\p{L}])hoje($|[^\p{L}])/u.test(folded)) return { ok: false, reason: "fala de hoje" };
   if (o.mustNotMention?.some((n) => n.length >= 3 && new RegExp(`(^|[^\\p{L}])${escape(n)}($|[^\\p{L}])`, "u").test(folded))) return { ok: false, reason: "fala de si" };
   if (o.examples && copiesExample(text, [...o.examples], o.source ?? "")) return { ok: false, reason: "copiou exemplo" };
   const bare = (s: string) => fold(s).replace(/[^\p{L}\s]/gu, "").replace(/\s+/g, " ").trim();
