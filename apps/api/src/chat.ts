@@ -87,6 +87,8 @@ export interface ChatStore {
    * transação. null quando o boletim não está publicável ou já tem mensagem (job repetido).
    */
   sendBulletin(personaId: string, conversationId: string, date: string): Promise<{ message: MessageView; memberIds: string[] } | null>;
+  /** A mensagem do boletim já publicada (para o job retomar a fofoca depois de uma falha). */
+  bulletinMessageId(date: string): Promise<string | null>;
   /** Põe, troca (emoji) ou tira (null) a reação; null quando não acha a conversa ou a mensagem. */
   setReaction(
     userId: string,
@@ -367,6 +369,11 @@ export class PgChatStore implements ChatStore {
       const msg = await c.query<MessageRow>(`${MESSAGE_SELECT} WHERE m.id = $1`, [id]);
       return { message: toMessage(msg.rows[0]!), memberIds: await this.idsOf(c, conversationId), firstShare };
     });
+  }
+
+  async bulletinMessageId(date: string) {
+    const res = await this.pool.query<{ message_id: string | null }>("SELECT message_id FROM daily_bulletins WHERE date = $1", [date]);
+    return res.rows[0]?.message_id ?? null;
   }
 
   async sendBulletin(personaId: string, conversationId: string, date: string) {

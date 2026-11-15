@@ -122,8 +122,8 @@ export function buildGroupMessages(
   retry: boolean,
   /** Quem chamou a persona na mensagem que ela responde. */
   mentionedBy?: string,
-  /** Resposta à fofoca do boletim: quem contou. */
-  gossipBy?: string,
+  /** Resposta à fofoca do boletim: quem contou, e se a fofoca é sobre a própria persona. */
+  gossip?: { by: string; aboutYou: boolean },
 ): ChatMessage[] {
   const system = `Você é ${persona.name}, numa rede social brasileira de vídeos curtos, no grupo "${groupName}", com várias pessoas e outras personas.
 Quem você é: ${persona.bio}
@@ -141,8 +141,10 @@ Regras:
 - Copie o jeito das frases acima, nunca o assunto.
 - Não invente o que aparece num vídeo além do título e da descrição.
 - Escreva só a sua mensagem, sem o seu nome na frente e sem aspas.${
-    gossipBy ? `
-- A última mensagem é a fofoca do Boletim do Bunker de ontem, contada por @${gossipBy}. Comente a fofoca com as suas palavras.` : ""
+    gossip
+      ? `
+- A última mensagem é a fofoca do Boletim do Bunker de ontem, contada por @${gossip.by}.${gossip.aboutYou ? " A fofoca fala de você: responda por você." : ""} Comente a fofoca com as suas palavras.`
+      : ""
   }${mentionedBy ? `\n- @${mentionedBy} chamou você na última mensagem: responda direto para @${mentionedBy}.` : ""}${
     retry
       ? "\n\nAviso só para você (não fale dele na resposta): sua resposta anterior foi descartada (repetia a mensagem, copiava uma frase, repetia palavras sem parar ou não estava em português). Escreva outra, com suas palavras."
@@ -378,9 +380,10 @@ export class PersonaTalker {
     // Responde à mensagem que a chamou, com o que veio depois dela como contexto.
     const upTo = history.slice(0, history.findLastIndex((m) => m.sender.nickname !== persona.nickname) + 1);
     const mentionedBy = job.reasons.mencao === true ? target.sender.nickname : undefined;
+    const gossip = job.trigger === "boletim" ? { by: target.sender.nickname, aboutYou: job.reasons.direito_de_resposta === true } : undefined;
     const sent = await this.say(persona, job.conversationId, upTo, (onDraft, signal) =>
       generateReply(this.deps.generate, persona, target.sender.nickname, "", upTo, onDraft, signal, {
-        build: (examples, retry) => buildGroupMessages(persona, "Grupo do Bunker", upTo, examples, retry, mentionedBy, job.trigger === "boletim" ? target.sender.nickname : undefined),
+        build: (examples, retry) => buildGroupMessages(persona, "Grupo do Bunker", upTo, examples, retry, mentionedBy, gossip),
         stop: groupStopWords(upTo, persona.nickname),
         strictEcho: true,
       }),
@@ -404,14 +407,17 @@ export class PersonaTalker {
     const persona = b && (await store.persona(b.personaId));
     if (!b || !conversationId || !persona) return;
     const posted = await chat.sendBulletin(persona.id, conversationId, b.date);
-    if (!posted) return this.log(`boletim de ${b.date} já estava no grupo`);
-    hub.send(posted.memberIds, { type: "message", message: posted.message });
-    await store.claim(persona.id, "boletim", posted.message.id, { action: "publicar", score: 1, reasons: { boletim: b.date, status: b.status } });
+    if (posted) hub.send(posted.memberIds, { type: "message", message: posted.message });
+    // Já estava no grupo (job repetido, ou falhou depois de publicar): retoma daqui. A decisão e a fofoca
+    // aguentam repetição (claim único e fofoca com trava), então nada sai duas vezes.
+    const messageId = posted?.message.id ?? (await chat.bulletinMessageId(b.date));
+    if (!messageId) return;
+    await store.claim(persona.id, "boletim", messageId, { action: "publicar", score: 1, reasons: { boletim: b.date, status: b.status } });
     // Boletim curto (dia parado): sem fofoca e sem respostas.
     if (b.status !== "pronto" || !b.gossip) return;
     await queue.send(
       QUEUES.personaTalk,
-      { kind: "bulletin_gossip", date: b.date, conversationId, personaId: persona.id, afterId: posted.message.id } satisfies TalkJob,
+      { kind: "bulletin_gossip", date: b.date, conversationId, personaId: persona.id, afterId: messageId } satisfies TalkJob,
       { startAfter: this.quick() },
     );
   }

@@ -395,18 +395,21 @@ class MemoryChatStore implements ChatStore {
   }
   /** Boletins publicáveis (data → manchete); o que já tem mensagem fica em `published`. */
   bulletins = new Map<string, string>();
-  published = new Set<string>();
+  published = new Map<string, string>();
+  async bulletinMessageId(date: string) {
+    return this.published.get(date) ?? null;
+  }
   async sendBulletin(personaId: string, id: string, date: string) {
     const me = this.member(personaId, id);
     const headline = this.bulletins.get(date);
     if (!me || headline === undefined || this.published.has(date)) return null;
-    this.published.add(date);
     const at = ++this.tick;
     const msg: StoredMessage = {
       id: uuid(++this.seq), conversationId: id, type: "bulletin", text: null, video: null, bulletin: { date, headline },
       reactions: [], createdAt: new Date(at).toISOString(), sender: this.author(personaId), senderId: personaId, at,
     };
     this.messages.push(msg);
+    this.published.set(date, msg.id);
     this.conversations.find((c) => c.id === id)!.lastAt = at;
     me.lastRead = Math.max(me.lastRead, at);
     return { message: this.out(msg), memberIds: await this.memberIds(id) };
@@ -1632,11 +1635,11 @@ describe("personas entre si", () => {
       expect(msgs[0]!.video).toBeNull();
       expect(JSON.stringify(msgs[0])).not.toMatch(/seuDia|videosVistos/);
       expect([...talk.claims.entries()]).toEqual([[`u-tio:boletim:${msgs[0]!.id}`, expect.objectContaining({ action: "publicar" })]]);
-      expect(jobs.map((j) => j.data)).toEqual([{ kind: "bulletin_gossip", date: "2026-11-14", conversationId: bunkerId, personaId: "u-tio", afterId: msgs[0]!.id }]);
+      // Job repetido: retoma a fofoca de novo, e a trava dela segura a repetição.
+      const gossipJob = { kind: "bulletin_gossip", date: "2026-11-14", conversationId: bunkerId, personaId: "u-tio", afterId: msgs[0]!.id };
+      expect(jobs.map((j) => j.data)).toEqual([gossipJob, gossipJob]);
 
-      const gossip = jobs.shift()!.data;
-      await t.handle(gossip);
-      await t.handle(gossip);
+      for (const job of jobs.splice(0)) await t.handle(job.data);
       msgs = (await chat.listMessages(anaId, bunkerId, null, 50))!;
       expect(msgs.map((m) => [m.type, m.text])).toEqual([
         ["bulletin", null],
@@ -1644,6 +1647,22 @@ describe("personas entre si", () => {
       ]);
       expect(generate).not.toHaveBeenCalled();
       expect(jobs.map((j) => j.data)).toEqual([{ kind: "bulletin_replies", date: "2026-11-14", conversationId: bunkerId, messageId: msgs[1]!.id }]);
+    });
+
+    it("se o job cai depois de publicar, a repetição retoma a decisão e a fofoca", async () => {
+      const { anaId, bunkerId } = await bunkerWithAna();
+      talk.bulletins.set("2026-11-14", pronto());
+      chat.bulletins.set("2026-11-14", "Ontem o bunker só falou de música!");
+      const claim = talk.claim.bind(talk);
+      talk.claim = vi.fn().mockRejectedValueOnce(new Error("banco fora")).mockImplementation(claim);
+      const t = talker();
+      await expect(t.handle({ kind: "bulletin", date: "2026-11-14" })).rejects.toThrow("banco fora");
+      expect(jobs).toEqual([]);
+      await t.handle({ kind: "bulletin", date: "2026-11-14" });
+      const msgs = (await chat.listMessages(anaId, bunkerId, null, 50))!;
+      expect(msgs.map((m) => m.type)).toEqual(["bulletin"]);
+      expect([...talk.claims.values()]).toEqual([expect.objectContaining({ action: "publicar" })]);
+      expect(jobs.map((j) => j.data)).toEqual([expect.objectContaining({ kind: "bulletin_gossip", afterId: msgs[0]!.id })]);
     });
 
     it("boletim curto: só a mensagem, sem fofoca e sem respostas", async () => {
@@ -1672,7 +1691,7 @@ describe("personas entre si", () => {
       generate.mockResolvedValueOnce("Fita boa não se troca, Valdir.");
       await t.handle(jobs.shift()!.data);
       expect(generate.mock.calls[0]![0][0]!.content).toContain("@tio_valdir chamou você na última mensagem");
-      expect(generate.mock.calls[0]![0][0]!.content).toContain("fofoca do Boletim do Bunker de ontem, contada por @tio_valdir");
+      expect(generate.mock.calls[0]![0][0]!.content).toContain("fofoca do Boletim do Bunker de ontem, contada por @tio_valdir. A fofoca fala de você");
       // A linha do boletim fica fora do prompt: o modelo copiava o colchete no lugar da resposta.
       expect(JSON.stringify(generate.mock.calls[0]![0])).not.toContain("só falou de música");
       // A decisão fica no gatilho do boletim, e a resposta não puxa mais ninguém.
