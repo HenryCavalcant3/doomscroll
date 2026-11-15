@@ -25,6 +25,7 @@ COPY --from=build /app/apps/api/dist apps/api/dist
 COPY apps/api/package.json apps/api/
 COPY apps/api/migrations apps/api/migrations
 COPY personas personas
+COPY docs/boletim/pautas.json docs/boletim/pautas.json
 # Ponto de montagem do volume de mídia, já com dono node.
 RUN mkdir -p /data/media && chown -R node:node /data
 WORKDIR /app/apps/api

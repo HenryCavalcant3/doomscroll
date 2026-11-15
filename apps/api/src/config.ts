@@ -1,4 +1,5 @@
 import { PIN } from "./auth.js";
+import { DEFAULT_PAUTAS_FILE } from "./pautas.js";
 import { DEFAULT_PERSONAS_DIR } from "./personas.js";
 
 export interface Config {
@@ -8,6 +9,8 @@ export interface Config {
   mediaDir: string;
   /** Pasta com os JSON e avatares das personas. */
   personasDir: string;
+  /** Pautas de fofoca do Boletim do Bunker (gravadas no banco só na primeira vez). */
+  pautasFile: string;
   ownerPin: string | undefined;
   ollamaUrl: string;
   llmModel: string;
@@ -30,6 +33,7 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): Config {
     databaseUrl: env.DATABASE_URL ?? "postgres://doomscroll:doomscroll@localhost:5432/doomscroll",
     mediaDir: env.MEDIA_DIR ?? "/data/media",
     personasDir: env.PERSONAS_DIR ?? DEFAULT_PERSONAS_DIR,
+    pautasFile: env.PAUTAS_FILE ?? DEFAULT_PAUTAS_FILE,
     ownerPin: env.OWNER_PIN || undefined,
     ollamaUrl: env.OLLAMA_URL ?? "http://localhost:11434",
     llmModel: env.LLM_MODEL ?? "qwen2.5:3b",

@@ -376,7 +376,7 @@ export class PgStore implements Store {
   async approve(id: string, ownerId: string) {
     if (!isUuid(id)) return false;
     const res = await this.pool.query(
-      `UPDATE videos SET status = 'aprovado', stage = 'gerando_embedding', approved_by = $2, updated_at = now()
+      `UPDATE videos SET status = 'aprovado', stage = 'gerando_embedding', approved_by = $2, approved_at = now(), updated_at = now()
         WHERE id = $1 AND status = 'pendente'`,
       [id, ownerId],
     );
