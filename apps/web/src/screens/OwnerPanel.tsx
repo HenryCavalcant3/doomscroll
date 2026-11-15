@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { api, apiUrl, type Pauta, type PersonaPanel, type Topic, type User, type Video } from "../api";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { api, apiUrl, type DecisionTrigger, type Pauta, type PersonaDecision, type PersonaPanel, type Topic, type User, type Video } from "../api";
+import { shortTime } from "../chat";
 import { Avatar } from "../components/Avatar";
 import { decisionText, reasonsText } from "../decisions";
 import { profileHref } from "../router";
@@ -329,20 +330,117 @@ function Personas() {
           </li>
         ))}
       </ul>
+      <Decisions personas={panel.personas} />
+    </>
+  );
+}
+
+const TRIGGERS: { value: DecisionTrigger; label: string }[] = [
+  { value: "video", label: "Vídeo aprovado" },
+  { value: "mensagem", label: "Mensagens e grupo" },
+  { value: "tique", label: "Puxar conversa" },
+  { value: "boletim", label: "Boletim" },
+];
+
+/** Últimas decisões do JEV, filtradas por persona e por tipo, de 20 em 20. */
+function Decisions({ personas }: { personas: PersonaPanel["personas"] }) {
+  const { error, call } = useOwnerCall();
+  const [persona, setPersona] = useState("");
+  const [tipo, setTipo] = useState<DecisionTrigger | "">("");
+  const [list, setList] = useState<PersonaDecision[] | null>(null);
+  const [more, setMore] = useState(false);
+  const [loading, setLoading] = useState(false);
+  // Página que chega depois de o filtro mudar é descartada.
+  const latest = useRef(0);
+
+  const fetchPage = useCallback((antes?: string) => api.owner.decisions({ persona, tipo: tipo || undefined, antes }), [persona, tipo]);
+
+  useEffect(() => {
+    const seq = ++latest.current;
+    call(() => fetchPage()).then((page) => {
+      if (seq !== latest.current) return;
+      setLoading(false);
+      if (!page) return;
+      setList(page.decisions);
+      setMore(page.more);
+    });
+  }, [call, fetchPage]);
+
+  const loadMore = () => {
+    const last = list?.[list.length - 1];
+    if (!last) return;
+    const seq = ++latest.current;
+    setLoading(true);
+    call(() => fetchPage(last.id)).then((page) => {
+      if (seq !== latest.current) return;
+      setLoading(false);
+      if (!page) return;
+      setList((cur) => [...(cur ?? []), ...page.decisions]);
+      setMore(page.more);
+    });
+  };
+
+  const filtered = persona !== "" || tipo !== "";
+  return (
+    <>
       <h2 className="section-title">Últimas decisões</h2>
-      {panel.decisions.length === 0 ? (
-        <p className="hint">Nenhuma decisão ainda. Elas aparecem quando um vídeo é aprovado ou alguém manda mensagem para uma persona.</p>
+      <div className="decision-filters">
+        <div className="field">
+          <label htmlFor="decisoes-persona">Persona</label>
+          <select id="decisoes-persona" className="input" value={persona} onChange={(e) => {
+              setList(null);
+              setPersona(e.target.value);
+            }}>
+            <option value="">Todas</option>
+            {personas.map((p) => (
+              <option key={p.nickname} value={p.nickname}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor="decisoes-tipo">Tipo</label>
+          <select id="decisoes-tipo" className="input" value={tipo} onChange={(e) => {
+              setList(null);
+              setTipo(e.target.value as DecisionTrigger | "");
+            }}>
+            <option value="">Todos</option>
+            {TRIGGERS.map((t) => (
+              <option key={t.value} value={t.value}>
+                {t.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+      {error && <p className="error">{error}</p>}
+      {list === null ? (
+        !error && <p className="hint">Carregando…</p>
+      ) : list.length === 0 ? (
+        <p className="hint">
+          {filtered
+            ? "Nenhuma decisão com esse filtro."
+            : "Nenhuma decisão ainda. Elas aparecem quando um vídeo é aprovado ou alguém manda mensagem para uma persona."}
+        </p>
       ) : (
         <ul className="decision-list">
-          {panel.decisions.map((d, i) => (
-            <li key={i} className="decision">
+          {list.map((d) => (
+            <li key={d.id} className="decision">
               <span>
                 <strong>{d.name}</strong> {decisionText(d)}
               </span>
-              <span className="hint">{reasonsText(d)}</span>
+              <span className="hint">
+                {shortTime(d.createdAt)} · {reasonsText(d)}
+              </span>
             </li>
           ))}
         </ul>
+      )}
+      {more && list && (
+        <button className="btn btn-small decision-more" onClick={loadMore} disabled={loading}>
+          {loading ? "Carregando…" : "Carregar mais"}
+        </button>
       )}
     </>
   );

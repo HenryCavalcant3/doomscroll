@@ -40,10 +40,25 @@ export interface VideoMatch {
 export type VideoShare = Pick<VideoMatch, "title" | "description"> | "nenhum";
 
 /** Decisão do JEV para o painel do dono. Nas mensagens não vai o texto: conversa de gente é privada. */
+export type DecisionTrigger = "video" | "mensagem" | "tique" | "boletim";
+export const DECISION_TRIGGERS: readonly DecisionTrigger[] = ["video", "mensagem", "tique", "boletim"];
+/** Decisões por página no painel do dono. */
+export const DECISIONS_PAGE = 20;
+
+/** Filtro das decisões no painel do dono; `before` é o id da última decisão da página anterior. */
+export interface DecisionFilter {
+  persona?: string;
+  trigger?: DecisionTrigger;
+  before?: string;
+  limit: number;
+}
+
 export interface DecisionView {
+  /** Id da decisão (cursor do "Carregar mais"). */
+  id: string;
   nickname: string;
   name: string;
-  trigger: "video" | "mensagem" | "tique" | "boletim";
+  trigger: DecisionTrigger;
   action: string;
   score: number;
   reasons: Record<string, unknown>;
@@ -78,8 +93,8 @@ export interface PersonaChatStore {
   topics(): Promise<{ slug: string; name: string }[]>;
   /** Grava a decisão do JEV diante da mensagem (uma por persona e mensagem). */
   saveDecision(personaId: string, messageId: string, decision: ChatDecision): Promise<void>;
-  /** Últimas decisões de todas as personas, da mais nova para a mais antiga. */
-  recentDecisions(limit: number): Promise<DecisionView[]>;
+  /** Decisões da mais nova para a mais antiga, filtradas por persona e gatilho, uma página por vez. */
+  listDecisions(filter: DecisionFilter): Promise<DecisionView[]>;
 }
 
 /** Mensagens trocadas entre um resumo da memória e o próximo (SPEC 7.4: "a cada N mensagens"). */
@@ -701,8 +716,9 @@ export class PgPersonaChatStore implements PersonaChatStore {
     );
   }
 
-  async recentDecisions(limit: number) {
+  async listDecisions({ persona, trigger, before, limit }: DecisionFilter) {
     const res = await this.pool.query<{
+      id: string;
       nickname: string;
       config: { nome?: string };
       trigger: "video" | "mensagem" | "tique" | "boletim";
@@ -712,17 +728,21 @@ export class PgPersonaChatStore implements PersonaChatStore {
       video: string | null;
       created_at: Date;
     }>(
-      `SELECT u.nickname, p.config, d.trigger, d.action, d.score, d.reasons, d.created_at,
+      `SELECT d.id::text AS id, u.nickname, p.config, d.trigger, d.action, d.score, d.reasons, d.created_at,
               CASE WHEN d.trigger = 'video' THEN (SELECT COALESCE(v.title, 'sem título') FROM videos v WHERE v.id = d.target_id)
                    WHEN d.trigger = 'tique' THEN (SELECT COALESCE(v.title, 'sem título') FROM messages m JOIN videos v ON v.id = m.video_id WHERE m.id = d.target_id) END AS video
          FROM persona_decisions d
          JOIN users u ON u.id = d.persona_user_id
          JOIN personas p ON p.user_id = d.persona_user_id
+        WHERE ($2::text IS NULL OR u.nickname = $2)
+          AND ($3::text IS NULL OR d.trigger = $3)
+          AND ($4::bigint IS NULL OR (d.created_at, d.id) < (SELECT b.created_at, b.id FROM persona_decisions b WHERE b.id = $4))
         ORDER BY d.created_at DESC, d.id DESC
         LIMIT $1`,
-      [limit],
+      [limit, persona ?? null, trigger ?? null, before ?? null],
     );
     return res.rows.map((r) => ({
+      id: r.id,
       nickname: r.nickname,
       name: r.config.nome ?? r.nickname,
       trigger: r.trigger,

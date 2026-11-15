@@ -3,6 +3,7 @@ import type { PersonaDecision } from "./api";
 import { decisionText, reasonsText } from "./decisions";
 
 const base: PersonaDecision = {
+  id: "1",
   nickname: "rato",
   name: "Rato",
   trigger: "video",

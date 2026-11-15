@@ -716,6 +716,10 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
 .persona-text { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .persona-name { font-weight: 600; }
 .persona-count { font-weight: 700; color: var(--accent); min-width: 32px; text-align: right; }
+.decision-filters { display: flex; gap: 8px; }
+.decision-filters .field { flex: 1; min-width: 0; }
+.decision-filters select { width: 100%; }
+.decision-more { align-self: center; margin-top: 12px; }
 .decision-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; }
 .decision { display: flex; flex-direction: column; gap: 2px; padding: 10px 4px; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
 

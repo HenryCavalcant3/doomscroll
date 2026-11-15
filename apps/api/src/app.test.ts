@@ -16,7 +16,7 @@ import {
   type SharedVideo,
 } from "./chat.js";
 import { Hub, WS_CLOSE } from "./realtime.js";
-import { MEMORY_EVERY, PersonaReplier, type ChatGenerator, type PersonaChatStore, type VideoMatch } from "./personaChat.js";
+import { MEMORY_EVERY, PersonaReplier, type ChatGenerator, type DecisionFilter, type PersonaChatStore, type VideoMatch } from "./personaChat.js";
 import { PersonaTalker, type GroupCandidate, type TalkJob, type TalkPersona, type TalkStore, type BulletinToPublish } from "./personaTalk.js";
 import type { ChatDecision } from "./personaJev.js";
 import { QUEUES } from "./queues.js";
@@ -1245,11 +1245,16 @@ class MemoryPersonaChatStore implements PersonaChatStore {
   async topics() {
     return [{ slug: "animais", name: "Animais" }];
   }
-  async recentDecisions() {
-    return this.decisions.map(({ decision }) => ({
-      nickname: "tio_valdir", name: "Tio Valdir", trigger: "mensagem" as const, action: decision.action, score: decision.score,
-      reasons: decision.reasons, video: null, createdAt: "2026-11-13T00:00:00.000Z",
-    }));
+  async listDecisions({ persona, trigger, before, limit }: DecisionFilter) {
+    const all = this.decisions
+      .map(({ decision }, i) => ({
+        id: String(i + 1), nickname: "tio_valdir", name: "Tio Valdir", trigger: "mensagem" as const, action: decision.action, score: decision.score,
+        reasons: decision.reasons, video: null, createdAt: "2026-11-13T00:00:00.000Z",
+      }))
+      .reverse();
+    return all
+      .filter((d) => (!persona || d.nickname === persona) && (!trigger || d.trigger === trigger) && (!before || Number(d.id) < Number(before)))
+      .slice(0, limit);
   }
   async saveDecision(personaId: string, messageId: string, decision: ChatDecision) {
     this.decisions.push({ personaId, messageId, decision });
@@ -1402,8 +1407,26 @@ describe("chat com personas", () => {
 
   it("o dono vê as ações das personas na última hora", async () => {
     const res = await personaApp().inject({ method: "GET", url: "/owner/personas", headers: await auth() });
-    expect(res.json()).toMatchObject({ rate: 30, lastHour: 2, personas: [{ nickname: "tio_valdir", lastHour: 2 }], decisions: [] });
+    expect(res.json()).toMatchObject({ rate: 30, lastHour: 2, personas: [{ nickname: "tio_valdir", lastHour: 2 }] });
     expect((await personaApp().inject({ method: "GET", url: "/owner/personas", headers: await auth("ana", "111111") })).statusCode).toBe(403);
+  });
+
+  it("o dono filtra as decisões por persona e por tipo, de 20 em 20", async () => {
+    for (let i = 0; i < 25; i++) personaStore.decisions.push({ personaId: "u-tio", messageId: `m${i}`, decision: { action: "responder", score: 0.5, reasons: {} } as ChatDecision });
+    const owner = await auth();
+    const get = async (qs: string) => (await personaApp().inject({ method: "GET", url: `/owner/decisoes${qs}`, headers: owner })).json();
+    const first = await get("");
+    expect(first.decisions).toHaveLength(20);
+    expect(first.more).toBe(true);
+    expect(first.decisions[0].id).toBe("25");
+    const second = await get(`?antes=${first.decisions[19].id}`);
+    expect(second.decisions.map((d: { id: string }) => d.id)).toEqual(["5", "4", "3", "2", "1"]);
+    expect(second.more).toBe(false);
+    expect((await get("?persona=@Tio_Valdir&tipo=mensagem")).decisions).toHaveLength(20);
+    expect((await get("?persona=kelly")).decisions).toEqual([]);
+    expect((await get("?tipo=boletim")).decisions).toEqual([]);
+    expect((await personaApp().inject({ method: "GET", url: "/owner/decisoes?tipo=outro", headers: owner })).statusCode).toBe(400);
+    expect((await personaApp().inject({ method: "GET", url: "/owner/decisoes", headers: await auth("ana", "111111") })).statusCode).toBe(403);
   });
 });
 

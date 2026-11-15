@@ -7,7 +7,7 @@ import { pautaErrors, pautaId } from "./pautas.js";
 import { bearerToken, hashToken, LoginLimiter, newToken, NICKNAME, normalizeNickname, PIN } from "./auth.js";
 import type { Config } from "./config.js";
 import { parseVideoLink } from "./links.js";
-import type { PersonaChatStore, PersonaReplier } from "./personaChat.js";
+import { DECISION_TRIGGERS, DECISIONS_PAGE, type DecisionTrigger, type PersonaChatStore, type PersonaReplier } from "./personaChat.js";
 import { generate, OllamaError } from "./ollama.js";
 import { hashPin, verifyPin } from "./pin.js";
 import { isMoradorAvatar } from "./avatars.js";
@@ -764,9 +764,36 @@ export function buildApp({
 
       owner.get("/owner/personas", async () => {
         const list = personas ? await personas.overview() : [];
-        const decisions = personas ? await personas.recentDecisions(40) : [];
-        return { rate: config.personaRate, lastHour: list.reduce((s, p) => s + p.lastHour, 0), personas: list, decisions };
+        return { rate: config.personaRate, lastHour: list.reduce((s, p) => s + p.lastHour, 0), personas: list };
       });
+
+      // Últimas decisões do JEV, por persona e por gatilho, de 20 em 20 ("Carregar mais" manda a última vista).
+      owner.get<{ Querystring: { persona?: string; tipo?: DecisionTrigger; antes?: string } }>(
+        "/owner/decisoes",
+        {
+          schema: {
+            querystring: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                persona: { type: "string", maxLength: 40 },
+                tipo: { type: "string", enum: [...DECISION_TRIGGERS] },
+                antes: { type: "string", pattern: "^[0-9]{1,18}$" },
+              },
+            },
+          },
+        },
+        async (req) => {
+          if (!personas) return { decisions: [], more: false };
+          const page = await personas.listDecisions({
+            persona: req.query.persona ? normalizeNickname(req.query.persona) : undefined,
+            trigger: req.query.tipo,
+            before: req.query.antes,
+            limit: DECISIONS_PAGE + 1,
+          });
+          return { decisions: page.slice(0, DECISIONS_PAGE), more: page.length > DECISIONS_PAGE };
+        },
+      );
 
       owner.post<{ Body: { name: string; sensitive?: boolean } }>(
         "/owner/topics",

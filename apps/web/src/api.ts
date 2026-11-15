@@ -181,14 +181,17 @@ export interface PersonaPanel {
   rate: number;
   lastHour: number;
   personas: { nickname: string; name: string; avatarUrl: string | null; activity: number; lastHour: number }[];
-  /** Últimas decisões do JEV (nas mensagens, sem o texto: conversa de gente é privada). */
-  decisions: PersonaDecision[];
 }
 
+export type DecisionTrigger = "video" | "mensagem" | "tique" | "boletim";
+
+/** Decisão do JEV (nas mensagens, sem o texto: conversa de gente é privada). */
 export interface PersonaDecision {
+  /** Cursor do "Carregar mais". */
+  id: string;
   nickname: string;
   name: string;
-  trigger: "video" | "mensagem" | "tique" | "boletim";
+  trigger: DecisionTrigger;
   action: string;
   score: number;
   reasons: Record<string, unknown>;
@@ -315,5 +318,9 @@ export const api = {
     updatePauta: (id: string, change: { texto?: string; ativa?: boolean }) =>
       request<Pauta>(`/owner/pautas/${id}`, { method: "PATCH", body: change }),
     personas: () => request<PersonaPanel>("/owner/personas"),
+    decisions: (f: { persona?: string; tipo?: DecisionTrigger; antes?: string }) => {
+      const qs = new URLSearchParams(Object.entries(f).filter((e): e is [string, string] => Boolean(e[1]))).toString();
+      return request<{ decisions: PersonaDecision[]; more: boolean }>(`/owner/decisoes${qs ? `?${qs}` : ""}`);
+    },
   },
 };
