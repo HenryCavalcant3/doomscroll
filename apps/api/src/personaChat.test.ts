@@ -25,6 +25,13 @@ describe("boletim no histórico", () => {
     expect(replyProblem("Fita boa não se troca [risos]", [], history)).toBeNull();
   });
 
+  it("recusa de assistente é descartada, mas o \"não posso\" do dia a dia passa", () => {
+    const history = [msg("rato", "Kelly repetiu fita cassete no rádio por três dias.")];
+    expect(replyProblem("Desculpa @rato, mas não posso reproduzir ou comentar sobre esse tipo de conteúdo.", [], history)).toBe("assistente");
+    expect(replyProblem("Como uma IA, não tenho opinião sobre fitas.", [], history)).toBe("assistente");
+    expect(replyProblem("Não posso ir no treino hoje, @rato, a fita é minha!", [], history)).toBeNull();
+  });
+
   it("entra entre colchetes, como o vídeo, para a persona não copiar", () => {
     const m = { ...msg("tio_valdir", null), type: "bulletin" as const, bulletin: { date: "2026-11-14", headline: "Ontem o bunker só falou de música!" } };
     expect(messageLine(m)).toBe("[mandou o Boletim do Bunker de ontem, com a manchete: Ontem o bunker só falou de música!]");

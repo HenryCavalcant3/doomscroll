@@ -244,10 +244,13 @@ function copies(words: string[], example: string, talk: Set<string>): boolean {
  * Por que a resposta não serve. As graves (vazia, eco, gagueira) nunca são mandadas; as leves
  * (cópia de exemplo, inglês) são mandadas se nenhuma tentativa sair melhor: é pior a persona ficar muda.
  */
-export type ReplyProblem = "vazia" | "eco" | "gagueira" | "cópia" | "inglês" | "formato";
+export type ReplyProblem = "vazia" | "eco" | "gagueira" | "cópia" | "inglês" | "formato" | "assistente";
 const SOFT: ReadonlySet<ReplyProblem> = new Set(["cópia", "inglês"]);
 
 const HISTORY_FORMAT = /\[\s*(mandou\b|boletim\b|@?[a-z0-9_]+:)/i;
+/** Recusa de assistente ("não posso reproduzir esse tipo de conteúdo"): a persona é gente do grupo, não um assistente. */
+const ASSISTANT =
+  /\bnão posso (reproduzir|comentar|ajudar|fornecer|gerar|criar|responder)\b|\besse tipo de conteúdo\b|\bnão autorizad[oa]\b|\bcomo (uma? )?(ia|assistente|modelo de linguagem)\b/i;
 
 export function replyProblem(text: string, examples: string[], history: MessageView[]): ReplyProblem | null {
   const words = normalize(text);
@@ -260,6 +263,7 @@ export function replyProblem(text: string, examples: string[], history: MessageV
   if (stutters(words)) return "gagueira";
   // Imitou a linha do histórico ("[mandou um vídeo: ...]", "[dona_neide: ...") em vez de falar.
   if (HISTORY_FORMAT.test(text)) return "formato";
+  if (ASSISTANT.test(text)) return "assistente";
   const talk = talkWords(history);
   if (examples.some((ex) => copies(words, ex, talk))) return "cópia";
   if (english(words)) return "inglês";
