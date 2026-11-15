@@ -244,7 +244,12 @@ export const api = {
   setAvatar: (avatar: string) => request<User>("/auth/eu/avatar", { method: "PUT", body: { avatar } }),
   topics: () => request<Topic[]>("/topics"),
   /** O boletim mais recente; null enquanto nenhum ficou pronto (a api responde 204). */
-  latestBulletin: () => request<BulletinSummary | Record<string, never>>("/boletim").then((b) => ("date" in b ? (b as BulletinSummary) : null)),
+  /** O boletim mais recente; `visto`: o cartão dele já apareceu no feed deste morador. */
+  latestBulletin: () =>
+    request<(BulletinSummary & { visto: boolean }) | Record<string, never>>("/boletim").then((b) =>
+      "date" in b ? (b as BulletinSummary & { visto: boolean }) : null,
+    ),
+  bulletinSeen: (date: string) => request<void>(`/boletim/${date}/visto`, { method: "POST" }),
   bulletin: (date: string) => request<Bulletin>(`/boletim/${date}`),
   feed: (exclude: string[]) => request<FeedPage>("/feed", { method: "POST", body: { exclude } }),
   search: (q: string) => request<{ videos: FeedVideo[]; semantic: boolean }>(`/videos/busca?q=${encodeURIComponent(q)}`),

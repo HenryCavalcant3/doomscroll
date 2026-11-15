@@ -263,10 +263,23 @@ export function buildApp({
 
     // Boletim do Bunker: o mais recente (cartão do feed) e a tela completa de um dia.
     // Enquanto não está pronto, nada aparece: 204 sem corpo.
-    priv.get("/boletim", async (_req, reply) => {
+    // `visto`: o morador já recebeu o cartão no feed (ele aparece uma vez por morador por boletim).
+    priv.get("/boletim", async (req, reply) => {
       const b = await bulletins?.latest();
-      return b ? summary(b) : reply.code(204).send();
+      if (!bulletins || !b) return reply.code(204).send();
+      return { ...summary(b), visto: await bulletins.seen(b.date, req.user.id) };
     });
+
+    priv.post<{ Params: { date: string } }>(
+      "/boletim/:date/visto",
+      { schema: { params: { type: "object", required: ["date"], properties: { date: { type: "string", pattern: DATE.source } } } } },
+      async (req, reply) => {
+        const b = await bulletins?.get(req.params.date);
+        if (!bulletins || !b) return reply.code(404).send({ error: "Esse boletim não existe." });
+        await bulletins.markSeen(b.date, req.user.id);
+        return reply.code(204).send();
+      },
+    );
 
     priv.get<{ Params: { date: string } }>(
       "/boletim/:date",

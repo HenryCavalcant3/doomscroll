@@ -1,6 +1,9 @@
-import type { FeedPage, FeedVideo } from "./api";
+import type { BulletinSummary, FeedPage, FeedVideo } from "./api";
 
-/** Um vídeo do feed, ou o card "Você zerou a internet" entre duas voltas do acervo. */
+/**
+ * Um vídeo do feed, o card "Você zerou a internet" entre duas voltas do acervo, ou o cartão do
+ * Boletim do Bunker no topo da primeira abertura depois que ele sai.
+ */
 export type FeedEntry =
   | {
       /** Único na lista, mesmo quando o feed recomeça e o vídeo volta. */
@@ -11,6 +14,10 @@ export type FeedEntry =
       key: string;
       /** Quantos vídeos a volta que acabou entregou. */
       zerou: number;
+    }
+  | {
+      key: string;
+      boletim: BulletinSummary;
     };
 
 const videoOf = (e: FeedEntry | undefined) => (e && "video" in e ? e.video : undefined);
@@ -45,8 +52,18 @@ export function appendPage(state: FeedState, page: FeedPage): FeedState {
     ],
     seen: [...seen, ...videos.map((v) => v.id)],
     round,
-    empty: state.entries.length === 0 && page.videos.length === 0,
+    // O cartão do boletim sozinho não conta: sem vídeo aprovado, a tela é a das prateleiras vazias.
+    empty: state.entries.every((e) => "boletim" in e) && page.videos.length === 0,
   };
+}
+
+/**
+ * Põe o cartão do boletim como primeiro item. Só antes do primeiro vídeo: depois disso a pessoa já
+ * está rolando, e um item novo no topo mudaria tudo de lugar.
+ */
+export function withBulletin(state: FeedState, boletim: BulletinSummary): FeedState {
+  if (state.entries.length) return state;
+  return { ...state, entries: [{ key: `boletim:${boletim.date}`, boletim }] };
 }
 
 /** Pede mais vídeos quando faltam poucos para o fim da lista. */

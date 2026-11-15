@@ -1638,6 +1638,13 @@ describe("Boletim do Bunker", () => {
     async bunkerId() {
       return "c-bunker";
     }
+    views = new Set<string>();
+    async seen(date: string, userId: string) {
+      return this.views.has(`${date}|${userId}`);
+    }
+    async markSeen(date: string, userId: string) {
+      this.views.add(`${date}|${userId}`);
+    }
   }
 
   let bulletins: MemoryBulletins;
@@ -1670,7 +1677,24 @@ describe("Boletim do Bunker", () => {
       persona: { nickname: "rato", avatarUrl: "/avatars/rato.svg", avatar: null, isAi: true, owner: false, name: "Rato" },
       headline: "o bunker falou de futebol. de novo.",
       numeros: { videosNovos: 7, curtidas: 42, moradores: 5 },
+      visto: false,
     });
+  });
+
+  it("cartão do feed: uma vez por morador por boletim", async () => {
+    const dono = await auth();
+    const outro = await auth("morador", "111111");
+    bulletins.list.push(record("2026-11-13", facts(null)));
+    const visto = async (headers: Record<string, string>) => (await bApp().inject({ method: "GET", url: "/boletim", headers })).json().visto;
+    expect(await visto(dono)).toBe(false);
+    expect((await bApp().inject({ method: "POST", url: "/boletim/2026-11-13/visto", headers: dono })).statusCode).toBe(204);
+    expect((await bApp().inject({ method: "POST", url: "/boletim/2026-11-13/visto", headers: dono })).statusCode).toBe(204);
+    expect(await visto(dono)).toBe(true);
+    expect(await visto(outro)).toBe(false);
+    // Boletim novo: o cartão volta para todo mundo.
+    bulletins.list.push(record("2026-11-14", facts(null)));
+    expect(await visto(dono)).toBe(false);
+    expect((await bApp().inject({ method: "POST", url: "/boletim/2026-11-01/visto", headers: dono })).statusCode).toBe(404);
   });
 
   it("tela completa: fatos, o mais curtido como vídeo do feed, o grupo e o seu dia de quem pede", async () => {
@@ -1715,5 +1739,6 @@ describe("Boletim do Bunker", () => {
 
   it("precisa de sessão", async () => {
     expect((await bApp().inject({ method: "GET", url: "/boletim" })).statusCode).toBe(401);
+    expect((await bApp().inject({ method: "POST", url: "/boletim/2026-11-13/visto" })).statusCode).toBe(401);
   });
 });

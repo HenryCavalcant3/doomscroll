@@ -1044,3 +1044,31 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
 .boletim-assinatura { margin-top: 12px; display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
 .boletim-grupo { margin-top: 14px; }
 .boletim-privado { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+
+/* Boletim do Bunker, cartão no topo do feed (docs/boletim/telas/boletim-feed.html) */
+.boletim-feed { display: flex; flex-direction: column; background: var(--bg); color: var(--fg); }
+.boletim-feed::after { display: none; }
+.boletim-feed-corpo { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 24px 24px 0; overflow: hidden; }
+.boletim-feed-selo {
+  align-self: flex-start;
+  padding: 5px 10px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+}
+.boletim-feed-data { margin-top: 8px; }
+.boletim-feed-plantao { margin-top: 24px; }
+.boletim-feed-manchete { margin: 20px 0 0; font-size: 32px; font-weight: 700; line-height: 1.1; letter-spacing: -1px; overflow-wrap: anywhere; }
+.boletim-feed-tiles { margin-top: 24px; }
+.boletim-feed-ler { margin-top: 20px; height: 52px; flex: none; border-radius: 12px; font-size: 16px; display: flex; align-items: center; justify-content: center; text-decoration: none; }
+.boletim-feed-fim { margin-top: auto; padding-top: 16px; display: flex; flex-direction: column; align-items: center; }
+.boletim-feed-fim p { margin: 6px 0 18px; font-size: 14px; color: var(--muted); }
+@media (max-height: 640px) {
+  .boletim-feed-plantao { margin-top: 16px; }
+  .boletim-feed-manchete { margin-top: 14px; font-size: 26px; }
+  .boletim-feed-tiles { margin-top: 16px; }
+}

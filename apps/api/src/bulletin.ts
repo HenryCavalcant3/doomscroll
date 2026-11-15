@@ -51,6 +51,9 @@ export interface BulletinStore {
   myDay(userId: string, start: Date, end: Date): Promise<MyDay>;
   /** O Grupo do Bunker, para o "Ver a conversa". */
   bunkerId(): Promise<string | null>;
+  /** O morador já recebeu o cartão deste boletim no feed (uma vez por morador por boletim). */
+  seen(date: string, userId: string): Promise<boolean>;
+  markSeen(date: string, userId: string): Promise<void>;
 }
 
 /** Resumo para o cartão do feed e a mensagem do grupo: manchete, plantão e três números, sem vídeo. */
@@ -173,5 +176,14 @@ export class PgBulletinStore implements BulletinStore {
 
   async bunkerId() {
     return (await this.pool.query<{ id: string }>("SELECT id FROM conversations WHERE bunker")).rows[0]?.id ?? null;
+  }
+
+  async seen(date: string, userId: string) {
+    const res = await this.pool.query("SELECT 1 FROM bulletin_views WHERE bulletin_date = $1 AND user_id = $2", [date, userId]);
+    return (res.rowCount ?? 0) > 0;
+  }
+
+  async markSeen(date: string, userId: string) {
+    await this.pool.query("INSERT INTO bulletin_views (bulletin_date, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING", [date, userId]);
   }
 }

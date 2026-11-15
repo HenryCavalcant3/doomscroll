@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { FeedVideo } from "./api";
-import { appendPage, initialFeed, needsMore, patchVideo } from "./feedQueue";
+import { appendPage, initialFeed, needsMore, patchVideo, withBulletin } from "./feedQueue";
+import type { BulletinSummary } from "./api";
 
 const v = (id: string) => ({ id }) as FeedVideo;
 
@@ -58,5 +59,13 @@ describe("fila do feed", () => {
     s = appendPage(s, { videos: [v("a")], restarted: true });
     s = patchVideo(s, "a", { liked: true, likeCount: 1 });
     expect(s.entries.map((e) => ("video" in e ? e.video.liked : "zerou"))).toEqual([true, undefined, "zerou", true]);
+  });
+
+  it("cartão do boletim: primeiro item, só antes do primeiro vídeo, e sozinho não tira as prateleiras vazias", () => {
+    const b = { date: "2026-11-13" } as BulletinSummary;
+    const s = appendPage(withBulletin(initialFeed, b), { videos: [v("a")], restarted: false });
+    expect(s.entries.map((e) => e.key)).toEqual(["boletim:2026-11-13", "0:a"]);
+    expect(withBulletin(s, b)).toBe(s);
+    expect(appendPage(withBulletin(initialFeed, b), { videos: [], restarted: false }).empty).toBe(true);
   });
 });

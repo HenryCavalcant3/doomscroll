@@ -2,10 +2,11 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEve
 import { api, apiUrl, type Comment, type Conversation, type FeedVideo } from "../api";
 import { conversationTitle } from "../chat";
 import { Avatar } from "../components/Avatar";
+import { BulletinCard } from "../components/BulletinCard";
 import { ConversationAvatar } from "../components/ConversationAvatar";
 import { OwnerKey } from "../components/OwnerKey";
 import { Zerou } from "../components/Zerou";
-import { appendPage, initialFeed, needsMore, patchVideo, type FeedState } from "../feedQueue";
+import { appendPage, initialFeed, needsMore, patchVideo, withBulletin, type FeedState } from "../feedQueue";
 import { profileHref } from "../router";
 import { ViewTracker } from "../viewTracker";
 
@@ -18,6 +19,8 @@ export function Feed() {
   const [commentsFor, setCommentsFor] = useState<FeedVideo | null>(null);
   const [shareFor, setShareFor] = useState<FeedVideo | null>(null);
   const loading = useRef(false);
+  // O cartão do boletim entra antes do primeiro vídeo: o feed espera essa consulta (rápida) terminar.
+  const [bulletinChecked, setBulletinChecked] = useState(false);
   const scroller = useRef<HTMLDivElement>(null);
   const closeComments = useCallback(() => setCommentsFor(null), []);
   const closeShare = useCallback(() => setShareFor(null), []);
@@ -26,8 +29,26 @@ export function Feed() {
   const [nextReady, onStarted] = usePrefetchNext(active);
   const toggleLike = (video: FeedVideo) => likeVideo(video, (id, patch) => setFeed((f) => patchVideo(f, id, patch)));
 
+  // Boletim novo que este morador ainda não recebeu: cartão no topo, uma vez por boletim.
+  useEffect(() => {
+    let alive = true;
+    api
+      .latestBulletin()
+      .then((b) => {
+        if (!alive || !b || b.visto) return;
+        setFeed((f) => withBulletin(f, b));
+        api.bulletinSeen(b.date).catch(() => {});
+      })
+      .catch(() => {})
+      .finally(() => alive && setBulletinChecked(true));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   // Busca mais vídeos quando o usuário chega perto do fim da lista.
   useEffect(() => {
+    if (!bulletinChecked) return;
     // Depois de um erro só tenta de novo quando o usuário pede (sem repetir pedidos em laço).
     if (loading.current || error || !needsMore(feed, active)) return;
     loading.current = true;
@@ -41,7 +62,7 @@ export function Feed() {
       .finally(() => {
         loading.current = false;
       });
-  }, [feed, active, error]);
+  }, [feed, active, error, bulletinChecked]);
 
   // O vídeo ativo é o que ocupa a maior parte da tela.
   useEffect(() => {
@@ -73,8 +94,8 @@ export function Feed() {
 
   return (
     <main className="feed">
-      {/* O card do fim do acervo tem o próprio topo. */}
-      {!(feed.entries[active] && "zerou" in feed.entries[active]) && (
+      {/* O card do fim do acervo e o do boletim têm o próprio topo. */}
+      {!(feed.entries[active] && ("zerou" in feed.entries[active] || "boletim" in feed.entries[active])) && (
         <>
           <div className="feed-title" aria-hidden="true">
             Para você
@@ -88,6 +109,8 @@ export function Feed() {
         {feed.entries.map((entry, i) =>
           "zerou" in entry ? (
             <Zerou key={entry.key} index={i} count={entry.zerou} />
+          ) : "boletim" in entry ? (
+            <BulletinCard key={entry.key} index={i} bulletin={entry.boletim} />
           ) : (
             <FeedItem
               key={entry.key}
@@ -104,7 +127,7 @@ export function Feed() {
             />
           ),
         )}
-        {(feed.entries.length === 0 || error) && (
+        {(feed.entries.every((e) => "boletim" in e) || error) && (
           <div className="feed-item feed-status" role="status">
             {error ? (
               <>
