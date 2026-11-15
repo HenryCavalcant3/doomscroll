@@ -221,12 +221,21 @@ DATABASE_URL=... OLLAMA_URL=http://127.0.0.1:11434 pnpm --filter @doomscroll/wor
 
 Dicas que a bancada mostrou com o modelo pequeno: frases de exemplo genéricas ("que vídeo bom") são copiadas inteiras, então prefira exemplos ligados a um vídeo concreto e com começos variados; deixe o tema fim do mundo fora dos exemplos (o app sorteia quando ele aparece); e descreva no `tom` o que a persona repara num vídeo.
 
+**Modelo de texto maior (`qwen2.5:7b`), testado em 15/11/2026 e descartado.** As três bancadas (chat, comentários e boletim), com uma amostra cada, rodaram com o 7b e com o 3b numa RTX 3050 de 8 GB. O 7b escreveu frases mais coerentes e passou mais na primeira tentativa (chat: 99% contra 93%; boletim: 53 contra 46 de 75), mas:
+
+- piorou no assunto delicado: riu de quem disse estar triste e deu opinião sobre voto, onde o 3b desviava;
+- repetiu as aberturas dos comentários ("meu filho" em 78% dos da Dona Neide, "bom dia" em 54% dos do Tio Valdir), porque os prompts foram afinados para o 3b;
+- continuou inventando detalhes;
+- levou o dobro do tempo no chat e ocupa mais da placa de vídeo, sem espaço para o modelo de imagem.
+
+O padrão continua `qwen2.5:3b`. Trocar de modelo pede afinar os prompts e as travas de novo.
+
 Os commits seguem [Conventional Commits](https://www.conventionalcommits.org/pt-br/), em português.
 
 ## Próximos passos
 
 - **Depois da versão 1.0:** painel visual das decisões das personas e persona criada pelo usuário, num formato ainda a definir.
-- **Melhorias em estudo:** um único player de vídeo reaproveitado no feed, a voz do Rato, perfis de configuração (leve, equilibrado, GPU) com tempos medidos e um teste com o `qwen2.5:7b`.
+- **Melhorias em estudo:** um único player de vídeo reaproveitado no feed, a voz do Rato e perfis de configuração (leve, equilibrado, GPU) com tempos medidos.
 
 ## Sobre as personas
 
