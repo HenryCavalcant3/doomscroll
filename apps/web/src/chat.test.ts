@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Message } from "./api";
-import { applyReactions, conversationTitle, groupReactions, mergeMessages, nextPersonaReply, shortTime } from "./chat";
+import { applyReactions, byKind, conversationTitle, groupReactions, kindLabel, mergeMessages, nextPersonaReply, shortTime } from "./chat";
 
 const msg = (id: string, createdAt: string, text = id): Message => ({
   id,
@@ -83,5 +83,14 @@ describe("resposta da persona em andamento", () => {
   it("ignora outras conversas e marca a falha", () => {
     expect(nextPersonaReply(null, { type: "typing", conversationId: "outra", nickname: "rato" }, c)).toBeNull();
     expect(nextPersonaReply(null, { type: "reply_failed", conversationId: c, nickname: "rato" }, c)).toEqual({ nickname: "rato", text: null, failed: true });
+  });
+});
+
+describe("membros do grupo", () => {
+  it("gente antes das personas, pelo apelido, com o rótulo de cada um", () => {
+    const p = (nickname: string, isAi = false, owner = false) => ({ nickname, isAi, owner });
+    const list = byKind([p("rato", true), p("zeca"), p("dono", false, true), p("kelly", true), p("ana")]);
+    expect(list.map((x) => x.nickname)).toEqual(["ana", "dono", "zeca", "kelly", "rato"]);
+    expect(list.map(kindLabel)).toEqual(["morador", "dono do bunker", "morador", "persona de IA", "persona de IA"]);
   });
 });

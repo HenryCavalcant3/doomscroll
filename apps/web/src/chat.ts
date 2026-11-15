@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useRef } from "react";
-import type { Conversation, Message, Reaction } from "./api";
+import type { Author, Conversation, Message, Reaction } from "./api";
 import type { Realtime, RealtimeEvent } from "./realtime";
 
 /** Junta mensagens sem repetir (pelo id), em ordem de envio. */
@@ -28,6 +28,13 @@ export function groupReactions(reactions: Reaction[], me: string): { emoji: stri
 }
 
 /** Nome da conversa: o do grupo ou o apelido de quem está do outro lado. */
+/** Como a pessoa aparece na lista de membros. */
+export const kindLabel = (p: Pick<Author, "owner" | "isAi">) => (p.owner ? "dono do bunker" : p.isAi ? "persona de IA" : "morador");
+
+/** Membros em ordem: gente antes das personas, cada grupo pelo apelido. */
+export const byKind = <T extends Pick<Author, "nickname" | "isAi">>(people: T[]) =>
+  [...people].sort((a, b) => Number(a.isAi) - Number(b.isAi) || a.nickname.localeCompare(b.nickname));
+
 export const conversationTitle = (c: Conversation) => c.name ?? (c.members.map((m) => m.nickname).join(", ") || "Conversa");
 
 /** Hora (hoje), "ontem" ou dia/mês. */

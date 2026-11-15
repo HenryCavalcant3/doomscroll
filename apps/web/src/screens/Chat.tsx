@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import { api, apiUrl, ApiError, REACTIONS, type Conversation, type Message, type SharedVideo, type User } from "../api";
-import { applyReactions, conversationTitle, groupReactions, mergeMessages, nextPersonaReply, shortTime, useRealtimeEvents, type PersonaReply } from "../chat";
+import { applyReactions, byKind, conversationTitle, groupReactions, mergeMessages, kindLabel, nextPersonaReply, shortTime, useRealtimeEvents, type PersonaReply } from "../chat";
 import { bulletinTag } from "../bulletin";
 import { Avatar } from "../components/Avatar";
 import { ConversationAvatar } from "../components/ConversationAvatar";
+import { Gaveta } from "../components/Gaveta";
+import { Pessoas } from "../components/Pessoas";
 import { Selo } from "../components/Selo";
 import { Player } from "../components/Player";
 import { bulletinHref, profileHref } from "../router";
@@ -39,6 +41,8 @@ export function ChatScreen({ id, me, onRead }: Props) {
   /** Mensagem com a escolha de reação aberta. */
   const [pickerFor, setPickerFor] = useState<string | null>(null);
   const closePlayer = useCallback(() => setPlaying(null), []);
+  const [membersOpen, setMembersOpen] = useState(false);
+  const closeMembers = useCallback(() => setMembersOpen(false), []);
   /** Persona escrevendo a resposta (ou que não conseguiu responder). */
   const [personaReply, setPersonaReply] = useState<PersonaReply>(null);
 
@@ -189,19 +193,27 @@ export function ChatScreen({ id, me, onRead }: Props) {
             <path d="M15 5l-7 7 7 7" />
           </svg>
         </a>
-        {conv && (
-          <a className="chat-who" href={other ? profileHref(other.nickname) : undefined}>
-            <ConversationAvatar conversation={conv} size={40} />
-            <span className="chat-who-text">
-              <span className="chat-title">
-                {conversationTitle(conv)}
-                <Selo who={other} />
+        {conv &&
+          (group ? (
+            <button className="chat-who chat-who-btn" onClick={() => setMembersOpen(true)} aria-haspopup="dialog">
+              <ConversationAvatar conversation={conv} size={40} />
+              <span className="chat-who-text">
+                <span className="chat-title">{conversationTitle(conv)}</span>
+                <span className="chat-sub">{conv.members.length + 1} pessoas · ver membros</span>
               </span>
-              {other?.isAi && <span className="chat-sub">persona de IA</span>}
-              {group && <span className="chat-sub">{conv.members.length + 1} pessoas</span>}
-            </span>
-          </a>
-        )}
+            </button>
+          ) : (
+            <a className="chat-who" href={other ? profileHref(other.nickname) : undefined}>
+              <ConversationAvatar conversation={conv} size={40} />
+              <span className="chat-who-text">
+                <span className="chat-title">
+                  {conversationTitle(conv)}
+                  <Selo who={other} />
+                </span>
+                {other?.isAi && <span className="chat-sub">persona de IA</span>}
+              </span>
+            </a>
+          ))}
       </header>
 
       <div className="chat-log" ref={log} onScroll={onScroll} role="log" aria-live="polite">
@@ -312,6 +324,11 @@ export function ChatScreen({ id, me, onRead }: Props) {
       </div>
 
       {playing && <Player video={playing} onClose={closePlayer} />}
+      {membersOpen && conv && (
+        <Gaveta id="membros-titulo" title={`Membros (${conv.members.length + 1})`} onClose={closeMembers}>
+          <Pessoas people={[me, ...byKind(conv.members)]} note={(p) => (p.nickname === me.nickname ? "você" : kindLabel(p))} />
+        </Gaveta>
+      )}
       {sendError && <p className="error chat-send-error">{sendError}</p>}
       <form className="chat-compose" onSubmit={send}>
         <label className="sr-only" htmlFor="mensagem">
