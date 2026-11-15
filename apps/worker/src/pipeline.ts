@@ -32,6 +32,9 @@ export interface PipelineDeps {
 /** Chance de o comentário brincar com o fim do mundo (SPEC 7.3: só uma parte pequena das falas). */
 export const APOCALYPSE_CHANCE = 0.15;
 
+/** Erro mostrado a quem cadastrou um vídeo que já está no acervo por outro link. */
+export const DUPLICATE_MESSAGE = "Esse vídeo já está no estoque (cadastrado por outro link).";
+
 /** Quando o limite por hora estoura, o comentário volta para a fila depois deste tempo. */
 export const RATE_RETRY_SECONDS = 600;
 
@@ -65,7 +68,13 @@ const steps: Record<VideoQueue, Step> = {
     await rm(dir, { recursive: true, force: true });
     await mkdir(dir, { recursive: true });
     const result = await deps.download(video.sourceUrl, dir);
-    await deps.db.saveDownload(id, result.title, result.hashtags, result.sourceDescription);
+    if (!(await deps.db.saveDownload(id, result.title, result.hashtags, result.sourceDescription, result.sourceKey))) {
+      // O mesmo vídeo por outro link (o curto do TikTok e o completo): não processa de novo.
+      await deps.db.fail(id, DUPLICATE_MESSAGE, false);
+      await rm(dir, { recursive: true, force: true });
+      deps.log?.(`[worker] ${id} é repetido (${result.sourceKey})`);
+      return;
+    }
     await deps.send(QUEUES.convert, { videoId: id });
   },
 

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { VideoDb, VideoRecord } from "./db.js";
-import { RATE_RETRY_SECONDS, runStep, type PipelineDeps } from "./pipeline.js";
+import { DUPLICATE_MESSAGE, RATE_RETRY_SECONDS, runStep, type PipelineDeps } from "./pipeline.js";
 import { QUEUES } from "./queues.js";
 
 const ID = "11111111-1111-4111-8111-111111111111";
@@ -25,6 +25,7 @@ const RATO = { ...VALDIR, userId: "33333333-3333-4333-8333-333333333333", nickna
 function fakeDb(): VideoDb & {
   video: VideoRecord & { stage: string; error?: string; embedding?: number[] };
   topics: string[];
+  takenKeys: string[];
   comments: { userId: string; text: string }[];
   likes: string[];
   decisions: { userId: string; action: string; reasons: Record<string, unknown> }[];
@@ -40,8 +41,13 @@ function fakeDb(): VideoDb & {
     topics: [] as string[],
     get: async () => ({ ...video }),
     setStage: async (_: string, status: string, stage: string) => Object.assign(video, { status, stage }),
-    saveDownload: async (_: string, title: string | null, hashtags: string[], sourceDescription: string | null) =>
-      Object.assign(video, { title, hashtags, sourceDescription, status: "processando", stage: "convertendo" }),
+    /** Chaves de outros vídeos ativos do acervo. */
+    takenKeys: [] as string[],
+    saveDownload: async (_: string, title: string | null, hashtags: string[], sourceDescription: string | null, sourceKey: string | null) => {
+      if (sourceKey && db.takenKeys.includes(sourceKey)) return false;
+      Object.assign(video, { title, hashtags, sourceDescription, sourceKey, status: "processando", stage: "convertendo" });
+      return true;
+    },
     saveMedia: async (_: string, filePath: string) => Object.assign(video, { filePath, stage: "transcrevendo" }),
     saveTranscript: async (_: string, transcript: string) => Object.assign(video, { transcript, stage: "sugerindo" }),
     saveSuggestion: async (_: string, description: string, topics: string[]) => {
@@ -88,7 +94,7 @@ beforeEach(async () => {
     send: async (queue) => sent.push(queue),
     download: async (_url, dir) => {
       await writeFile(join(dir, "source.mkv"), "x");
-      return { filePath: join(dir, "source.mkv"), title: "Gato", hashtags: ["gato"], sourceDescription: "Meu gato" };
+      return { filePath: join(dir, "source.mkv"), title: "Gato", hashtags: ["gato"], sourceDescription: "Meu gato", sourceKey: "tiktok:7312345" };
     },
     convert: async (_in, out) => writeFile(out, "mp4"),
     probe: async () => ({ duration: 8, hasAudio: true }),
@@ -124,6 +130,14 @@ describe("pipeline de ingestão", () => {
     expect(db.topics).toEqual(["humor"]);
     // Só ficam o MP4 e a thumbnail; arquivo original e áudio temporário são apagados.
     expect((await readdir(join(deps.mediaDir, ID))).sort()).toEqual(["thumb.jpg", "video.mp4"]);
+  });
+
+  it("o mesmo vídeo por outro link (curto do TikTok) falha na hora, sem converter e sem arquivos", async () => {
+    db.takenKeys = ["tiktok:7312345"];
+    await runStep(QUEUES.download, deps, job);
+    expect(sent).toEqual([]);
+    expect(db.video).toMatchObject({ status: "falhou", error: DUPLICATE_MESSAGE });
+    expect(await readdir(deps.mediaDir)).not.toContain(ID);
   });
 
   it("não transcreve vídeo sem áudio", async () => {

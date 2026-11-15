@@ -33,7 +33,8 @@ export interface VideoForPersonas extends VideoForComment {
 export interface VideoDb {
   get(id: string): Promise<VideoRecord | null>;
   setStage(id: string, status: string, stage: string): Promise<void>;
-  saveDownload(id: string, title: string | null, hashtags: string[], sourceDescription: string | null): Promise<void>;
+  /** Grava o que o yt-dlp trouxe; false quando a chave é de outro vídeo do acervo (o mesmo vídeo por outro link). */
+  saveDownload(id: string, title: string | null, hashtags: string[], sourceDescription: string | null, sourceKey: string | null): Promise<boolean>;
   saveMedia(id: string, filePath: string, thumbPath: string, duration: number): Promise<void>;
   saveTranscript(id: string, transcript: string): Promise<void>;
   saveSuggestion(id: string, description: string, topicSlugs: string[]): Promise<void>;
@@ -99,12 +100,20 @@ export class PgVideoDb implements VideoDb {
     ]);
   }
 
-  async saveDownload(id: string, title: string | null, hashtags: string[], sourceDescription: string | null) {
-    await this.pool.query(
-      `UPDATE videos SET title = $2, hashtags = $3, source_description = $4, status = 'processando', stage = 'convertendo', updated_at = now()
-        WHERE id = $1`,
-      [id, title, hashtags, sourceDescription],
-    );
+  async saveDownload(id: string, title: string | null, hashtags: string[], sourceDescription: string | null, sourceKey: string | null) {
+    try {
+      await this.pool.query(
+        `UPDATE videos SET title = $2, hashtags = $3, source_description = $4, source_key = $5,
+                status = 'processando', stage = 'convertendo', updated_at = now()
+          WHERE id = $1`,
+        [id, title, hashtags, sourceDescription, sourceKey],
+      );
+      return true;
+    } catch (err) {
+      // Índice único da chave entre os vídeos ativos: o mesmo vídeo já entrou por outro link.
+      if ((err as { code?: string }).code === "23505") return false;
+      throw err;
+    }
   }
 
   async saveMedia(id: string, filePath: string, thumbPath: string, duration: number) {

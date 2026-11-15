@@ -8,6 +8,8 @@ export interface DownloadResult {
   title: string | null;
   hashtags: string[];
   sourceDescription: string | null;
+  /** Chave real do vídeo ("tiktok:7312345...", "youtube:abc"), igual para o link curto e o completo. */
+  sourceKey: string | null;
 }
 
 /** Vídeos acima disso (ou ao vivo) não entram no bunker. */
@@ -37,6 +39,8 @@ export function ytDlpArgs(url: string, dir: string): string[] {
 }
 
 interface YtDlpInfo {
+  id?: string;
+  extractor_key?: string;
   title?: string;
   description?: string;
   tags?: string[];
@@ -44,7 +48,7 @@ interface YtDlpInfo {
 
 export function parseInfo(stdout: string): Omit<DownloadResult, "filePath"> {
   const line = stdout.trim().split("\n").filter(Boolean).at(-1);
-  if (!line) return { title: null, hashtags: [], sourceDescription: null };
+  if (!line) return { title: null, hashtags: [], sourceDescription: null, sourceKey: null };
   const info = JSON.parse(line) as YtDlpInfo;
   const tags = new Set<string>();
   for (const t of info.tags ?? []) tags.add(t.toLowerCase().replace(/^#/, ""));
@@ -55,6 +59,7 @@ export function parseInfo(stdout: string): Omit<DownloadResult, "filePath"> {
     title: info.title?.trim() || null,
     hashtags: [...tags].filter(Boolean).slice(0, 20),
     sourceDescription: cleanSourceDescription(info.description),
+    sourceKey: info.id && info.extractor_key ? `${info.extractor_key.toLowerCase()}:${info.id}` : null,
   };
 }
 

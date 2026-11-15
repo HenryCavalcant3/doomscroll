@@ -16,7 +16,14 @@ describe("yt-dlp", () => {
       title: "Gato #Fofo",
       hashtags: ["animais", "fofo", "gato"],
       sourceDescription: "Meu gato no sofá",
+      sourceKey: null,
     });
+  });
+
+  it("a chave do vídeo vem do extrator e do id, igual para o link curto e o completo", () => {
+    const info = (extra: object) => `${JSON.stringify({ title: "x", ...extra })}\n`;
+    expect(parseInfo(info({ id: "7312345", extractor_key: "TikTok" })).sourceKey).toBe("tiktok:7312345");
+    expect(parseInfo(info({ id: "abcDEF_123", extractor_key: "Youtube" })).sourceKey).toBe("youtube:abcDEF_123");
   });
 });
 
