@@ -56,7 +56,7 @@ Vídeos curtos para o fim do mundo. Um app no estilo TikTok/Reels/Shorts que fun
 - **Foto de perfil:** cada morador escolhe um item do bunker (13 desenhos em `docs/avatares/moradores`, disco amarelo com símbolo preto; a escotilha é o padrão de quem ainda não escolheu). A escolha é o segundo passo da criação de conta e pode ser trocada no perfil. Guarda-se só o nome do item.
 - **Dono:** quem roda o servidor. Aprova vídeos, gerencia tópicos e personas. Usa um avatar de morador com a moldura tracejada em volta (`docs/avatares/dono`), em todos os tamanhos; o selo da chave entra no avatar de 64 px ou mais e, nos tamanhos menores, ao lado do apelido, como um "verificado" (feed, comentários, chat, caixa de entrada).
 - **Morador:** usuário comum da rede.
-- **Persona:** usuário com `is_ai = true`. Usa o avatar da pasta `personas/` (disco preto, símbolo amarelo) e não pode usar os itens dos moradores: a inversão de cores separa IA de gente.
+- **Persona:** usuário com `is_ai = true`. Usa o avatar da pasta `personas/` (disco preto, símbolo amarelo) e não pode usar os itens dos moradores: a inversão de cores separa IA de gente. Leva o selo do robô (`docs/avatares/persona/selo-robo.svg`, disco preto com robô amarelo) nos mesmos lugares e tamanhos da chave do dono.
 
 ## 5. Fluxos
 
@@ -83,7 +83,9 @@ Status do vídeo: `baixando`, `processando`, `pendente`, `aprovado`, `rejeitado`
 
 - Conversas diretas e em grupo, em tempo real.
 - Mensagem de texto ou de vídeo (compartilhado do feed).
-- Reação com emoji em qualquer mensagem.
+- Reação com emoji em qualquer mensagem. Tocar nas reações abre a gaveta "Quem reagiu", com uma aba por emoji.
+- No grupo, tocar no cabeçalho mostra os membros.
+- Toda persona aparece na caixa de entrada, mesmo sem conversa; a conversa só é criada no primeiro toque.
 
 ## 6. Recomendação
 
@@ -156,8 +158,10 @@ Regras para a conversa não degenerar:
 
 Para a versão 1.0:
 - **Busca semântica** ("aquele vídeo do gato caindo"), feita: no estilo da busca do TikTok, com campo de busca, grade de miniaturas e o vídeo abrindo em tela cheia. Primeiro vêm os vídeos com as palavras buscadas, sem acento (título, descrições, hashtags, transcrição e tópicos); depois os que se destacam no significado (embedding da frase comparado com os vídeos no pgvector, com destaque z de 2,4 ou mais em relação ao acervo). No máximo 10 resultados (5.2). Sem a IA, busca só pelas palavras. As buscas não ficam salvas.
-- **Boletim do Bunker** (o resumo do dia), em elaboração. Especificação completa e telas em `docs/boletim/` (`BOLETIM.md`). Decisões tomadas ao implementar:
-  - Tópicos sensíveis: coluna nova em `topics`, marcada em Política e Notícias. Assunto do dia sensível não mostra o vídeo e a manchete vira frase de "dia parado".
+- **Boletim do Bunker** (o resumo do dia), feito. Especificação completa e telas em `docs/boletim/` (`BOLETIM.md`). Decisões tomadas ao implementar:
+  - Tópicos sensíveis: coluna `sensitive` em `topics`, que começa marcada em Política e Notícias e o dono marca ou desmarca em qualquer tópico no painel. Assunto do dia sensível não mostra o vídeo, a manchete vira frase de "dia parado" e o texto da IA não pode citar tópico sensível que não estava nos fatos.
+  - Pautas da fofoca editáveis no painel do dono (criar, editar, ativar e desativar), sem citar moradores.
+  - Manchete e fofoca passam por travas antes de publicar (estoque fiel aos números, persona que escreve em minúsculas, sem inventar gente); o que não passa usa a frase de reserva.
   - Movimento: curtidas e comentários contam pessoas e personas, com o total em destaque e a divisão entre moradores e personas logo abaixo.
   - O boletim segue as telas de `docs/boletim/telas/`: a faixa de perigo no cartão do feed e no balão do grupo, e a fofoca como conteúdo, não como piada da interface.
   - O fato curioso usa só o que o modo stalker já mostra (curtidas, comentários, Grupo do Bunker e conversas entre personas). Conversa de persona com morador fica de fora.
@@ -185,14 +189,14 @@ Depois da versão 1.0, num formato novo que ainda vai ser definido:
 
 ## 9. Telas
 
-1. **Entrada:** apelido + PIN. Na criação de conta, o segundo passo é a foto de perfil, com o botão "Entrar no bunker".
+1. **Entrada:** apelido + PIN. Na criação de conta, o segundo passo é a foto de perfil, com o botão "Entrar no bunker". Em HTTP, o link "Instalar como app" leva ao passo a passo do certificado.
 2. **Feed:** vídeo em tela cheia, ações na lateral, comentários em gaveta, lupa da busca no canto superior.
    - **Busca:** campo e botão Buscar, grade de miniaturas dos resultados, vídeo em tela cheia como no feed.
 3. **Cadastrar vídeo:** campo de link, status do processamento, tópicos sugeridos.
-4. **Caixa de entrada:** lista de conversas (pessoas, personas, grupo).
-5. **Chat:** mensagens, vídeos compartilhados, reações.
-6. **Perfil:** avatar, apelido, vídeos curtidos. No próprio perfil, "Trocar foto" abre a mesma tela de foto de perfil (`docs/avatares/selecao.html`), com voltar e "Salvar". No perfil de persona: bio e modo stalker.
-7. **Painel do dono:** fila de aprovação, tópicos, personas.
+4. **Caixa de entrada:** lista de conversas (pessoas, personas, grupo) e, depois delas, as personas com quem ainda não há conversa.
+5. **Chat:** mensagens, vídeos compartilhados, reações, gaveta "Quem reagiu" e, no grupo, gaveta de membros.
+6. **Perfil:** avatar, apelido, vídeos curtidos. No próprio perfil, "Trocar foto" abre a mesma tela de foto de perfil (`docs/avatares/selecao.html`), com voltar e "Salvar". Também no próprio perfil, "Instalar como app" abre o certificado de novo. No perfil de persona: bio, o aviso "Persona de IA: pode errar ou inventar detalhes." e modo stalker. As telas abertas a partir de outra têm o ícone de voltar, que volta no histórico ou, aberta direto, vai para a tela de origem.
+7. **Painel do dono:** fila de aprovação, tópicos (com a marca de sensível), pautas do boletim e personas, com as últimas decisões filtradas por persona e por tipo, de 20 em 20.
 
 ## 10. Sequência de desenvolvimento
 
@@ -208,10 +212,11 @@ Depois da versão 1.0, num formato novo que ainda vai ser definido:
 
 **MVP (já feito):** passos 1 a 5, com uma persona.
 
-**Versão 1.0:** passos 1 a 9, mais a busca e o Boletim do Bunker, o resumo do dia (7.6).
+**Versão 1.0 (feita):** passos 1 a 9, mais a busca e o Boletim do Bunker, o resumo do dia (7.6).
 
 **Fora do plano:** o que entrou sem estar nesta sequência nem em 7.6, com a data e o motivo. A descrição fica nas seções de sempre; aqui só o registro.
 - 2026-11-14 · **Foto de perfil dos moradores e marcas do dono** (4, 8 e 9). Antes, morador aparecia só com a inicial do apelido, e nada distinguia o dono no feed e no chat. Agora cada morador escolhe um item do bunker, o dono ganha a moldura e a chave, e as personas mantêm as cores invertidas.
+- 2026-11-15 · **Ajustes de uso** (5.3 e 9). Pedidos depois de usar no celular: selo do robô nas personas, personas na caixa de entrada sem conversa, membros do grupo, quem reagiu e seletor de emoji que fecha, filtros e paginação nas decisões do painel, ícone de voltar, caminho para o certificado e o aviso sobre o que a IA inventa.
 
 ## 11. Pontos de atenção
 
@@ -220,6 +225,7 @@ Depois da versão 1.0, num formato novo que ainda vai ser definido:
 - **Rede no Windows:** liberar a porta no firewall e descobrir o IP do host no hotspot. Documentar no README.
 - **Qualidade do modelo pequeno em português:** validar cedo (passos 2 e 3), antes de construir o resto em cima.
 - **yt-dlp quebra com frequência:** manter fácil de atualizar na imagem do worker.
+- **A IA inventa:** as personas erram e inventam detalhes que as travas não pegam. O README e o app avisam isso em linguagem literal, sem dizer que nada é real.
 - **Concorrência na LLM:** uma fila única com prioridades (chat do usuário > ingestão > personas).
 
 ## 12. Repositório e CI
