@@ -27,7 +27,6 @@ export function groupReactions(reactions: Reaction[], me: string): { emoji: stri
   return [...groups.values()];
 }
 
-/** Nome da conversa: o do grupo ou o apelido de quem está do outro lado. */
 /** Como a pessoa aparece na lista de membros. */
 export const kindLabel = (p: Pick<Author, "owner" | "isAi">) => (p.owner ? "dono do bunker" : p.isAi ? "persona de IA" : "morador");
 
@@ -35,6 +34,7 @@ export const kindLabel = (p: Pick<Author, "owner" | "isAi">) => (p.owner ? "dono
 export const byKind = <T extends Pick<Author, "nickname" | "isAi">>(people: T[]) =>
   [...people].sort((a, b) => Number(a.isAi) - Number(b.isAi) || a.nickname.localeCompare(b.nickname));
 
+/** Nome da conversa: o do grupo ou o apelido de quem está do outro lado. */
 export const conversationTitle = (c: Conversation) => c.name ?? (c.members.map((m) => m.nickname).join(", ") || "Conversa");
 
 /** Hora (hoje), "ontem" ou dia/mês. */

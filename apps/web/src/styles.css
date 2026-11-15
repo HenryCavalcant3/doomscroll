@@ -683,6 +683,9 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
 }
 .react-picker button { width: 44px; height: 44px; border: 0; border-radius: 50%; background: none; font-size: 22px; }
 .react-picker button[aria-pressed="true"] { background: var(--line); }
+.react-picker .react-picker-close { display: inline-flex; align-items: center; justify-content: center; color: var(--muted); }
+.reagiu-abas { margin-inline: 0; overflow-x: auto; flex: none; }
+.reagiu-abas button { flex: 1 0 auto; padding: 0 12px; white-space: nowrap; }
 
 /* Gaveta "Enviar para" do feed */
 .share-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }

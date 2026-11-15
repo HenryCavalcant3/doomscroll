@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
-import { api, apiUrl, ApiError, REACTIONS, type Conversation, type Message, type SharedVideo, type User } from "../api";
+import { api, apiUrl, ApiError, REACTIONS, type Author, type Conversation, type Message, type SharedVideo, type User } from "../api";
 import { applyReactions, byKind, conversationTitle, groupReactions, mergeMessages, kindLabel, nextPersonaReply, shortTime, useRealtimeEvents, type PersonaReply } from "../chat";
 import { bulletinTag } from "../bulletin";
 import { Avatar } from "../components/Avatar";
@@ -8,6 +8,7 @@ import { Gaveta } from "../components/Gaveta";
 import { Pessoas } from "../components/Pessoas";
 import { Selo } from "../components/Selo";
 import { Player } from "../components/Player";
+import { CloseIcon } from "./Feed";
 import { bulletinHref, profileHref } from "../router";
 
 const PAGE = 50;
@@ -50,6 +51,22 @@ export function ChatScreen({ id, me, onRead }: Props) {
   useEffect(() => {
     if (pickerFor) log.current?.querySelector(".react-picker")?.scrollIntoView({ block: "nearest" });
   }, [pickerFor]);
+  // O seletor de emoji fecha com Esc ou tocando fora dele (o balão que o abriu continua alternando).
+  useEffect(() => {
+    if (!pickerFor) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setPickerFor(null);
+    const onDown = (e: PointerEvent) => {
+      if (!(e.target instanceof Element) || !e.target.closest(".react-picker, .bubble, .msg-react-btn, .reaction-add")) setPickerFor(null);
+    };
+    window.addEventListener("keydown", onKey);
+    document.addEventListener("pointerdown", onDown);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.removeEventListener("pointerdown", onDown);
+    };
+  }, [pickerFor]);
+  const [whoReacted, setWhoReacted] = useState<string | null>(null);
+  const closeWhoReacted = useCallback(() => setWhoReacted(null), []);
 
   // Última página: na abertura e a cada reconexão (traz o que chegou com a conexão caída).
   const refresh = useCallback(
@@ -182,6 +199,8 @@ export function ChatScreen({ id, me, onRead }: Props) {
   }
 
   const other = conv?.type === "direct" ? conv.members[0] : undefined;
+  const people = new Map<string, Author>([me, ...(conv?.members ?? [])].map((p) => [p.nickname, p]));
+  const reacted = whoReacted ? messages.find((m) => m.id === whoReacted && m.reactions.length > 0) : undefined;
   const group = conv?.type === "group";
   // O "+ reagir" fica à vista só na última mensagem dos outros (como no wireframe); nas outras, toque no balão.
   const lastOtherId = [...messages].reverse().find((m) => m.sender.nickname !== me.nickname)?.id;
@@ -289,6 +308,9 @@ export function ChatScreen({ id, me, onRead }: Props) {
                       </button>
                     );
                   })}
+                  <button className="react-picker-close" onClick={() => setPickerFor(null)} aria-label="Fechar as reações">
+                    <CloseIcon />
+                  </button>
                 </div>
               ) : (
                 (reactions.length > 0 || m.id === lastOtherId) && (
@@ -297,9 +319,9 @@ export function ChatScreen({ id, me, onRead }: Props) {
                       <button
                         key={r.emoji}
                         className={`reaction${r.mine ? " mine" : ""}`}
-                        onClick={() => react(m, r.emoji)}
-                        title={r.who.map((n) => `@${n}`).join(", ")}
-                        aria-label={`${r.emoji} ${r.count}: ${r.who.join(", ")}${r.mine ? " (toque para tirar a sua)" : ""}`}
+                        onClick={() => setWhoReacted(m.id)}
+                        aria-haspopup="dialog"
+                        aria-label={`${r.emoji} ${r.count}: ver quem reagiu`}
                       >
                         {r.emoji} {r.count > 1 && r.count}
                       </button>
@@ -324,6 +346,18 @@ export function ChatScreen({ id, me, onRead }: Props) {
       </div>
 
       {playing && <Player video={playing} onClose={closePlayer} />}
+      {reacted && (
+        <WhoReacted
+          message={reacted}
+          people={people}
+          me={me.nickname}
+          onRemove={(emoji) => {
+            closeWhoReacted();
+            react(reacted, emoji);
+          }}
+          onClose={closeWhoReacted}
+        />
+      )}
       {membersOpen && conv && (
         <Gaveta id="membros-titulo" title={`Membros (${conv.members.length + 1})`} onClose={closeMembers}>
           <Pessoas people={[me, ...byKind(conv.members)]} note={(p) => (p.nickname === me.nickname ? "você" : kindLabel(p))} />
@@ -373,5 +407,41 @@ export function PlayIcon() {
     <svg width={40} height={40} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinejoin="round" aria-hidden="true">
       <path d="M8 5l11 7-11 7z" />
     </svg>
+  );
+}
+
+/**
+ * Gaveta "Quem reagiu": uma aba com todas e uma por emoji. Quem saiu do grupo ainda aparece, sem foto.
+ * A sua reação dá para tirar aqui; trocar, pelo + da mensagem.
+ */
+function WhoReacted({ message, people, me, onRemove, onClose }: { message: Message; people: Map<string, Author>; me: string; onRemove(emoji: string): void; onClose(): void }) {
+  const groups = groupReactions(message.reactions, me);
+  const [tab, setTab] = useState<string | null>(null);
+  const shown = message.reactions.filter((r) => tab === null || r.emoji === tab);
+  const emojiOf = new Map(message.reactions.map((r) => [r.nickname, r.emoji]));
+  const mine = emojiOf.get(me);
+  const author = (nickname: string): Author => people.get(nickname) ?? { nickname, avatarUrl: null, avatar: null, isAi: false, owner: false };
+  return (
+    <Gaveta id="reagiu-titulo" title={`Quem reagiu (${message.reactions.length})`} onClose={onClose}>
+      <div className="tabs reagiu-abas" role="tablist">
+        <button role="tab" aria-selected={tab === null} onClick={() => setTab(null)}>
+          Todas {message.reactions.length}
+        </button>
+        {groups.map((g) => (
+          <button key={g.emoji} role="tab" aria-selected={tab === g.emoji} onClick={() => setTab(g.emoji)} aria-label={`${g.emoji}: ${g.count}`}>
+            {g.emoji} {g.count}
+          </button>
+        ))}
+      </div>
+      <Pessoas
+        people={shown.map((r) => author(r.nickname))}
+        note={(p) => `${p.nickname === me ? "você · " : ""}${emojiOf.get(p.nickname) ?? ""}`}
+      />
+      {mine && (
+        <button className="btn btn-small" onClick={() => onRemove(mine)}>
+          Tirar a minha reação {mine}
+        </button>
+      )}
+    </Gaveta>
   );
 }
