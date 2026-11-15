@@ -123,7 +123,19 @@ export interface CheckOptions {
   source?: string;
   /** Personas que não estão na fofoca: citar uma delas é acrescentar gente ("o ajudante do Rato"). */
   strangers?: readonly string[];
+  /** Estoque da manchete ("nenhum vídeo novo", "pouco vídeo novo"...): o texto não pode desmentir. */
+  stock?: string;
+  /** Tópicos sensíveis: só podem aparecer se já estavam na entrada ("um vídeo de notícias" inventado). */
+  sensitive?: readonly string[];
+  /** Persona que escreve tudo em minúsculas (o Rato): o texto aceito sai assim. */
+  lowercase?: boolean;
 }
+
+/** O jeito da persona pede tudo em minúsculas ("tudo em minúsculas", no tom do JSON dela). */
+export const writesLowercase = (v: { tone: string }) => /min[uú]sculas/i.test(v.tone);
+
+const NEGATION = /(^|[^\p{L}])(nenhum|nenhuma|nada|sem|nao|nem)($|[^\p{L}])/u;
+const NEW_VIDEOS = /(videos? nov|nov[oa]s? videos?|(^|[^\p{L}])(entrou|entraram|chegou|chegaram|abasteceu|abasteceram)($|[^\p{L}]))/u;
 
 /** Números por extenso (a partir de dois: "um" é artigo). Só valem se já estavam na pauta. */
 const NUMBER_WORDS = new Set(
@@ -168,6 +180,16 @@ export function checkLine(raw: string, o: CheckOptions): Check {
   const says = (n: string) => n.length >= 3 && new RegExp(`(^|[^\\p{L}])${escape(n)}($|[^\\p{L}])`, "u").test(folded);
   if (o.mustNotMention?.some(says)) return { ok: false, reason: "fala de si" };
   if (o.strangers?.some(says)) return { ok: false, reason: "acrescentou persona" };
+  // Regra fixa 3 na manchete: os números do boletim vêm do SQL, e o texto não pode desmentir o estoque.
+  if (o.stock !== undefined) {
+    const none = fold(o.stock).startsWith("nenhum");
+    // Frase a frase: o "não" de outra frase ("não que alguém tenha pedido") não desfaz o "entrou vídeo novo".
+    const claims = folded.split(/[.!?;:]+/).some((s) => NEW_VIDEOS.test(s) && !NEGATION.test(s));
+    if (none && claims) return { ok: false, reason: "inventou vídeo novo" };
+    if (!none && /(nenhum|nenhuma|nada de|sem) (nov[oa]s? )?(video|novidade)/.test(folded)) return { ok: false, reason: "negou o estoque" };
+  }
+  const input = fold(o.source ?? "");
+  if (o.sensitive?.some((t) => says(fold(t)) && !input.includes(fold(t)))) return { ok: false, reason: "tópico sensível" };
   if (o.examples && copiesExample(text, [...o.examples], o.source ?? "")) return { ok: false, reason: "copiou exemplo" };
   const bare = (s: string) => fold(s).replace(/[^\p{L}\s]/gu, "").replace(/\s+/g, " ").trim();
   if (o.sameAs?.some((e) => bare(e) === bare(text))) return { ok: false, reason: "copiou exemplo" };
@@ -182,7 +204,7 @@ export function checkLine(raw: string, o: CheckOptions): Check {
     const parts = fold(name).split(/\s+/).filter((w) => w.length >= 3);
     if (parts.length && !parts.some((w) => folded.includes(w))) return { ok: false, reason: `não cita ${name}` };
   }
-  return { ok: true, text };
+  return { ok: true, text: o.lowercase ? text.toLowerCase() : text };
 }
 
 export function cosine(a: readonly number[], b: readonly number[]): number {

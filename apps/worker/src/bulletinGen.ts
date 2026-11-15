@@ -23,6 +23,7 @@ import {
   type BulletinVoice,
   type CheckOptions,
   type GossipInput,
+  writesLowercase,
 } from "./bulletinText.js";
 import { factForLlm, pickCuriousFact, type PairActivity, type PersonaActivity } from "./gossip.js";
 import { pickExamples } from "./ai.js";
@@ -57,6 +58,8 @@ export interface BulletinGenDb {
   fail(date: string): Promise<void>;
   voices(): Promise<BulletinVoice[]>;
   residents(): Promise<string[]>;
+  /** Nomes dos tópicos marcados como sensíveis no painel do dono. */
+  sensitiveTopics(): Promise<string[]>;
   collectDay(day: DayWindow): Promise<RawDay>;
   personaActivity(day: DayWindow, list: PersonaRef[]): Promise<{ personas: PersonaActivity[]; pairs: PairActivity[] }>;
   gossipTopics(): Promise<GossipTopic[]>;
@@ -134,6 +137,9 @@ export async function generateBulletin(deps: BulletinGenDeps, day: DayWindow): P
   }
 
   const residents = await db.residents();
+  const sensitive = await db.sensitiveTopics();
+  const lowercase = writesLowercase(duty);
+  const voiced = (s: string) => (lowercase ? s.toLowerCase() : s);
   const recent = await db.recentEmbeddings(day.date, RECENT).catch(() => []);
   const embedSafe = (text: string) => deps.embed(text).catch(() => null);
 
@@ -172,10 +178,10 @@ export async function generateBulletin(deps: BulletinGenDeps, day: DayWindow): P
     const got = await write(
       () => buildHeadlinePrompt(duty, facts4llm, pickExamples(duty.manchetes, 3, random)),
       headlineSchema,
-      { key: "manchete", maxWords: HEADLINE_WORDS, sameAs: duty.manchetes },
+      { key: "manchete", maxWords: HEADLINE_WORDS, sameAs: duty.manchetes, stock: facts4llm.estoque, sensitive, lowercase },
       recent.flatMap((r) => (r.headline ? [r.headline] : [])),
     );
-    headline = got?.text ?? fallbackHeadline(facts);
+    headline = got?.text ?? voiced(fallbackHeadline(facts));
     headlineEmbedding = got?.vector ?? null;
     if (!got) log("manchete de modelo fixo");
   }
@@ -224,10 +230,12 @@ export async function generateBulletin(deps: BulletinGenDeps, day: DayWindow): P
         strangers: others.filter((o) => !mention.includes(o.name)).map((o) => nameKey(o.name)),
         examples: duty.fofocas,
         source: "fofoca" in input ? input.fofoca : input.o_que,
+        sensitive,
+        lowercase,
       },
       recent.flatMap((r) => (r.gossip ? [r.gossip] : [])),
     );
-    gossip = got?.text ?? fallbackGossip(input);
+    gossip = got?.text ?? voiced(fallbackGossip(input));
     gossipEmbedding = got?.vector ?? null;
     if (!got) log("fofoca sem reescrita");
   }

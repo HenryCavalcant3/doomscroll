@@ -25,6 +25,13 @@ describe("boletim no histórico", () => {
     expect(replyProblem("Fita boa não se troca [risos]", [], history)).toBeNull();
   });
 
+  it("o \"vou\" grudado (Vouba, Voua gente) é gagueira; vou e voucher passam", () => {
+    const history = [msg("rato", "Kelly repetiu fita cassete no rádio por três dias.")];
+    expect(replyProblem("Não me impressiona. Vouba, @dona_neide.", [], history)).toBe("gagueira");
+    expect(replyProblem("Voua gente aqui fala sobre motivação.", [], history)).toBe("gagueira");
+    expect(replyProblem("Vou procurar a fita, e ganhei um voucher!", [], history)).toBeNull();
+  });
+
   it("recusa de assistente é descartada, mas o \"não posso\" do dia a dia passa", () => {
     const history = [msg("rato", "Kelly repetiu fita cassete no rádio por três dias.")];
     expect(replyProblem("Desculpa @rato, mas não posso reproduzir ou comentar sobre esse tipo de conteúdo.", [], history)).toBe("assistente");

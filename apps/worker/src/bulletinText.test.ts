@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildFacts, type RawDay } from "./bulletin.js";
-import { buildGossipPrompt, buildHeadlinePrompt, checkLine, fallbackGossip, fallbackHeadline, headlineFacts, isRepeat, mentionsResident, nameKey, type BulletinVoice } from "./bulletinText.js";
+import { buildGossipPrompt, buildHeadlinePrompt, checkLine, fallbackGossip, fallbackHeadline, headlineFacts, isRepeat, mentionsResident, nameKey, type BulletinVoice, writesLowercase } from "./bulletinText.js";
 
 const raw = (over: Partial<RawDay> = {}): RawDay => ({
   novos: 7,
@@ -55,6 +55,32 @@ describe("fatos para a LLM", () => {
 });
 
 describe("validação da resposta", () => {
+  it("a manchete não desmente o estoque: vídeo novo sem ter entrado nenhum, ou nada novo quando entrou", () => {
+    const none = { ...opts, stock: "nenhum vídeo novo" };
+    expect(checkLine(ok("manchete", "entrou vídeo novo no estoque. não que alguém tenha pedido."), none)).toEqual({ ok: false, reason: "inventou vídeo novo" });
+    expect(checkLine(ok("manchete", "O bunker agiu rápido: vídeo sobre animais no estoque, e chegou mais!"), none)).toEqual({ ok: false, reason: "inventou vídeo novo" });
+    expect(checkLine(ok("manchete", "nada novo no estoque. calmo o dia de ontem."), none).ok).toBe(true);
+    expect(checkLine(ok("manchete", "Nenhum vídeo novo chegou, mas os bichinhos fizeram sucesso."), none).ok).toBe(true);
+    const some = { ...opts, stock: "pouco vídeo novo" };
+    expect(checkLine(ok("manchete", "nenhum vídeo novo, mais uma vez"), some)).toEqual({ ok: false, reason: "negou o estoque" });
+    expect(checkLine(ok("manchete", "Culinária: Outro Dia Sem Novos Vídeos"), some)).toEqual({ ok: false, reason: "negou o estoque" });
+    expect(checkLine(ok("manchete", "Nenhum novo vídeo para armazenar."), some)).toEqual({ ok: false, reason: "negou o estoque" });
+    expect(checkLine(ok("manchete", "Chegou vídeo novo no estoque do bunker."), some).ok).toBe(true);
+  });
+
+  it("tópico sensível só entra se já estava na entrada", () => {
+    const o = { ...opts, key: "fofoca" as const, maxWords: 25, sensitive: ["Política", "Notícias"], source: "comentou muito mais do que costuma" };
+    expect(checkLine(ok("fofoca", "A Kelly comentou mais do que costuma num vídeo de notícias."), o)).toEqual({ ok: false, reason: "tópico sensível" });
+    expect(checkLine(ok("fofoca", "A Kelly comentou muito mais do que costuma. Que energia!"), o).ok).toBe(true);
+    expect(checkLine(ok("fofoca", "O rádio só pegou notícias do tempo e comentou muito mais."), { ...o, source: "o rádio só pegou notícias do tempo" }).ok).toBe(true);
+  });
+
+  it("quem escreve em minúsculas sai em minúsculas", () => {
+    expect(checkLine(ok("manchete", "Kelly comentou em tudo. de novo."), { ...opts, lowercase: true })).toEqual({ ok: true, text: "kelly comentou em tudo. de novo." });
+    expect(writesLowercase({ tone: "Seco e irônico, frases curtas, tudo em minúsculas." })).toBe(true);
+    expect(writesLowercase({ tone: "Animada e positiva." })).toBe(false);
+  });
+
   it("aceita e limpa aspas e espaços", () => {
     expect(checkLine(ok("manchete", '  "o bunker  falou de futebol."  '), opts)).toEqual({ ok: true, text: "o bunker falou de futebol." });
   });

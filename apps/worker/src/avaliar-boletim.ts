@@ -28,6 +28,7 @@ import {
   type BulletinVoice,
   type CheckOptions,
   type GossipInput,
+  writesLowercase,
 } from "./bulletinText.js";
 
 const { values: args } = parseArgs({
@@ -53,6 +54,7 @@ const only = args.so?.split(",");
 
 const voices = await db.voices();
 const residents = await db.residents();
+const sensitive = await db.sensitiveTopics();
 const facts = buildFacts(day.date, await collectDay(pool, day));
 const hf = headlineFacts(facts);
 const topics = await gossipTopics(pool);
@@ -81,7 +83,7 @@ async function attempt(prompt: () => string, schema: object, o: Omit<CheckOption
  * parado, fraco ou sensível usa a frase fixa de "dia parado"), então os cenários variam o tamanho
  * do estoque, o movimento e os temas novos, mais os fatos reais do dia pedido.
  */
-const headlineScenarios: [string, object][] = [
+const headlineScenarios: [string, { estoque: string }][] = [
   ["dia real", hf],
   ["calmo", { assunto_do_dia: "Culinária", estoque: "pouco vídeo novo", temas_novos: [], movimento: "calmo" }],
   ["agitado", { assunto_do_dia: "Esporte", estoque: "muito vídeo novo", temas_novos: ["Games"], movimento: "agitado" }],
@@ -105,6 +107,8 @@ const gossipCheck = (v: BulletinVoice, input: GossipInput, mention: string[]) =>
   strangers: voices.filter((o) => o.id !== v.id && !mention.includes(o.name)).map((o) => nameKey(o.name)),
   examples: v.fofocas,
   source: "fofoca" in input ? input.fofoca : input.o_que,
+  sensitive,
+  lowercase: writesLowercase(v),
 });
 
 for (const v of voices.filter((x) => !only || only.includes(x.nickname))) {
@@ -115,7 +119,7 @@ for (const v of voices.filter((x) => !only || only.includes(x.nickname))) {
         persona: v.name,
         kind: `manchete (${name})`,
         input: JSON.stringify(scenario),
-        attempts: await attempt(() => buildHeadlinePrompt(v, scenario, pickExamples(v.manchetes)), headlineSchema, { key: "manchete", maxWords: HEADLINE_WORDS, sameAs: v.manchetes }),
+        attempts: await attempt(() => buildHeadlinePrompt(v, scenario, pickExamples(v.manchetes)), headlineSchema, { key: "manchete", maxWords: HEADLINE_WORDS, sameAs: v.manchetes, stock: scenario.estoque, sensitive, lowercase: writesLowercase(v) }),
       });
     }
     // Cada detector, com outra persona (ou um par) como assunto.

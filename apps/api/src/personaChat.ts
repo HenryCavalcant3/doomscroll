@@ -260,7 +260,8 @@ export function replyProblem(text: string, examples: string[], history: MessageV
     const said = normalize(messageLine(last)).join(" ");
     if (said && said === words.join(" ")) return "eco";
   }
-  if (stutters(words)) return "gagueira";
+  // "Vouba", "Vouvoi", "Voua gente": o "vou" do modelo pequeno às vezes trava e gruda em outra coisa.
+  if (stutters(words) || /(^|[^\p{L}])vou(?!chers?(?![\p{L}]))\p{L}+/iu.test(text)) return "gagueira";
   // Imitou a linha do histórico ("[mandou um vídeo: ...]", "[dona_neide: ...") em vez de falar.
   if (HISTORY_FORMAT.test(text)) return "formato";
   if (ASSISTANT.test(text)) return "assistente";

@@ -265,6 +265,10 @@ export class PgBulletinDb implements BulletinGenDb {
     }));
   }
 
+  async sensitiveTopics() {
+    return (await this.pool.query<{ name: string }>("SELECT name FROM topics WHERE sensitive ORDER BY name")).rows.map((r) => r.name);
+  }
+
   async residents() {
     return (await this.pool.query<{ nickname: string }>("SELECT nickname FROM users WHERE NOT is_ai")).rows.map((r) => r.nickname);
   }

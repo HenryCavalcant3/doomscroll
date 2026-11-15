@@ -78,6 +78,10 @@ class FakeDb implements BulletinGenDb {
   async residents() {
     return ["ana", "leo"];
   }
+  sensitive = ["Política", "Notícias"];
+  async sensitiveTopics() {
+    return this.sensitive;
+  }
   async collectDay() {
     return this.raw;
   }
